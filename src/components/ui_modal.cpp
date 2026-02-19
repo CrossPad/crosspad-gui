@@ -83,7 +83,7 @@ lv_obj_t * ui_modal_confirm(
         lv_obj_t * lbl_title = lv_label_create(panel);
         lv_label_set_text(lbl_title, title);
         lv_obj_set_style_text_color(lbl_title, CROSSPAD_THEME_PRIMARY, 0);
-        lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_18, 0);
     }
 
     // Message
