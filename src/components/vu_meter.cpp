@@ -1,0 +1,183 @@
+#ifdef USE_LVGL
+
+#include "crosspad-gui/components/vu_meter.h"
+#include "crosspad-gui/styles/styles.h"
+#include "crosspad-gui/platform/IGuiPlatform.h"
+#include <cmath>
+
+// ── Audio level storage (set via crosspad_gui::vu_set_levels) ────────────────
+static int16_t s_audio_max[2] = {0, 0};
+
+namespace crosspad_gui {
+void vu_set_levels(int16_t left, int16_t right) {
+    s_audio_max[0] = left;
+    s_audio_max[1] = right;
+}
+} // namespace crosspad_gui
+
+static const int REFRESH_MS = 16; // 60 Hz
+
+// Convert int16 audio level (0-32767) to dB-like logarithmic scale
+static uint16_t int16toLogScale(int16_t val, int base = 100) {
+    const int16_t NOISE_GATE = 800;
+    if (val < NOISE_GATE) return 0;
+
+    float normalized = (float)val / 32767.0f;
+
+    const float GAIN_MULTIPLIER = 3.5f;
+    normalized *= GAIN_MULTIPLIER;
+    if (normalized > 1.0f) normalized = 1.0f;
+
+    float db_normalized;
+    if (normalized < 0.018f) {
+        db_normalized = 0.0f;
+    } else {
+        float db = 20.0f * log10f(normalized);
+        db_normalized = (db + 35.0f) / 35.0f;
+        if (db_normalized < 0.0f) db_normalized = 0.0f;
+        if (db_normalized > 1.0f) db_normalized = 1.0f;
+    }
+
+    uint32_t scaled = (uint32_t)(db_normalized * (float)base);
+    if (scaled > (uint32_t)base) scaled = base;
+    return (uint16_t)scaled;
+}
+
+// Peak hold state
+struct VUMeterState {
+    int16_t peakL;
+    int16_t peakR;
+    uint32_t peakTimeL;
+    uint32_t peakTimeR;
+};
+static VUMeterState vuState = {0, 0, 0, 0};
+
+lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
+    lv_obj_t * cont = lv_obj_create(parent);
+    lv_obj_add_style(cont, &styleAppContainer, 0);
+    lv_obj_set_size(cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(cont, 0, 0);
+    lv_obj_set_style_pad_column(cont, 2, 0);
+
+    // Left channel bar
+    lv_obj_t * barL = lv_bar_create(cont);
+    lv_obj_set_style_radius(barL, 0, 0);
+    lv_obj_set_size(barL, width, height);
+    lv_bar_set_range(barL, 0, height);
+    lv_bar_set_value(barL, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(barL, lv_color_hex(0x202020), LV_PART_MAIN);
+    lv_obj_set_style_border_width(barL, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(barL, lv_color_hex(0x404040), LV_PART_MAIN);
+
+    // Right channel bar
+    lv_obj_t * barR = lv_bar_create(cont);
+    lv_obj_set_style_radius(barR, 0, 0);
+    lv_obj_set_size(barR, width, height);
+    lv_bar_set_range(barR, 0, height);
+    lv_bar_set_value(barR, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(barR, lv_color_hex(0x202020), LV_PART_MAIN);
+    lv_obj_set_style_border_width(barR, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(barR, lv_color_hex(0x404040), LV_PART_MAIN);
+
+    // Left peak hold indicator
+    lv_obj_t * peakL = lv_obj_create(barL);
+    lv_obj_set_size(peakL, width - 2, 2);
+    lv_obj_set_style_bg_color(peakL, lv_color_hex(0xFF0000), 0);
+    lv_obj_set_style_border_width(peakL, 0, 0);
+    lv_obj_set_style_radius(peakL, 0, 0);
+    lv_obj_add_flag(peakL, LV_OBJ_FLAG_HIDDEN);
+
+    // Right peak hold indicator
+    lv_obj_t * peakR = lv_obj_create(barR);
+    lv_obj_set_size(peakR, width - 2, 2);
+    lv_obj_set_style_bg_color(peakR, lv_color_hex(0xFF0000), 0);
+    lv_obj_set_style_border_width(peakR, 0, 0);
+    lv_obj_set_style_radius(peakR, 0, 0);
+    lv_obj_add_flag(peakR, LV_OBJ_FLAG_HIDDEN);
+
+    lv_timer_t * timer = lv_timer_create([](lv_timer_t * t) {
+        lv_obj_t * cont = (lv_obj_t *)lv_timer_get_user_data(t);
+        if (!cont) return;
+        lv_obj_t * barL = lv_obj_get_child(cont, 0);
+        lv_obj_t * barR = lv_obj_get_child(cont, 1);
+
+        int barHeight = lv_obj_get_height(barL);
+
+        int16_t levelL = int16toLogScale(s_audio_max[0], barHeight);
+        int16_t levelR = int16toLogScale(s_audio_max[1], barHeight);
+
+        lv_bar_set_value(barL, levelL, LV_ANIM_OFF);
+        lv_bar_set_value(barR, levelR, LV_ANIM_OFF);
+
+        // Dynamic color: green → yellow → red
+        auto updateBarColor = [](lv_obj_t* bar, int16_t level, int height) {
+            float percent = (float)level / (float)height;
+            lv_color_t color;
+            if (percent < 0.60f) {
+                color = lv_color_hex(0x00FF00);
+            } else if (percent < 0.85f) {
+                float transition = (percent - 0.60f) / 0.25f;
+                uint8_t red = (uint8_t)(transition * 255);
+                color = lv_color_make(red, 255, 0);
+            } else {
+                float transition = (percent - 0.85f) / 0.15f;
+                uint8_t green = (uint8_t)((1.0f - transition) * 255);
+                color = lv_color_make(255, green, 0);
+            }
+            lv_obj_set_style_bg_color(bar, color, LV_PART_INDICATOR);
+        };
+
+        updateBarColor(barL, levelL, barHeight);
+        updateBarColor(barR, levelR, barHeight);
+
+        // Peak hold (1.5 seconds)
+        uint32_t now = crosspad_gui::getGuiPlatform().millis();
+        const uint32_t PEAK_HOLD_MS = 1500;
+
+        // Left peak
+        lv_obj_t * peakIndicatorL = lv_obj_get_child(barL, 0);
+        if (levelL > vuState.peakL) {
+            vuState.peakL = levelL;
+            vuState.peakTimeL = now;
+        }
+        if (now - vuState.peakTimeL > PEAK_HOLD_MS) {
+            vuState.peakL = levelL;
+        }
+        if (vuState.peakL > 2) {
+            int yPos = barHeight - vuState.peakL;
+            lv_obj_set_pos(peakIndicatorL, 1, yPos);
+            lv_obj_clear_flag(peakIndicatorL, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(peakIndicatorL, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        // Right peak
+        lv_obj_t * peakIndicatorR = lv_obj_get_child(barR, 0);
+        if (levelR > vuState.peakR) {
+            vuState.peakR = levelR;
+            vuState.peakTimeR = now;
+        }
+        if (now - vuState.peakTimeR > PEAK_HOLD_MS) {
+            vuState.peakR = levelR;
+        }
+        if (vuState.peakR > 2) {
+            int yPos = barHeight - vuState.peakR;
+            lv_obj_set_pos(peakIndicatorR, 1, yPos);
+            lv_obj_clear_flag(peakIndicatorR, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(peakIndicatorR, LV_OBJ_FLAG_HIDDEN);
+        }
+    }, REFRESH_MS, cont);
+
+    lv_obj_add_event_cb(cont, [](lv_event_t * e) {
+        if (lv_event_get_code(e) == LV_EVENT_DELETE) {
+            lv_timer_t * t = (lv_timer_t *)lv_event_get_user_data(e);
+            if (t) lv_timer_delete(t);
+        }
+    }, LV_EVENT_DELETE, timer);
+
+    return cont;
+}
+
+#endif // USE_LVGL
