@@ -22,6 +22,9 @@ namespace crosspad_gui {
 // Set loading indicator progress (-1 to hide, 0-100 for progress)
 void statusbar_set_loading(int progress);
 
+// Get the loading subject pointer (for lv_subject_add_observer_obj)
+lv_subject_t * statusbar_get_loading_subject();
+
 // Show a loader message box on the top layer
 // @param title   Title text
 // @param message Body text

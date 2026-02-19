@@ -12,6 +12,11 @@ void vu_set_levels(int16_t left, int16_t right);
 
 } // namespace crosspad_gui
 
+// Convert int16 audio level (0-32767) to dB-like logarithmic scale
+// @param val   Audio amplitude (0-32767)
+// @param base  Output scale maximum (default 100)
+uint16_t int16toLogScale(int16_t val, int base = 100);
+
 // Create a professional stereo VU meter with peak hold
 // @param parent  Parent LVGL object
 // @param width   Width of each bar in pixels

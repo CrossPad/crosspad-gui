@@ -86,6 +86,10 @@ void statusbar_set_loading(int progress) {
     lv_subject_set_int(&s_loading, progress);
 }
 
+lv_subject_t * statusbar_get_loading_subject() {
+    return &s_loading;
+}
+
 void statusbar_show_loader_message(const char * title, const char * message, bool isError) {
     lv_obj_t * mbox = lv_msgbox_create(lv_layer_top());
     lv_obj_add_style(mbox, &styleStatusBar, 0);

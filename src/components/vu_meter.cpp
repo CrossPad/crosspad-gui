@@ -18,7 +18,7 @@ void vu_set_levels(int16_t left, int16_t right) {
 static const int REFRESH_MS = 16; // 60 Hz
 
 // Convert int16 audio level (0-32767) to dB-like logarithmic scale
-static uint16_t int16toLogScale(int16_t val, int base = 100) {
+uint16_t int16toLogScale(int16_t val, int base) {
     const int16_t NOISE_GATE = 800;
     if (val < NOISE_GATE) return 0;
 
