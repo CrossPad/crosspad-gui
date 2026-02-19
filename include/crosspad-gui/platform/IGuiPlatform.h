@@ -23,6 +23,12 @@ public:
 
     // Get asset path prefix (e.g. "I:/" for Arduino, "/assets/" for IDF)
     virtual const char * assetPathPrefix() = 0;
+
+    // Delay for the given number of milliseconds (platform-specific)
+    virtual void delayMs(uint32_t ms) = 0;
+
+    // Send power-off command to the STM32 co-processor
+    virtual void sendPowerOff() = 0;
 };
 
 // Set the platform implementation (call once at startup)
