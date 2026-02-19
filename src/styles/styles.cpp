@@ -258,7 +258,7 @@ void initStyles() {
     lv_style_set_pad_hor(&styleSettingsRow, 10);
     lv_style_set_pad_ver(&styleSettingsRow, 6);
     lv_style_set_text_color(&styleSettingsRow, lv_color_white());
-    lv_style_set_text_font(&styleSettingsRow, &lv_font_montserrat_16);
+    lv_style_set_text_font(&styleSettingsRow, &lv_font_montserrat_14);
 
     // settings row focused state
     lv_style_init(&styleSettingsRowFocused);
