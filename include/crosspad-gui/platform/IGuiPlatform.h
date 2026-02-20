@@ -2,7 +2,11 @@
 
 #include <cstdint>
 
-struct lv_indev_t;   // forward-declare LVGL input device
+// Forward-declare LVGL input device (skip if lvgl.h already included)
+#ifndef LV_VERSION_CHECK
+struct _lv_indev_t;
+typedef struct _lv_indev_t lv_indev_t;
+#endif
 
 namespace crosspad_gui {
 
