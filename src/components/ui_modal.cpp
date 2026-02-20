@@ -2,6 +2,7 @@
 
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
+#include "crosspad-gui/platform/IGuiPlatform.h"
 
 // ---- Internal types ----
 
@@ -33,9 +34,9 @@ static void confirm_btn_cb(lv_event_t * e) {
 
     if (ctx->cb) ctx->cb(confirmed, ctx->user_data);
 
-    extern lv_indev_t * indev_encoderTop;
-    if (ctx->prev_group) {
-        lv_indev_set_group(indev_encoderTop, ctx->prev_group);
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (ctx->prev_group && nav) {
+        lv_indev_set_group(nav, ctx->prev_group);
     }
     if (ctx->modal_group) {
         lv_group_del(ctx->modal_group);
@@ -114,9 +115,9 @@ lv_obj_t * ui_modal_confirm(
     ctx->prev_group = encoder_group;
 
     // Modal encoder group
-    extern lv_indev_t * indev_encoderTop;
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     ctx->modal_group = lv_group_create();
-    lv_indev_set_group(indev_encoderTop, ctx->modal_group);
+    if (nav) lv_indev_set_group(nav, ctx->modal_group);
 
     // Yes button
     lv_obj_t * btn_yes = lv_button_create(btn_row);
@@ -168,9 +169,9 @@ static void select_item_cb(lv_event_t * e) {
     ctx->selected = idx;
     if (ctx->cb) ctx->cb(idx, false, ctx->user_data);
 
-    extern lv_indev_t * indev_encoderTop;
-    if (ctx->prev_group) {
-        lv_indev_set_group(indev_encoderTop, ctx->prev_group);
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (ctx->prev_group && nav) {
+        lv_indev_set_group(nav, ctx->prev_group);
     }
     if (ctx->modal_group) {
         lv_group_del(ctx->modal_group);
@@ -186,9 +187,9 @@ static void select_cancel_cb(lv_event_t * e) {
 
     if (ctx->cb) ctx->cb(-1, true, ctx->user_data);
 
-    extern lv_indev_t * indev_encoderTop;
-    if (ctx->prev_group) {
-        lv_indev_set_group(indev_encoderTop, ctx->prev_group);
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (ctx->prev_group && nav) {
+        lv_indev_set_group(nav, ctx->prev_group);
     }
     if (ctx->modal_group) {
         lv_group_del(ctx->modal_group);
@@ -237,9 +238,9 @@ lv_obj_t * ui_modal_selection(
     ctx->prev_group = encoder_group;
     ctx->selected = current_selection;
 
-    extern lv_indev_t * indev_encoderTop;
+    lv_indev_t * nav2 = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     ctx->modal_group = lv_group_create();
-    lv_indev_set_group(indev_encoderTop, ctx->modal_group);
+    if (nav2) lv_indev_set_group(nav2, ctx->modal_group);
 
     // Title
     if (title) {

@@ -99,6 +99,17 @@ void statusbar_show_loader_message(const char * title, const char * message, boo
     lv_msgbox_add_close_button(mbox);
 }
 
+void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg) {
+    if (done) {
+        statusbar_set_loading(-1);
+        if (error) {
+            statusbar_show_loader_message("Error", msg, true);
+        }
+    } else {
+        statusbar_set_loading(progress);
+    }
+}
+
 } // namespace crosspad_gui
 
 // ── Battery icon helper ─────────────────────────────────────────────────────

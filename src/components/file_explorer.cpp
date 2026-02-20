@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstring>
 
-extern lv_indev_t * indev_encoderTop;
+#include "crosspad-gui/platform/IGuiPlatform.h"
 
 static lv_group_t * file_explorer_group = nullptr;
 static lv_obj_t * itemList = NULL;
@@ -118,7 +118,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     // Encoder group
     static lv_group_t * fe_group = lv_group_create();
     file_explorer_group = fe_group;
-    lv_indev_set_group(indev_encoderTop, fe_group);
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (nav) lv_indev_set_group(nav, fe_group);
 
     // Container
     lv_obj_t * cont = lv_obj_create(parent);

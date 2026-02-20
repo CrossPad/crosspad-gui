@@ -31,6 +31,10 @@ lv_subject_t * statusbar_get_loading_subject();
 // @param isError If true, styled as error; if false, informational
 void statusbar_show_loader_message(const char * title, const char * message, bool isError);
 
+// Process a single loading status update from any background loader.
+// Call from GUI thread only. Hides loading indicator when done, shows error message if needed.
+void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg);
+
 } // namespace crosspad_gui
 
 // Create the status bar on lv_layer_top()

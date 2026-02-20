@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+struct lv_indev_t;   // forward-declare LVGL input device
+
 namespace crosspad_gui {
 
 struct HeapStats {
@@ -9,6 +11,15 @@ struct HeapStats {
     uint32_t sram_total;
     uint32_t psram_free;
     uint32_t psram_total;
+};
+
+// GUI interaction event types for haptic/activity feedback
+enum class InteractionEvent : uint8_t {
+    Pressed,
+    Released,
+    PressLost,
+    LongPressed,
+    LongPressedRepeat
 };
 
 class IGuiPlatform {
@@ -29,6 +40,14 @@ public:
 
     // Send power-off command to the STM32 co-processor
     virtual void sendPowerOff() = 0;
+
+    // Get the primary navigation encoder input device (for modal group switching).
+    // Returns nullptr if no encoder is available on this platform.
+    virtual lv_indev_t * getNavigationEncoder() { return nullptr; }
+
+    // Called when the user interacts with the touchscreen.
+    // Platform can trigger haptic feedback, reset inactivity timers, etc.
+    virtual void onUserInteraction(InteractionEvent /*event*/) {}
 };
 
 // Set the platform implementation (call once at startup)
