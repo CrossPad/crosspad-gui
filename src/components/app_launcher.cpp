@@ -5,6 +5,7 @@
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad/app/AppRegistry.hpp"
 #include <cstring>
+#include <cstdio>
 
 namespace crosspad_gui {
 
