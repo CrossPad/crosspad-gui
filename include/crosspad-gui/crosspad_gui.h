@@ -16,7 +16,11 @@
 #include "crosspad-gui/widgets/spinbox_helpers.h"
 #include "crosspad-gui/widgets/settings_widgets.h"
 
+// App base class (CRTP)
+#include "crosspad-gui/app/AppBase.hpp"
+
 // Components
+#include "crosspad-gui/components/main_screen.h"
 #include "crosspad-gui/components/dfu_panel.h"
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/components/ui_toast.h"
