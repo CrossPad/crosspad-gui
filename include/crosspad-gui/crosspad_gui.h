@@ -25,6 +25,7 @@
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/file_explorer.h"
 #include "crosspad-gui/components/app_launcher.h"
+#include "crosspad-gui/components/app_lifecycle.h"
 
 // Platform
 #include "crosspad-gui/platform/IGuiPlatform.h"
