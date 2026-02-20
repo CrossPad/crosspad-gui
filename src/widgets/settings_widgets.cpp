@@ -47,7 +47,7 @@ lv_obj_t * create_settings_switch(lv_obj_t * parent, const char * icon, const ch
     lv_obj_t * obj = create_text(parent, icon, txt, LV_MENU_ITEM_BUILDER_VARIANT_1);
 
     lv_obj_t * sw = lv_switch_create(obj);
-    lv_obj_add_state(sw, *setting ? LV_STATE_CHECKED : 0);
+    lv_obj_add_state(sw, *setting ? LV_STATE_CHECKED : LV_STATE_DEFAULT);
     lv_obj_add_event_cb(sw, menu_switch_event_cb, LV_EVENT_VALUE_CHANGED, setting);
     if (cb != NULL) {
         lv_obj_add_event_cb(sw, cb, cb_event_type, setting);
