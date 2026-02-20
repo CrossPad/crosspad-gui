@@ -34,3 +34,6 @@
 // Platform
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/platform/IFileSystem.h"
+
+// Bootstrap
+#include "crosspad-gui/bootstrap.h"
