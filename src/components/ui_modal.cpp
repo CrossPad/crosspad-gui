@@ -57,8 +57,8 @@ lv_obj_t * ui_modal_confirm(
     lv_group_t * encoder_group
 ) {
     // Semi-transparent overlay
-    lv_obj_t * overlay = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(overlay, LV_HOR_RES, LV_VER_RES);
+    lv_obj_t * overlay = lv_obj_create(crosspad_gui::getOverlayParent());
+    lv_obj_set_size(overlay, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_70, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);
@@ -209,8 +209,8 @@ lv_obj_t * ui_modal_selection(
     lv_group_t * encoder_group
 ) {
     // Overlay
-    lv_obj_t * overlay = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(overlay, LV_HOR_RES, LV_VER_RES);
+    lv_obj_t * overlay = lv_obj_create(crosspad_gui::getOverlayParent());
+    lv_obj_set_size(overlay, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_70, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);

@@ -45,7 +45,7 @@ void ui_toast_show(const char * message, uint32_t duration_ms, uint8_t severity)
             break;
     }
 
-    active_toast = lv_obj_create(lv_layer_top());
+    active_toast = lv_obj_create(crosspad_gui::getOverlayParent());
     lv_obj_set_size(active_toast, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_align(active_toast, LV_ALIGN_BOTTOM_MID, 0, -8);
     lv_obj_set_style_bg_color(active_toast, bg_color, 0);

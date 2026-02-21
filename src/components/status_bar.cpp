@@ -11,7 +11,7 @@
 
 using namespace crosspad;
 
-#define LV_STATUS_BAR_OPENED_HEIGHT lv_obj_get_height(lv_layer_top()) * 0.85
+#define LV_STATUS_BAR_OPENED_HEIGHT lv_obj_get_height(crosspad_gui::getOverlayParent()) * 0.85
 
 extern CrosspadSettings * settings;
 extern CrosspadStatus status;
@@ -50,9 +50,14 @@ static lv_anim_t * quick_opening_anim;
 static lv_anim_t * quick_closing_anim;
 
 // Asset path buffers (built once at creation time)
-static char asset_logo[64];
-static char asset_drawer_down[64];
-static char asset_drawer_up[64];
+#ifdef PLATFORM_PC
+#define ASSET_PATH_SIZE 256
+#else
+#define ASSET_PATH_SIZE 64
+#endif
+static char asset_logo[ASSET_PATH_SIZE];
+static char asset_drawer_down[ASSET_PATH_SIZE];
+static char asset_drawer_up[ASSET_PATH_SIZE];
 
 static void build_asset_paths() {
     const char * prefix = crosspad_gui::getGuiPlatform().assetPathPrefix();
@@ -91,7 +96,7 @@ lv_subject_t * statusbar_get_loading_subject() {
 }
 
 void statusbar_show_loader_message(const char * title, const char * message, bool isError) {
-    lv_obj_t * mbox = lv_msgbox_create(lv_layer_top());
+    lv_obj_t * mbox = lv_msgbox_create(crosspad_gui::getOverlayParent());
     lv_obj_add_style(mbox, &styleStatusBar, 0);
     lv_obj_set_style_border_width(mbox, 2, 0);
     lv_msgbox_add_title(mbox, title);
@@ -226,8 +231,9 @@ static void drawer_close_end_event_cb(lv_anim_t * a) {
 lv_obj_t * lv_CreateStatusBar() {
     build_asset_paths();
 
-    lv_obj_t * cont = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(cont, lv_obj_get_content_width(lv_layer_top()), LV_STATUS_BAR_HEIGHT + 2);
+    lv_obj_t * overlayParent = crosspad_gui::getOverlayParent();
+    lv_obj_t * cont = lv_obj_create(overlayParent);
+    lv_obj_set_size(cont, lv_obj_get_content_width(overlayParent), LV_STATUS_BAR_HEIGHT + 2);
     lv_obj_add_style(cont, &styleStatusBar, 0);
     lv_obj_set_style_bg_opa(cont, LV_OPA_0, 0);
     lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 0);

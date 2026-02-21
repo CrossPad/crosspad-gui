@@ -129,7 +129,7 @@ lv_obj_t * lv_CreateRadialMenu(lv_obj_t * parent, const RadialMenuConfig * confi
 
     // Main container
     radial_container = lv_obj_create(parent);
-    lv_obj_set_size(radial_container, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_size(radial_container, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_set_style_bg_color(radial_container, CROSSPAD_THEME_BG_DARK, 0);
     lv_obj_set_style_border_width(radial_container, 0, 0);
     lv_obj_center(radial_container);

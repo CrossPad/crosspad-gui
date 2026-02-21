@@ -3,6 +3,7 @@
 #include "crosspad-gui/components/main_screen.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/styles/styles.h"
+#include "crosspad-gui/theme/crosspad_theme.h"
 
 namespace crosspad_gui {
 
@@ -16,7 +17,7 @@ MainScreenResult build_main_screen(
 
     // ── Parent setup ────────────────────────────────────────────────────
     lv_obj_clean(parent);
-    lv_obj_set_size(parent, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_size(parent, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(parent, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);

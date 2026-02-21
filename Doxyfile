@@ -1,0 +1,33 @@
+# Doxyfile for crosspad-gui
+
+PROJECT_NAME           = "crosspad-gui"
+PROJECT_BRIEF          = "LVGL GUI components for CrossPad"
+OUTPUT_DIRECTORY       = docs/doxygen
+
+# Input
+INPUT                  = include/ src/
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.c *.cpp
+EXCLUDE_PATTERNS       = */build/* */managed_components/* */.pio/*
+
+# Parsing
+JAVADOC_AUTOBRIEF      = YES
+BUILTIN_STL_SUPPORT    = YES
+PREDEFINED             = USE_LVGL=1
+
+# Extraction
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+SORT_MEMBERS_CTORS_1ST = YES
+
+# HTML output
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HTML_COLORSTYLE        = DARK
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = YES
+SEARCHENGINE           = YES
+SOURCE_BROWSER         = YES
+
+# Diagrams
+HAVE_DOT               = NO

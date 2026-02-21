@@ -30,4 +30,23 @@
 #define CROSSPAD_THEME_CARD_BG     lv_color_make(42, 42, 42)       // Card bg
 #endif
 
+// ── LCD resolution (for GUI layout, may differ from physical display) ────────
+#ifndef CP_LCD_HOR_RES
+#define CP_LCD_HOR_RES LV_HOR_RES
+#endif
+
+#ifndef CP_LCD_VER_RES
+#define CP_LCD_VER_RES LV_VER_RES
+#endif
+
+// ── Overlay parent (for status bar, modals, popups) ──────────────────────────
+// Defaults to lv_layer_top(). PC simulator overrides this to a container inside
+// the LCD area so overlays render within the device body, not the full window.
+#ifdef __cplusplus
+namespace crosspad_gui {
+    void setOverlayParent(lv_obj_t * parent);
+    lv_obj_t * getOverlayParent();
+}
+#endif
+
 #endif // USE_LVGL
