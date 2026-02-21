@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/bootstrap.h"
+#include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/platform/IFileSystem.h"
 
