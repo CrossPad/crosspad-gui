@@ -42,5 +42,3 @@ void statusbar_process_loader_status(uint8_t progress, bool done, bool error, co
 //           extern lv_obj_t * status_c;
 // @return The created status bar container
 lv_obj_t * lv_CreateStatusBar();
-
-#endif // USE_LVGL
