@@ -1,6 +1,5 @@
 #pragma once
 
-#ifdef USE_LVGL
 #include "lvgl.h"
 #include <cstdint>
 

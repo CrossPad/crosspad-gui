@@ -1,5 +1,3 @@
-#ifdef USE_LVGL
-
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
@@ -229,31 +227,54 @@ static void drawer_close_end_event_cb(lv_anim_t * a) {
 // ── Main creation ───────────────────────────────────────────────────────────
 
 lv_obj_t * lv_CreateStatusBar() {
+    fprintf(stderr, "DEBUG_MARKER_001\n");
+    fflush(stderr);
+    printf("[StatusBar] lv_CreateStatusBar() called\n");
+    fflush(stdout);
+
     build_asset_paths();
 
     lv_obj_t * overlayParent = crosspad_gui::getOverlayParent();
+    printf("[StatusBar] overlayParent=%p\n", overlayParent);
+    fflush(stdout);
+    if (!overlayParent) {
+        printf("[StatusBar] ERROR: overlayParent is NULL!\n");
+        fflush(stdout);
+        return nullptr;
+    }
+    printf("[StatusBar] parent size: %dx%d\n", lv_obj_get_width(overlayParent), lv_obj_get_height(overlayParent));
+    fflush(stdout);
+
     lv_obj_t * cont = lv_obj_create(overlayParent);
-    lv_obj_set_size(cont, lv_obj_get_content_width(overlayParent), LV_STATUS_BAR_HEIGHT + 2);
+    printf("[StatusBar] cont=%p created\n", cont);
+    fflush(stdout);
+    lv_obj_set_width(cont, lv_obj_get_content_width(overlayParent));
+    lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT + 2);
     lv_obj_add_style(cont, &styleStatusBar, 0);
-    lv_obj_set_style_bg_opa(cont, LV_OPA_0, 0);
-    lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, 0);
+    // Don't set alignment - let flex layout position it
+    // lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
+    printf("[StatusBar] cont size: %dx%d\n", lv_obj_get_width(cont), lv_obj_get_height(cont));
+    fflush(stdout);
 
     // Status bar panel (icons row)
     statusBarPanel = lv_obj_create(cont);
     lv_obj_update_layout(cont);
-    lv_obj_set_size(statusBarPanel, lv_obj_get_content_width(cont), LV_STATUS_BAR_HEIGHT);
+    lv_obj_set_width(statusBarPanel, lv_obj_get_content_width(cont));
+    lv_obj_set_height(statusBarPanel, LV_STATUS_BAR_HEIGHT);
     lv_obj_add_style(statusBarPanel, &styleStatusBar, 0);
     lv_obj_set_style_border_width(statusBarPanel, 1, 0);
-    lv_obj_align(statusBarPanel, LV_ALIGN_TOP_MID, 0, 0);
+    // lv_obj_align(statusBarPanel, LV_ALIGN_TOP_MID, 0, 0);
     lv_CreateStatusBarTop(statusBarPanel);
 
     // Quick settings panel
     quickSettingsPanel = lv_obj_create(cont);
-    lv_obj_set_size(quickSettingsPanel, lv_obj_get_content_width(cont), 0);
+    lv_obj_set_width(quickSettingsPanel, lv_obj_get_content_width(cont));
+    lv_obj_set_height(quickSettingsPanel, 0);
     lv_obj_add_style(quickSettingsPanel, &styleStatusBar, 0);
-    lv_obj_align(quickSettingsPanel, LV_ALIGN_TOP_MID, 0, LV_STATUS_BAR_HEIGHT);
+    // lv_obj_align(quickSettingsPanel, LV_ALIGN_TOP_MID, 0, LV_STATUS_BAR_HEIGHT);
     lv_obj_set_style_border_width(quickSettingsPanel, 1, 0);
     lv_CreateStatusBarQuickSettings(quickSettingsPanel);
 
@@ -301,6 +322,8 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     status_logo = lv_image_create(cont);
     lv_image_set_src(status_logo, asset_logo);
     lv_obj_add_style(status_logo, &styleStatusBar, 0);
+    // Scale logo to fit status bar (22px height)
+    lv_obj_set_size(status_logo, 60, 18);
     lv_obj_center(status_logo);
     lv_obj_add_flag(status_logo, LV_OBJ_FLAG_IGNORE_LAYOUT);
 
@@ -515,5 +538,3 @@ static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_grid_cell(closeButton, LV_GRID_ALIGN_END, 2, 1, LV_GRID_ALIGN_END, 3, 1);
     return cont;
 }
-
-#endif // USE_LVGL
