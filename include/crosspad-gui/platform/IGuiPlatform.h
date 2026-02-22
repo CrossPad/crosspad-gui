@@ -2,11 +2,9 @@
 
 #include <cstdint>
 
-// Forward-declare LVGL input device (skip if lvgl.h already included)
-#ifndef LV_VERSION_CHECK
-struct _lv_indev_t;
-typedef struct _lv_indev_t lv_indev_t;
-#endif
+// Forward-declare LVGL input device tag. Do NOT create a typedef here
+// to avoid conflicts with LVGL's own typedefs in `lv_types.h`.
+struct lv_indev_t;
 
 namespace crosspad_gui {
 
@@ -47,7 +45,7 @@ public:
 
     // Get the primary navigation encoder input device (for modal group switching).
     // Returns nullptr if no encoder is available on this platform.
-    virtual lv_indev_t * getNavigationEncoder() { return nullptr; }
+    virtual struct lv_indev_t * getNavigationEncoder() { return nullptr; }
 
     // Called when the user interacts with the touchscreen.
     // Platform can trigger haptic feedback, reset inactivity timers, etc.
