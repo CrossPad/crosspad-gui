@@ -25,7 +25,7 @@ struct MainScreenConfig {
  * @brief Pointers returned by build_main_screen().
  */
 struct MainScreenResult {
-    lv_obj_t*  status_bar    = nullptr;  ///< Status bar container (on lv_layer_top)
+    lv_obj_t*  status_bar    = nullptr;  ///< Status bar container (child of parent)
     lv_obj_t*  app_container = nullptr;  ///< Container where apps render their UI
     lv_group_t* encoder_group = nullptr; ///< Encoder navigation group
     lv_obj_t*  launcher_grid = nullptr;  ///< The button grid widget

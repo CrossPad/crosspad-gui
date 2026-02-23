@@ -7,9 +7,12 @@
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
 
+#include <cstring>
+
 using namespace crosspad;
 
-#define LV_STATUS_BAR_OPENED_HEIGHT lv_obj_get_height(crosspad_gui::getOverlayParent()) * 0.85
+// Maximum drawer height = parent content height minus status bar (cap so it doesn't exceed screen)
+#define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(status_c)) - lv_obj_get_height(status_c))
 
 extern CrosspadSettings * settings;
 extern CrosspadStatus status;
@@ -19,6 +22,9 @@ static bool quickSettingsPanelVisible = false;
 
 // subjects
 static lv_subject_t s_loading;
+static lv_subject_t s_ramUsage;
+static lv_subject_t s_psRamUsage;
+static bool s_ram_subjects_initialized = false;
 
 // timers
 static lv_timer_t * t_ramUpdate = NULL;
@@ -28,7 +34,7 @@ static lv_timer_t * t_check_status = NULL;
 static lv_obj_t * openButton = NULL;
 static lv_obj_t * closeButton = NULL;
 static lv_obj_t * statusBarPanel = NULL;
-static lv_obj_t * quickSettingsPanel = NULL;
+static lv_obj_t * s_drawer_overlay = NULL; // floating quick settings overlay
 
 // status icons
 static lv_obj_t * status_logo;
@@ -39,13 +45,22 @@ static lv_obj_t * status_bluetooth;
 static lv_obj_t * status_sd;
 static lv_obj_t * status_loading_arc;
 
-// animations
-static lv_anim_t   anim_opening_template;
-static lv_anim_t * bar_opening_anim;
-static lv_anim_t * bar_closing_anim;
-static lv_anim_t   anim_quick_opening_template;
-static lv_anim_t * quick_opening_anim;
-static lv_anim_t * quick_closing_anim;
+// dynamic app icon slots
+struct StatusBarAppIcon {
+    const char * id;
+    const char * content;
+    crosspad_gui::StatusIconSide side;
+    lv_color_t color;
+    lv_obj_t * obj;
+    bool active;
+};
+
+static StatusBarAppIcon s_app_icons[STATUSBAR_MAX_APP_ICONS] = {};
+static lv_obj_t * s_app_icon_zone_left = nullptr;
+static lv_obj_t * s_app_icon_zone_right = nullptr;
+
+// animation
+static lv_anim_t   anim_drawer_template;
 
 // Asset path buffers (built once at creation time)
 #ifdef PLATFORM_PC
@@ -64,7 +79,7 @@ static void build_asset_paths() {
     snprintf(asset_drawer_up, sizeof(asset_drawer_up), "%sdrawerUpArrow.png", prefix);
 }
 
-// ── Animation callbacks ─────────────────────────────────────────────────────
+// ── Animation callback ──────────────────────────────────────────────────────
 
 static void anim_y_cb(void * var, int32_t v) {
     lv_obj_set_height((lv_obj_t *)var, v);
@@ -73,13 +88,11 @@ static void anim_y_cb(void * var, int32_t v) {
 // Forward declarations
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
-static void drawer_open_end_event_cb(lv_anim_t * a);
-static void drawer_close_end_event_cb(lv_anim_t * a);
-static void quick_opening_anim_end_cb(lv_anim_t * a);
-static void quick_closing_anim_end_cb(lv_anim_t * a);
+static void drawer_open_end_cb(lv_anim_t * a);
+static void drawer_close_end_cb(lv_anim_t * a);
 
 static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * parent);
-static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * parent);
+static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont);
 
 // ── Loading API ─────────────────────────────────────────────────────────────
 
@@ -94,7 +107,7 @@ lv_subject_t * statusbar_get_loading_subject() {
 }
 
 void statusbar_show_loader_message(const char * title, const char * message, bool isError) {
-    lv_obj_t * mbox = lv_msgbox_create(crosspad_gui::getOverlayParent());
+    lv_obj_t * mbox = lv_msgbox_create(status_c ? lv_obj_get_parent(status_c) : lv_scr_act());
     lv_obj_add_style(mbox, &styleStatusBar, 0);
     lv_obj_set_style_border_width(mbox, 2, 0);
     lv_msgbox_add_title(mbox, title);
@@ -110,6 +123,107 @@ void statusbar_process_loader_status(uint8_t progress, bool done, bool error, co
         }
     } else {
         statusbar_set_loading(progress);
+    }
+}
+
+// ── Dynamic App Icon API ────────────────────────────────────────────────────
+
+static StatusBarAppIcon * find_app_icon(const char * id) {
+    if (!id) return nullptr;
+    for (int i = 0; i < STATUSBAR_MAX_APP_ICONS; i++) {
+        if (s_app_icons[i].active && strcmp(s_app_icons[i].id, id) == 0) {
+            return &s_app_icons[i];
+        }
+    }
+    return nullptr;
+}
+
+static StatusBarAppIcon * find_free_slot() {
+    for (int i = 0; i < STATUSBAR_MAX_APP_ICONS; i++) {
+        if (!s_app_icons[i].active) return &s_app_icons[i];
+    }
+    return nullptr;
+}
+
+bool statusbar_add_icon(const char * id, const char * content,
+                        lv_color_t color, StatusIconSide side) {
+    if (!id || !content) return false;
+
+    // Update existing icon
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (slot) {
+        slot->content = content;
+        slot->color = color;
+        if (slot->obj) {
+            lv_label_set_text(slot->obj, content);
+            lv_obj_set_style_text_color(slot->obj, color, 0);
+        }
+        // If side changed, reparent
+        if (slot->side != side && slot->obj) {
+            lv_obj_t * zone = (side == StatusIconSide::Left) ? s_app_icon_zone_left : s_app_icon_zone_right;
+            if (zone) {
+                lv_obj_set_parent(slot->obj, zone);
+                slot->side = side;
+            }
+        }
+        return true;
+    }
+
+    // Find free slot
+    slot = find_free_slot();
+    if (!slot) return false;
+
+    lv_obj_t * zone = (side == StatusIconSide::Left) ? s_app_icon_zone_left : s_app_icon_zone_right;
+    if (!zone) return false;
+
+    lv_obj_t * lbl = lv_label_create(zone);
+    lv_label_set_text(lbl, content);
+    lv_obj_set_style_text_color(lbl, color, 0);
+    lv_obj_set_height(lbl, LV_SIZE_CONTENT);
+
+    slot->id = id;
+    slot->content = content;
+    slot->side = side;
+    slot->color = color;
+    slot->obj = lbl;
+    slot->active = true;
+    return true;
+}
+
+void statusbar_remove_icon(const char * id) {
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (!slot) return;
+    if (slot->obj) lv_obj_delete(slot->obj);
+    memset(slot, 0, sizeof(*slot));
+}
+
+void statusbar_set_icon_color(const char * id, lv_color_t color) {
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (!slot) return;
+    slot->color = color;
+    if (slot->obj) lv_obj_set_style_text_color(slot->obj, color, 0);
+}
+
+void statusbar_set_icon_content(const char * id, const char * content) {
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (!slot || !content) return;
+    slot->content = content;
+    if (slot->obj) lv_label_set_text(slot->obj, content);
+}
+
+void statusbar_set_icon_visible(const char * id, bool visible) {
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (!slot || !slot->obj) return;
+    if (visible) lv_obj_remove_flag(slot->obj, LV_OBJ_FLAG_HIDDEN);
+    else         lv_obj_add_flag(slot->obj, LV_OBJ_FLAG_HIDDEN);
+}
+
+void statusbar_clear_all_icons() {
+    for (int i = 0; i < STATUSBAR_MAX_APP_ICONS; i++) {
+        if (s_app_icons[i].active) {
+            if (s_app_icons[i].obj) lv_obj_delete(s_app_icons[i].obj);
+            memset(&s_app_icons[i], 0, sizeof(s_app_icons[i]));
+        }
     }
 }
 
@@ -129,154 +243,170 @@ static void PickCorrectBatteryIcon(uint8_t batteryPercent) {
 
 // ── Status check timer ──────────────────────────────────────────────────────
 
+// Cached previous values — file-scoped so they can be reset on status bar re-creation
+static bool s_lastSd = false;
+static bool s_lastBt = false;
+static bool s_lastWifi = false;
+static bool s_lastCharging = false;
+static uint8_t s_lastBatteryPct = 0;
+
 static void check_status_timer_cb(lv_timer_t * timer) {
     // SD card
     bool sd = status.stm32.sdDetected;
-    static bool lastSd = false;
-    if (sd != lastSd) {
-        lastSd = sd;
+    if (sd != s_lastSd) {
+        s_lastSd = sd;
         lv_obj_set_hidden(status_sd, !sd);
     }
     // Bluetooth
     bool bt = status.bluetoothConnected;
-    static bool lastBt = false;
-    if (bt != lastBt) {
-        lastBt = bt;
+    if (bt != s_lastBt) {
+        s_lastBt = bt;
         lv_obj_set_hidden(status_bluetooth, !bt);
     }
     // WiFi
     bool wifi = status.wifiConnected;
-    static bool lastWifi = false;
-    if (wifi != lastWifi) {
-        lastWifi = wifi;
+    if (wifi != s_lastWifi) {
+        s_lastWifi = wifi;
         lv_obj_set_hidden(status_wifi, !wifi);
     }
     // Charging
     bool charging = status.stm32.chargingStatus;
-    static bool lastCharging = false;
-    if (charging != lastCharging) {
-        lastCharging = charging;
+    if (charging != s_lastCharging) {
+        s_lastCharging = charging;
         lv_obj_set_hidden(status_charging, !charging);
     }
     // Battery level
-    static uint8_t batteryPercent = 0;
     const int bat_hist = 2;
-    if (batteryPercent > status.batteryPct + bat_hist || batteryPercent < status.batteryPct - bat_hist) {
-        batteryPercent = status.batteryPct;
-        PickCorrectBatteryIcon(batteryPercent);
+    if (s_lastBatteryPct > status.batteryPct + bat_hist || s_lastBatteryPct < status.batteryPct - bat_hist) {
+        s_lastBatteryPct = status.batteryPct;
+        PickCorrectBatteryIcon(s_lastBatteryPct);
         lv_obj_invalidate(status_battery);
     }
 }
 
-// ── Drawer open/close animations ────────────────────────────────────────────
+// ── Drawer open/close ───────────────────────────────────────────────────────
 
 static void drawer_open_event_cb(lv_event_t * e) {
     if (quickSettingsPanelVisible) return;
+    if (s_drawer_overlay) return;
     lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_PRESSED) {
-        lv_anim_set_values(&anim_opening_template, LV_STATUS_BAR_HEIGHT, LV_STATUS_BAR_OPENED_HEIGHT);
-        lv_anim_set_completed_cb(&anim_opening_template, drawer_open_end_event_cb);
-        lv_async_call([](void *) {
-            lv_obj_add_flag(openButton, LV_OBJ_FLAG_HIDDEN);
-        }, NULL);
-        bar_opening_anim = lv_anim_start(&anim_opening_template);
-    }
+    if (code != LV_EVENT_PRESSED) return;
+
+    lv_obj_t * parent = lv_obj_get_parent(status_c);
+
+    // Create floating overlay on the parent screen
+    s_drawer_overlay = lv_obj_create(parent);
+    lv_obj_add_flag(s_drawer_overlay, LV_OBJ_FLAG_FLOATING);
+    lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(status_c));
+    lv_obj_add_style(s_drawer_overlay, &styleStatusBar, 0);
+    lv_obj_set_style_bg_opa(s_drawer_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(s_drawer_overlay, 0, 0);
+    lv_obj_set_style_radius(s_drawer_overlay, 0, 0);
+    lv_obj_remove_flag(s_drawer_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(s_drawer_overlay, LV_SCROLLBAR_MODE_OFF);
+
+    // Populate quick settings content (before measuring height)
+    lv_CreateStatusBarQuickSettings(s_drawer_overlay);
+
+    // Measure content height, cap at available space
+    lv_obj_set_height(s_drawer_overlay, LV_SIZE_CONTENT);
+    lv_obj_update_layout(parent);
+    int32_t content_h = lv_obj_get_height(s_drawer_overlay);
+    int32_t max_h = LV_DRAWER_MAX_HEIGHT;
+    int32_t target_h = content_h < max_h ? content_h : max_h;
+
+    // Set initial height to 0 for animation
+    lv_obj_set_height(s_drawer_overlay, 0);
+
+    // Position directly below the status bar (relative alignment)
+    lv_obj_align_to(s_drawer_overlay, status_c, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
+
+    // Ensure drawn on top of siblings
+    lv_obj_move_to_index(s_drawer_overlay, -1);
+
+    // Hide open button
+    lv_obj_add_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+
+    // Animate height from 0 to content height
+    lv_anim_init(&anim_drawer_template);
+    lv_anim_set_exec_cb(&anim_drawer_template, anim_y_cb);
+    lv_anim_set_var(&anim_drawer_template, s_drawer_overlay);
+    lv_anim_set_values(&anim_drawer_template, 0, target_h);
+    lv_anim_set_duration(&anim_drawer_template, 400);
+    lv_anim_set_path_cb(&anim_drawer_template, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&anim_drawer_template, drawer_open_end_cb);
+    lv_anim_start(&anim_drawer_template);
 }
 
-static void drawer_open_end_event_cb(lv_anim_t * a) {
-    lv_obj_set_height(status_c, LV_STATUS_BAR_OPENED_HEIGHT);
-    lv_anim_set_values(&anim_quick_opening_template, 0, LV_STATUS_BAR_OPENED_HEIGHT - LV_STATUS_BAR_HEIGHT - 2);
-    lv_anim_set_completed_cb(&anim_quick_opening_template, quick_opening_anim_end_cb);
-    quick_opening_anim = lv_anim_start(&anim_quick_opening_template);
-}
-
-static void quick_opening_anim_end_cb(lv_anim_t * a) {
+static void drawer_open_end_cb(lv_anim_t * a) {
     quickSettingsPanelVisible = true;
-    lv_obj_set_height(quickSettingsPanel, LV_STATUS_BAR_OPENED_HEIGHT - LV_STATUS_BAR_HEIGHT - 2);
-    lv_obj_remove_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
-    lv_timer_resume(t_ramUpdate);
-    lv_timer_ready(t_ramUpdate);
+    if (closeButton) {
+        lv_obj_remove_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (t_ramUpdate) {
+        lv_timer_resume(t_ramUpdate);
+        lv_timer_ready(t_ramUpdate);
+    }
 }
 
 static void drawer_close_event_cb(lv_event_t * e) {
     if (!quickSettingsPanelVisible) return;
     lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_PRESSED) {
-        lv_async_call([](void *) {
-            lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
-        }, NULL);
-        lv_anim_set_values(&anim_quick_opening_template, LV_STATUS_BAR_OPENED_HEIGHT - LV_STATUS_BAR_HEIGHT - 2, 0);
-        lv_anim_set_completed_cb(&anim_quick_opening_template, quick_closing_anim_end_cb);
-        quick_closing_anim = lv_anim_start(&anim_quick_opening_template);
+    if (code != LV_EVENT_PRESSED) return;
+
+    if (closeButton) {
+        lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
     }
+
+    int32_t current_h = s_drawer_overlay ? lv_obj_get_height(s_drawer_overlay) : 0;
+
+    lv_anim_init(&anim_drawer_template);
+    lv_anim_set_exec_cb(&anim_drawer_template, anim_y_cb);
+    lv_anim_set_var(&anim_drawer_template, s_drawer_overlay);
+    lv_anim_set_values(&anim_drawer_template, current_h, 0);
+    lv_anim_set_duration(&anim_drawer_template, 400);
+    lv_anim_set_path_cb(&anim_drawer_template, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&anim_drawer_template, drawer_close_end_cb);
+    lv_anim_start(&anim_drawer_template);
 }
 
-static void quick_closing_anim_end_cb(lv_anim_t * a) {
-    lv_obj_set_height(quickSettingsPanel, 0);
-    lv_anim_set_values(&anim_opening_template, LV_STATUS_BAR_OPENED_HEIGHT, LV_STATUS_BAR_HEIGHT + 2);
-    lv_anim_set_completed_cb(&anim_opening_template, drawer_close_end_event_cb);
-    bar_closing_anim = lv_anim_start(&anim_opening_template);
-}
-
-static void drawer_close_end_event_cb(lv_anim_t * a) {
+static void drawer_close_end_cb(lv_anim_t * a) {
     quickSettingsPanelVisible = false;
-    lv_obj_set_height(status_c, LV_STATUS_BAR_HEIGHT);
+    if (t_ramUpdate) {
+        lv_timer_delete(t_ramUpdate);
+        t_ramUpdate = NULL;
+    }
+    if (s_drawer_overlay) {
+        lv_obj_delete(s_drawer_overlay);
+        s_drawer_overlay = NULL;
+    }
+    closeButton = NULL;
     lv_obj_remove_flag(openButton, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ── Main creation ───────────────────────────────────────────────────────────
 
-lv_obj_t * lv_CreateStatusBar() {
-    fprintf(stderr, "DEBUG_MARKER_001\n");
-    fflush(stderr);
-    printf("[StatusBar] lv_CreateStatusBar() called\n");
-    fflush(stdout);
-
+lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     build_asset_paths();
 
-    lv_obj_t * overlayParent = crosspad_gui::getOverlayParent();
-    printf("[StatusBar] overlayParent=%p\n", overlayParent);
-    fflush(stdout);
-    if (!overlayParent) {
-        printf("[StatusBar] ERROR: overlayParent is NULL!\n");
-        fflush(stdout);
-        return nullptr;
-    }
-    printf("[StatusBar] parent size: %dx%d\n", lv_obj_get_width(overlayParent), lv_obj_get_height(overlayParent));
-    fflush(stdout);
-
-    lv_obj_t * cont = lv_obj_create(overlayParent);
-    printf("[StatusBar] cont=%p created\n", cont);
-    fflush(stdout);
-    lv_obj_set_width(cont, lv_obj_get_content_width(overlayParent));
-    lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT + 2);
+    lv_obj_t * cont = lv_obj_create(parent);
+    lv_obj_set_width(cont, LV_PCT(100));
+    lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT);
     lv_obj_add_style(cont, &styleStatusBar, 0);
     lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, 0);
-    // Don't set alignment - let flex layout position it
-    // lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_pad_all(cont, 0, 0);
+    lv_obj_set_style_radius(cont, 0, 0);
     lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    printf("[StatusBar] cont size: %dx%d\n", lv_obj_get_width(cont), lv_obj_get_height(cont));
-    fflush(stdout);
 
     // Status bar panel (icons row)
     statusBarPanel = lv_obj_create(cont);
-    lv_obj_update_layout(cont);
-    lv_obj_set_width(statusBarPanel, lv_obj_get_content_width(cont));
+    lv_obj_set_width(statusBarPanel, LV_PCT(100));
     lv_obj_set_height(statusBarPanel, LV_STATUS_BAR_HEIGHT);
     lv_obj_add_style(statusBarPanel, &styleStatusBar, 0);
-    lv_obj_set_style_border_width(statusBarPanel, 1, 0);
-    // lv_obj_align(statusBarPanel, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_pad_left(statusBarPanel, 4, 0);
+    lv_obj_set_style_pad_right(statusBarPanel, 4, 0);
     lv_CreateStatusBarTop(statusBarPanel);
-
-    // Quick settings panel
-    quickSettingsPanel = lv_obj_create(cont);
-    lv_obj_set_width(quickSettingsPanel, lv_obj_get_content_width(cont));
-    lv_obj_set_height(quickSettingsPanel, 0);
-    lv_obj_add_style(quickSettingsPanel, &styleStatusBar, 0);
-    // lv_obj_align(quickSettingsPanel, LV_ALIGN_TOP_MID, 0, LV_STATUS_BAR_HEIGHT);
-    lv_obj_set_style_border_width(quickSettingsPanel, 1, 0);
-    lv_CreateStatusBarQuickSettings(quickSettingsPanel);
 
     // Open button (drawer arrow)
     openButton = lv_button_create(statusBarPanel);
@@ -293,20 +423,12 @@ lv_obj_t * lv_CreateStatusBar() {
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_HIDDEN);
 #endif
 
-    // Setup animations
-    lv_anim_init(&anim_opening_template);
-    lv_anim_set_exec_cb(&anim_opening_template, anim_y_cb);
-    lv_anim_set_var(&anim_opening_template, cont);
-    lv_anim_set_duration(&anim_opening_template, 250);
-    lv_anim_set_path_cb(&anim_opening_template, lv_anim_path_ease_in_out);
-    lv_anim_set_completed_cb(&anim_opening_template, drawer_open_end_event_cb);
-
-    lv_anim_init(&anim_quick_opening_template);
-    lv_anim_set_exec_cb(&anim_quick_opening_template, anim_y_cb);
-    lv_anim_set_var(&anim_quick_opening_template, quickSettingsPanel);
-    lv_anim_set_duration(&anim_quick_opening_template, 500);
-    lv_anim_set_path_cb(&anim_quick_opening_template, lv_anim_path_ease_in_out);
-    lv_anim_set_completed_cb(&anim_quick_opening_template, quick_opening_anim_end_cb);
+    // Init RAM subjects once (reused across open/close cycles)
+    if (!s_ram_subjects_initialized) {
+        lv_subject_init_int(&s_ramUsage, 1);
+        lv_subject_init_int(&s_psRamUsage, 1);
+        s_ram_subjects_initialized = true;
+    }
 
     return cont;
 }
@@ -322,8 +444,6 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     status_logo = lv_image_create(cont);
     lv_image_set_src(status_logo, asset_logo);
     lv_obj_add_style(status_logo, &styleStatusBar, 0);
-    // Scale logo to fit status bar (22px height)
-    lv_obj_set_size(status_logo, 60, 18);
     lv_obj_center(status_logo);
     lv_obj_add_flag(status_logo, LV_OBJ_FLAG_IGNORE_LAYOUT);
 
@@ -364,6 +484,37 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_flex_grow(status_sd, 0);
     lv_obj_set_height(status_sd, LV_SIZE_CONTENT);
 
+    // App icon zone — left (after system icons, grows with content)
+    s_app_icon_zone_left = lv_obj_create(cont);
+    lv_obj_set_height(s_app_icon_zone_left, LV_PCT(100));
+    lv_obj_set_width(s_app_icon_zone_left, LV_SIZE_CONTENT);
+    lv_obj_set_layout(s_app_icon_zone_left, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(s_app_icon_zone_left, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_app_icon_zone_left, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_grow(s_app_icon_zone_left, 0);
+    lv_obj_set_style_pad_all(s_app_icon_zone_left, 0, 0);
+    lv_obj_set_style_pad_column(s_app_icon_zone_left, 3, 0);
+    lv_obj_set_style_bg_opa(s_app_icon_zone_left, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(s_app_icon_zone_left, 0, 0);
+    lv_obj_remove_flag(s_app_icon_zone_left, LV_OBJ_FLAG_SCROLLABLE);
+
+    // App icon zone — right (fills remaining space, icons align to end)
+    s_app_icon_zone_right = lv_obj_create(cont);
+    lv_obj_set_height(s_app_icon_zone_right, LV_PCT(100));
+    lv_obj_set_width(s_app_icon_zone_right, LV_SIZE_CONTENT);
+    lv_obj_set_layout(s_app_icon_zone_right, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(s_app_icon_zone_right, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_app_icon_zone_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_grow(s_app_icon_zone_right, 1);
+    lv_obj_set_style_pad_all(s_app_icon_zone_right, 0, 0);
+    lv_obj_set_style_pad_column(s_app_icon_zone_right, 3, 0);
+    lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);
+    lv_obj_remove_flag(s_app_icon_zone_right, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Clear all app icon slots
+    memset(s_app_icons, 0, sizeof(s_app_icons));
+
     // Loading arc
     status_loading_arc = lv_arc_create(cont);
     lv_subject_init_int(&s_loading, -1);
@@ -379,7 +530,17 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     extern lv_style_t styleLoadingArc;
     lv_obj_add_style(status_loading_arc, &styleLoadingArc, LV_PART_INDICATOR);
 
-    // Status check timer
+    // Status check timer — delete previous if status bar is being re-created
+    if (t_check_status) {
+        lv_timer_delete(t_check_status);
+        t_check_status = NULL;
+    }
+    // Reset cached values so icons are refreshed on first tick
+    s_lastSd = !status.stm32.sdDetected;
+    s_lastBt = !status.bluetoothConnected;
+    s_lastWifi = !status.wifiConnected;
+    s_lastCharging = !status.stm32.chargingStatus;
+    s_lastBatteryPct = 0;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);
     return cont;
 }
@@ -392,18 +553,12 @@ static void slider_event_cb(lv_event_t * e) {
     *setting = value;
 }
 
-static lv_subject_t s_ramUsage;
-static lv_subject_t s_psRamUsage;
-
 static void check_ram_timer_cb(lv_timer_t * timer) {
     crosspad_gui::HeapStats heap = crosspad_gui::getGuiPlatform().getHeapStats();
     uint8_t ram = heap.sram_total ? (uint8_t)((heap.sram_total - heap.sram_free) * 100 / heap.sram_total) : 0;
     uint8_t psRam = heap.psram_total ? (uint8_t)((heap.psram_total - heap.psram_free) * 100 / heap.psram_total) : 0;
     lv_subject_set_int(&s_ramUsage, ram);
     lv_subject_set_int(&s_psRamUsage, psRam);
-    if (!quickSettingsPanelVisible) {
-        lv_timer_pause(timer);
-    }
 }
 
 static lv_style_t style_main;
@@ -489,7 +644,7 @@ static void initSliderStyle() {
     lv_style_set_bg_opa(&style_indicator, LV_OPA_100);
 }
 
-static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
+static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_layout(cont, LV_LAYOUT_GRID);
     lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
     static int32_t column_dsc[] = {70, 190, 35, LV_GRID_TEMPLATE_LAST};
@@ -512,8 +667,6 @@ static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_style_bg_opa(footer, LV_OPA_0, 0);
     lv_obj_t * ram = lv_label_create(footer);
     lv_obj_t * psRam = lv_label_create(footer);
-    lv_subject_init_int(&s_ramUsage, 1);
-    lv_subject_init_int(&s_psRamUsage, 1);
     lv_label_bind_text(ram, &s_ramUsage, "Stack: %d%%");
     lv_label_bind_text(psRam, &s_psRamUsage, "PSRAM: %d%%");
     lv_obj_set_content_height(footer, 32);
@@ -522,7 +675,6 @@ static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_align(psRam, LV_ALIGN_CENTER, 57, 6);
 
     t_ramUpdate = lv_timer_create(check_ram_timer_cb, 1000, NULL);
-    lv_timer_ready(t_ramUpdate);
 
     // Close button
     closeButton = lv_button_create(cont);
@@ -536,5 +688,4 @@ static lv_obj_t * lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_ext_click_area(closeButton, 30);
     lv_obj_set_grid_cell(closeButton, LV_GRID_ALIGN_END, 2, 1, LV_GRID_ALIGN_END, 3, 1);
-    return cont;
 }

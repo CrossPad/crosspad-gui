@@ -32,9 +32,7 @@ MainScreenResult build_main_screen(
     }
 
     // ── Status bar ──────────────────────────────────────────────────────
-    lv_obj_t* fill_cont = lv_obj_create(parent);
-    lv_obj_set_size(fill_cont, lv_obj_get_content_width(parent), LV_STATUS_BAR_HEIGHT);
-    result.status_bar = lv_CreateStatusBar();
+    result.status_bar = lv_CreateStatusBar(parent);
 
     // ── App container ───────────────────────────────────────────────────
     lv_obj_t* app_c = lv_obj_create(parent);
