@@ -406,6 +406,8 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_add_style(statusBarPanel, &styleStatusBar, 0);
     lv_obj_set_style_pad_left(statusBarPanel, 4, 0);
     lv_obj_set_style_pad_right(statusBarPanel, 4, 0);
+    lv_obj_remove_flag(statusBarPanel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
     // Open button (drawer arrow)
@@ -414,7 +416,7 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_t * img_open = lv_image_create(openButton);
     lv_image_set_src(img_open, asset_drawer_down);
     lv_obj_center(img_open);
-    lv_obj_set_size(openButton, QUICK_BUTTON_SIZE * 1.5, QUICK_BUTTON_SIZE);
+    lv_obj_set_size(openButton, QUICK_BUTTON_SIZE * 1.5, LV_STATUS_BAR_HEIGHT);
     lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_set_ext_click_area(openButton, 8);
@@ -507,6 +509,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_flex_align(s_app_icon_zone_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_flex_grow(s_app_icon_zone_right, 1);
     lv_obj_set_style_pad_all(s_app_icon_zone_right, 0, 0);
+    lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
     lv_obj_set_style_pad_column(s_app_icon_zone_right, 3, 0);
     lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
     lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);
