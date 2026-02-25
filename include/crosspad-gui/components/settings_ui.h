@@ -45,6 +45,11 @@ lv_obj_t * settings_row_slider(lv_obj_t * parent, lv_group_t * group,
                                 uint8_t * setting,
                                 lv_event_cb_t extra_cb = nullptr);
 
+lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
+                                  const char * label, const char * options,
+                                  uint8_t * setting,
+                                  lv_event_cb_t extra_cb = nullptr);
+
 lv_obj_t * settings_row_info(lv_obj_t * parent, const char * label, const char * value);
 
 lv_obj_t * settings_row_action(lv_obj_t * parent, lv_group_t * group,

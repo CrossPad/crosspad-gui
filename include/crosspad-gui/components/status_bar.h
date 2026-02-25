@@ -75,6 +75,15 @@ void statusbar_set_icon_visible(const char * id, bool visible);
 // Remove all app icons. Intended for app teardown / return to launcher.
 void statusbar_clear_all_icons();
 
+// ── Performance Stats ────────────────────────────────────────────────────────
+
+// Set performance stats display flags (bitfield).
+// bit 0 = FPS column, bit 1 = CPU column, bit 2 = MEM column
+#define PERF_FLAG_FPS  (1 << 0)
+#define PERF_FLAG_CPU  (1 << 1)
+#define PERF_FLAG_MEM  (1 << 2)
+void statusbar_set_perf_level(uint8_t flags);
+
 } // namespace crosspad_gui
 
 // Create the status bar as a child of the given parent.

@@ -12,6 +12,15 @@ struct HeapStats {
     uint32_t psram_total;
 };
 
+struct PerfStats {
+    uint32_t fps;         // LVGL frames per second
+    uint32_t cpu0_pct;    // CPU core 0 usage 0-100
+    uint32_t cpu1_pct;    // CPU core 1 usage 0-100
+    uint32_t sram_pct;    // Internal SRAM usage 0-100
+    uint32_t psram_pct;   // PSRAM usage 0-100
+    uint32_t stm32_mps;   // STM32 messages per second
+};
+
 // GUI interaction event types for haptic/activity feedback
 enum class InteractionEvent : uint8_t {
     Pressed,
@@ -43,6 +52,10 @@ public:
     // Get the primary navigation encoder input device (for modal group switching).
     // Returns nullptr if no encoder is available on this platform.
     virtual lv_indev_t * getNavigationEncoder() { return nullptr; }
+
+    // Get performance statistics (FPS, CPU usage, memory, STM32 message rate).
+    // Default returns zeros — override on platforms that can provide real data.
+    virtual PerfStats getPerfStats() { return {}; }
 
     // Called when the user interacts with the touchscreen.
     // Platform can trigger haptic feedback, reset inactivity timers, etc.

@@ -35,5 +35,10 @@
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/platform/IFileSystem.h"
 
+// Virtual Device (software-rendered hardware controls)
+#include "crosspad-gui/virtual_device/VirtualPadGrid.h"
+#include "crosspad-gui/virtual_device/VirtualEncoder.h"
+#include "crosspad-gui/virtual_device/VirtualPowerButton.h"
+
 // Bootstrap
 #include "crosspad-gui/bootstrap.h"

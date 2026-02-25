@@ -9,9 +9,45 @@
 #include "crosspad_theme_user.h"
 #endif
 
-// ── Base defaults (green/white) ─────────────────────────────────────────────
+// ── Runtime theme color palette ─────────────────────────────────────────────
+
+#ifdef __cplusplus
+namespace crosspad_gui {
+
+struct ThemeColorEntry {
+    const char * name;
+    uint8_t r, g, b;
+};
+
+static constexpr ThemeColorEntry s_theme_palette[] = {
+    {"Neon Green",  0,   255, 136},
+    {"Yellow",      208, 240, 9  },
+    {"Cyan",        0,   255, 255},
+    {"Purple",      234, 0,   255},
+    {"Orange",      255, 140, 0  },
+    {"Pink",        255, 0,   136},
+    {"Blue",        0,   136, 255},
+    {"Red",         255, 50,  50 },
+};
+static constexpr int THEME_PALETTE_COUNT = sizeof(s_theme_palette) / sizeof(s_theme_palette[0]);
+
+// Default palette index — overridable from crosspad_theme_user.h
+#ifndef CROSSPAD_THEME_DEFAULT_INDEX
+#define CROSSPAD_THEME_DEFAULT_INDEX 0
+#endif
+
+lv_color_t getThemePrimary();
+int         getThemeColorCount();
+const char* getThemeColorName(int idx);
+
+} // namespace crosspad_gui
+#endif // __cplusplus
+
+// ── Primary theme color (runtime-selectable) ────────────────────────────────
+// If a project defines CROSSPAD_THEME_PRIMARY in crosspad_theme_user.h,
+// it stays as a static color. Otherwise, use the runtime palette.
 #ifndef CROSSPAD_THEME_PRIMARY
-#define CROSSPAD_THEME_PRIMARY     lv_color_make(0, 255, 136)      // Neon green
+#define CROSSPAD_THEME_PRIMARY     crosspad_gui::getThemePrimary()
 #endif
 
 #ifndef CROSSPAD_THEME_SECONDARY
