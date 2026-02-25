@@ -1,13 +1,7 @@
 #pragma once
 
 #include <cstdint>
-
-// Forward-declare LVGL input device type.
-// LVGL v9 defines it as: typedef struct _lv_indev_t lv_indev_t;
-// We must match that pattern or just use the typedef if already defined.
-#ifndef LV_VERSION_MAJOR
-typedef struct _lv_indev_t lv_indev_t;
-#endif
+#include "lvgl.h"
 
 namespace crosspad_gui {
 
