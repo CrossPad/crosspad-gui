@@ -60,10 +60,11 @@ static void show(int mode) {
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         } else {
             lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-            uint8_t v = settings->masterFX.outVolumeCodec[0][0];
+            uint8_t v = settings->masterFX.outVolumeCodec[1][1];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         }
+        if (s_group) lv_group_set_editing(s_group, true);
         reset_auto_hide();
         return;
     }
@@ -105,7 +106,7 @@ static void show(int mode) {
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     } else {
         lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-        uint8_t v = settings->masterFX.outVolumeCodec[0][0];
+        uint8_t v = settings->masterFX.outVolumeCodec[1][1];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     }
