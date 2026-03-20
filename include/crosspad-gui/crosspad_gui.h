@@ -16,7 +16,8 @@
 #include "crosspad-gui/widgets/spinbox_helpers.h"
 #include "crosspad-gui/widgets/settings_widgets.h"
 
-// App base class (CRTP)
+// App base class (CRTP) and non-template interface
+#include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/app/AppBase.hpp"
 
 // Components
@@ -30,6 +31,7 @@
 #include "crosspad-gui/components/file_explorer.h"
 #include "crosspad-gui/components/app_launcher.h"
 #include "crosspad-gui/components/app_lifecycle.h"
+#include "crosspad-gui/components/app_orchestrator.h"
 
 // Platform
 #include "crosspad-gui/platform/IGuiPlatform.h"
