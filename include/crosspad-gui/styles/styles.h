@@ -38,5 +38,6 @@ extern lv_style_t styleSettingsSection;
 
 void initStyles();
 void deinitStyles();
+void reinitStyles();
 
 #endif // USE_LVGL

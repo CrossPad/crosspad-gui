@@ -3,6 +3,7 @@
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
+#include "crosspad/settings/CrosspadSettings.hpp"
 
 /*      styles      */
 lv_style_t styleStatusBar;
@@ -282,6 +283,37 @@ void initStyles() {
     lv_style_set_pad_bottom(&styleSettingsSection, 2);
     lv_style_set_pad_left(&styleSettingsSection, 4);
 }
+
+void reinitStyles() {
+    deinitStyles();
+    initStyles();
+}
+
+// ── Runtime theme color ─────────────────────────────────────────────────────
+
+namespace crosspad_gui {
+
+lv_color_t getThemePrimary() {
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    uint8_t idx = (s && s->themeColorIndex < THEME_PALETTE_COUNT)
+                  ? s->themeColorIndex
+                  : CROSSPAD_THEME_DEFAULT_INDEX;
+    return lv_color_make(s_theme_palette[idx].r,
+                         s_theme_palette[idx].g,
+                         s_theme_palette[idx].b);
+}
+
+int getThemeColorCount() {
+    return THEME_PALETTE_COUNT;
+}
+
+const char* getThemeColorName(int idx) {
+    if (idx >= 0 && idx < THEME_PALETTE_COUNT)
+        return s_theme_palette[idx].name;
+    return "";
+}
+
+} // namespace crosspad_gui
 
 void deinitStyles() {
     lv_style_reset(&styleStatusBar);

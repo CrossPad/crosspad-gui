@@ -3,8 +3,7 @@
 #ifdef USE_LVGL
 
 #include "lvgl.h"
-#include "crosspad/app/IApp.hpp"
-#include "crosspad/app/AppFlags.hpp"
+#include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/components/app_lifecycle.h"
 
 namespace crosspad_gui {
@@ -31,7 +30,7 @@ namespace crosspad_gui {
  * @endcode
  */
 template<typename Derived>
-class AppBase : public crosspad::IApp {
+class AppBase : public ILvglApp {
 public:
     using AppFlags = crosspad::AppFlags;
     using CreateFn  = lv_obj_t* (*)(lv_obj_t* parent, Derived* a);
@@ -78,13 +77,13 @@ public:
 
     // ── Flag management ─────────────────────────────────────────────────
 
-    void AddFlag(AppFlags flag)    { type_ = type_ | flag; }
-    void RemoveFlag(AppFlags flag) { type_ = type_ & ~flag; }
-    bool HasFlag(AppFlags flag)    { return (type_ & flag) == flag; }
+    void AddFlag(AppFlags flag) override    { type_ = type_ | flag; }
+    void RemoveFlag(AppFlags flag)         { type_ = type_ & ~flag; }
+    bool HasFlag(AppFlags flag) override   { return (type_ & flag) == flag; }
 
     // ── LVGL lifecycle ──────────────────────────────────────────────────
 
-    void start(lv_obj_t* parent = lv_screen_active()) {
+    void start(lv_obj_t* parent = lv_screen_active()) override {
         if (started_) {
             LV_LOG_WARN("App already started");
             return;
@@ -115,7 +114,7 @@ public:
         LV_LOG_INFO("App started");
     }
 
-    void pause() {
+    void pause() override {
         if (app != nullptr && started_) {
             hide_(app);
             visible_ = false;
@@ -123,7 +122,7 @@ public:
         }
     }
 
-    void resume() {
+    void resume() override {
         if (app == nullptr) return;
         if (started_ && !visible_ && show_) {
             show_(app);
@@ -132,7 +131,7 @@ public:
         }
     }
 
-    void destroyApp() {
+    void destroyApp() override {
         if (app == nullptr) {
             LV_LOG_WARN("App doesn't exist");
             return;
@@ -173,11 +172,11 @@ public:
 
     // ── Getters ─────────────────────────────────────────────────────────
 
-    lv_obj_t* getAppContainer() { return app; }
-    const char* getIcon()       { return icon_; }
-    bool isVisible()            { return visible_; }
-    bool isStarted()            { return started_; }
-    bool isPaused()             { return !visible_; }
+    lv_obj_t* getAppContainer() override { return app; }
+    const char* getIcon() override      { return icon_; }
+    bool isVisible()                    { return visible_; }
+    bool isStarted() override           { return started_; }
+    bool isPaused()                     { return !visible_; }
 
 private:
     const char* name_;

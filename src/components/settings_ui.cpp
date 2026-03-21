@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/settings_ui.h"
+#include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
@@ -9,6 +10,7 @@
 #include "crosspad/pad/PadLedController.hpp"
 
 #include <cstdio>
+#include <cstring>
 
 using namespace crosspad;
 
@@ -424,6 +426,128 @@ lv_obj_t * settings_row_action(lv_obj_t * parent, lv_group_t * group,
     return row;
 }
 
+// ---- Dropdown row ----
+
+struct DropdownRowCtx {
+    uint8_t * setting;
+    lv_event_cb_t extra_cb;
+};
+
+static void dropdown_value_changed_cb(lv_event_t * e) {
+    DropdownRowCtx * ctx = (DropdownRowCtx *)lv_event_get_user_data(e);
+    lv_obj_t * dd = (lv_obj_t *)lv_event_get_target(e);
+    uint16_t sel = lv_dropdown_get_selected(dd);
+
+    *(ctx->setting) = (uint8_t)sel;
+    save_settings();
+
+    if (ctx->extra_cb) {
+        ctx->extra_cb(e);
+    }
+}
+
+lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
+                                  const char * label, const char * options,
+                                  uint8_t * setting,
+                                  lv_event_cb_t extra_cb) {
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_set_size(row, LV_PCT(100), 36);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_hor(row, 4, 0);
+    lv_obj_set_style_pad_ver(row, 2, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * lbl = lv_label_create(row);
+    lv_label_set_text(lbl, label);
+    lv_obj_set_flex_grow(lbl, 1);
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+
+    lv_obj_t * dd = lv_dropdown_create(row);
+    lv_dropdown_set_options(dd, options);
+    if (setting) lv_dropdown_set_selected(dd, *setting);
+    lv_obj_set_width(dd, 90);
+    lv_obj_set_style_text_font(dd, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(dd, &lv_font_montserrat_14, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_ver(dd, 4, 0);
+    lv_obj_set_style_bg_color(dd, lv_color_make(60, 60, 60), 0);
+    lv_obj_set_style_text_color(dd, lv_color_white(), 0);
+    lv_obj_set_style_border_color(dd, lv_color_make(80, 80, 80), 0);
+    lv_obj_set_style_outline_width(dd, 2, LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_color(dd, CROSSPAD_THEME_PRIMARY, LV_STATE_FOCUSED);
+
+    // Style the dropdown list
+    lv_obj_t * list = lv_dropdown_get_list(dd);
+    if (list) {
+        lv_obj_set_style_text_font(list, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_bg_color(list, lv_color_make(40, 40, 40), 0);
+        lv_obj_set_style_text_color(list, lv_color_white(), 0);
+        lv_obj_set_style_bg_color(list, CROSSPAD_THEME_PRIMARY, LV_PART_SELECTED | LV_STATE_CHECKED);
+    }
+
+    DropdownRowCtx * ctx = new DropdownRowCtx{setting, extra_cb};
+    lv_obj_add_event_cb(dd, dropdown_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+
+    if (group) lv_group_add_obj(group, dd);
+
+    return row;
+}
+
+// ---- Bit-switch row (toggle a single bit in a uint8_t bitfield) ----
+
+struct BitSwitchRowCtx {
+    uint8_t * flags;
+    uint8_t bit;
+    lv_event_cb_t extra_cb;
+};
+
+static void bitswitch_value_changed_cb(lv_event_t * e) {
+    BitSwitchRowCtx * ctx = (BitSwitchRowCtx *)lv_event_get_user_data(e);
+    lv_obj_t * sw = (lv_obj_t *)lv_event_get_target(e);
+    bool checked = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (checked) *(ctx->flags) |= ctx->bit;
+    else         *(ctx->flags) &= ~ctx->bit;
+
+    save_settings();
+
+    if (ctx->extra_cb) ctx->extra_cb(e);
+}
+
+static lv_obj_t * settings_row_bitswitch(lv_obj_t * parent, lv_group_t * group,
+                                          const char * label, uint8_t * flags, uint8_t bit,
+                                          lv_event_cb_t extra_cb = nullptr) {
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_set_size(row, LV_PCT(100), 32);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_hor(row, 4, 0);
+    lv_obj_set_style_pad_ver(row, 2, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * lbl = lv_label_create(row);
+    lv_label_set_text(lbl, label);
+    lv_obj_set_flex_grow(lbl, 1);
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+
+    lv_obj_t * sw = lv_switch_create(row);
+    if (flags && (*flags & bit)) {
+        lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
+
+    BitSwitchRowCtx * ctx = new BitSwitchRowCtx{flags, bit, extra_cb};
+    lv_obj_add_event_cb(sw, bitswitch_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+
+    if (group) lv_group_add_obj(group, sw);
+    return row;
+}
+
 // ===================================================================
 // Built-in category builders
 // ===================================================================
@@ -434,14 +558,40 @@ static CrosspadSettings* get_settings() {
 
 // ---- Display ----
 
+static void theme_color_changed_cb(lv_event_t * e) {
+    (void)e;
+    reinitStyles();
+    // Rebuild the display settings page to reflect new color
+    show_detail(0);
+}
+
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
 
     settings_row_slider(parent, group, "Brightness", 0, 127,
                         &s->LCDbrightness);
 
-    settings_row_switch(parent, group, "Auto Brightness",
-                        &s->LCDAutoBrightness);
+    // Build theme color options string from palette
+    static char theme_options[256];
+    theme_options[0] = '\0';
+    int count = crosspad_gui::getThemeColorCount();
+    for (int i = 0; i < count; i++) {
+        if (i > 0) strcat(theme_options, "\n");
+        strcat(theme_options, crosspad_gui::getThemeColorName(i));
+    }
+
+    settings_row_dropdown(parent, group, "Theme Color",
+                          theme_options,
+                          &s->themeColorIndex,
+                          theme_color_changed_cb);
+
+    settings_section_header(parent, "Perf Stats");
+    settings_row_bitswitch(parent, group, "FPS", &s->perfStatsFlags, PERF_FLAG_FPS,
+                           [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
+    settings_row_bitswitch(parent, group, "CPU", &s->perfStatsFlags, PERF_FLAG_CPU,
+                           [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
+    settings_row_bitswitch(parent, group, "Memory", &s->perfStatsFlags, PERF_FLAG_MEM,
+                           [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
 }
 
 // ---- Audio ----
@@ -688,7 +838,7 @@ static void factory_reset_cb(lv_event_t * e) {
     s->masterFX = crosspad::AudioSettings();
     s->previewAudio = crosspad::AudioSettings();
     s->LCDbrightness = 100;
-    s->LCDAutoBrightness = true;
+    s->themeColorIndex = CROSSPAD_THEME_DEFAULT_INDEX;
     s->RGBbrightness = 100;
     s->AudioEngineEnabled = true;
     s->Kit = 0;

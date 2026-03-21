@@ -7,6 +7,14 @@
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
 
+#if LV_USE_PERF_MONITOR && LV_VERSION_CHECK(9,4,0)
+#include "debugging/sysmon/lv_sysmon.h"
+#elif LV_USE_PERF_MONITOR
+#include "others/sysmon/lv_sysmon.h" 
+#else
+#pragma message("Performance monitor is disabled. Enable LV_USE_PERF_MONITOR in lv_conf.h to show FPS/CPU/MEM stats in the status bar.")
+#endif
+
 #include <cstring>
 
 using namespace crosspad;
@@ -44,6 +52,12 @@ static lv_obj_t * status_wifi;
 static lv_obj_t * status_bluetooth;
 static lv_obj_t * status_sd;
 static lv_obj_t * status_loading_arc;
+// perf stats: 3 independent vertical columns
+static lv_obj_t * s_perf_fps_col = NULL;   // FPS column
+static lv_obj_t * s_perf_cpu_col = NULL;   // CPU column
+static lv_obj_t * s_perf_mem_col = NULL;   // MEM column
+static lv_timer_t * t_perf_stats = NULL;
+static uint8_t s_perf_flags = 0; // bitfield: bit0=FPS, bit1=CPU, bit2=MEM
 
 // dynamic app icon slots
 struct StatusBarAppIcon {
@@ -240,6 +254,64 @@ static void PickCorrectBatteryIcon(uint8_t batteryPercent) {
     else if (batteryPercent < 70) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_3);
     else lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_FULL);
 }
+
+// ── Perf stats ──────────────────────────────────────────────────────────────
+
+static void perf_stats_timer_cb(lv_timer_t * timer) {
+    if (s_perf_flags == 0) return;
+
+    crosspad_gui::PerfStats ps = crosspad_gui::getGuiPlatform().getPerfStats();
+
+    if (s_perf_fps_col && (s_perf_flags & PERF_FLAG_FPS)) {
+        lv_label_set_text_fmt(s_perf_fps_col,
+            "fps\n%" LV_PRIu32, ps.fps);
+    }
+    if (s_perf_cpu_col && (s_perf_flags & PERF_FLAG_CPU)) {
+        lv_label_set_text_fmt(s_perf_cpu_col,
+            "%02" LV_PRIu32 "%%\n%02" LV_PRIu32 "%%",
+            ps.cpu0_pct, ps.cpu1_pct);
+    }
+    if (s_perf_mem_col && (s_perf_flags & PERF_FLAG_MEM)) {
+        lv_label_set_text_fmt(s_perf_mem_col,
+            "S%" LV_PRIu32 "\nP%" LV_PRIu32,
+            ps.sram_pct, ps.psram_pct);
+    }
+}
+
+static void apply_perf_column_visibility() {
+    if (s_perf_fps_col) {
+        if (s_perf_flags & PERF_FLAG_FPS) lv_obj_remove_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_perf_cpu_col) {
+        if (s_perf_flags & PERF_FLAG_CPU) lv_obj_remove_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_perf_mem_col) {
+        if (s_perf_flags & PERF_FLAG_MEM) lv_obj_remove_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (s_perf_flags && t_perf_stats) {
+        lv_timer_resume(t_perf_stats);
+        lv_timer_ready(t_perf_stats);
+    } else if (!s_perf_flags && t_perf_stats) {
+        lv_timer_pause(t_perf_stats);
+    }
+
+#if LV_USE_SYSMON && LV_USE_PERF_MONITOR
+    lv_sysmon_hide_performance(NULL);
+#endif
+}
+
+namespace crosspad_gui {
+
+void statusbar_set_perf_level(uint8_t flags) {
+    s_perf_flags = flags;
+    apply_perf_column_visibility();
+}
+
+} // namespace crosspad_gui
 
 // ── Status check timer ──────────────────────────────────────────────────────
 
@@ -532,6 +604,32 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_align_to(status_loading_arc, status_logo, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
     extern lv_style_t styleLoadingArc;
     lv_obj_add_style(status_loading_arc, &styleLoadingArc, LV_PART_INDICATOR);
+
+    // Performance stats: 3 vertical columns in right icon zone
+    // Each column is a label with 2 lines, narrow and tall
+    auto make_perf_col = [](lv_obj_t * parent) -> lv_obj_t * {
+        lv_obj_t * lbl = lv_label_create(parent);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_color(lbl, lv_color_black(), 0);
+        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_line_space(lbl, -2, 0);
+        lv_label_set_text(lbl, "");
+        return lbl;
+    };
+    s_perf_fps_col = make_perf_col(s_app_icon_zone_right);
+    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right);
+    s_perf_mem_col = make_perf_col(s_app_icon_zone_right);
+
+    // Perf stats timer (500ms update)
+    if (t_perf_stats) {
+        lv_timer_delete(t_perf_stats);
+        t_perf_stats = NULL;
+    }
+    t_perf_stats = lv_timer_create(perf_stats_timer_cb, 500, NULL);
+
+    // Apply initial flags from settings
+    uint8_t perf_flags = settings ? settings->perfStatsFlags : 0;
+    crosspad_gui::statusbar_set_perf_level(perf_flags);
 
     // Status check timer — delete previous if status bar is being re-created
     if (t_check_status) {
