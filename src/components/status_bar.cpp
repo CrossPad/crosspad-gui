@@ -610,7 +610,11 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     auto make_perf_col = [](lv_obj_t * parent) -> lv_obj_t * {
         lv_obj_t * lbl = lv_label_create(parent);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
-        lv_obj_set_style_text_color(lbl, lv_color_black(), 0);
+        // Use contrasting color against theme primary (status bar background)
+        lv_color_t primary = CROSSPAD_THEME_PRIMARY;
+        lv_color_t text_color = lv_color_brightness(primary) > 127
+                                ? lv_color_black() : lv_color_white();
+        lv_obj_set_style_text_color(lbl, text_color, 0);
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_line_space(lbl, -2, 0);
         lv_label_set_text(lbl, "");
