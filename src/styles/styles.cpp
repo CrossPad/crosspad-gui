@@ -295,9 +295,13 @@ namespace crosspad_gui {
 
 lv_color_t getThemePrimary() {
     auto* s = crosspad::CrosspadSettings::getInstance();
-    uint8_t idx = (s && s->themeColorIndex < THEME_PALETTE_COUNT)
-                  ? s->themeColorIndex
-                  : CROSSPAD_THEME_DEFAULT_INDEX;
+    uint8_t idx;
+    if (s && s->themeColorIndex < THEME_PALETTE_COUNT) {
+        idx = s->themeColorIndex;
+    } else {
+        idx = CROSSPAD_THEME_DEFAULT_INDEX < THEME_PALETTE_COUNT
+              ? CROSSPAD_THEME_DEFAULT_INDEX : 0;
+    }
     return lv_color_make(s_theme_palette[idx].r,
                          s_theme_palette[idx].g,
                          s_theme_palette[idx].b);

@@ -571,13 +571,19 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     settings_row_slider(parent, group, "Brightness", 0, 127,
                         &s->LCDbrightness);
 
-    // Build theme color options string from palette
+    // Build theme color options string from palette (bounded to prevent overflow)
     static char theme_options[256];
     theme_options[0] = '\0';
     int count = crosspad_gui::getThemeColorCount();
     for (int i = 0; i < count; i++) {
-        if (i > 0) strcat(theme_options, "\n");
-        strcat(theme_options, crosspad_gui::getThemeColorName(i));
+        const char* name = crosspad_gui::getThemeColorName(i);
+        if (!name) continue;
+        size_t len = strlen(theme_options);
+        size_t nameLen = strlen(name);
+        size_t needed = (i > 0 ? 1 : 0) + nameLen; // separator + name
+        if (len + needed >= sizeof(theme_options)) break;
+        if (i > 0) theme_options[len++] = '\n';
+        memcpy(theme_options + len, name, nameLen + 1);
     }
 
     settings_row_dropdown(parent, group, "Theme Color",
@@ -839,6 +845,7 @@ static void factory_reset_cb(lv_event_t * e) {
     s->previewAudio = crosspad::AudioSettings();
     s->LCDbrightness = 100;
     s->themeColorIndex = CROSSPAD_THEME_DEFAULT_INDEX;
+    s->perfStatsFlags = 0;
     s->RGBbrightness = 100;
     s->AudioEngineEnabled = true;
     s->Kit = 0;

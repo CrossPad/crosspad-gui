@@ -16,6 +16,15 @@ void AppOrchestrator::init(const OrchestratorConfig& config) {
 }
 
 void AppOrchestrator::populateApps(lv_obj_t* container) {
+    // Clean up previously created apps to avoid memory leaks
+    for (auto* app : apps_) {
+        if (!app) continue;
+        if (app == runningApp_) {
+            if (app->isStarted()) app->destroyApp();
+            runningApp_ = nullptr;
+        }
+        delete app;
+    }
     apps_.clear();
     infos_.clear();
 
