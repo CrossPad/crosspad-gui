@@ -25,8 +25,8 @@ namespace crosspad_gui {
  * public:
  *     using AppBase::AppBase;          // inherit constructors
  *     Sequencer& sequencer();          // platform-specific accessor
- *     crosspad::PadManager& padManager();
  * };
+ * // Use crosspad::getPadManager() etc. directly from PlatformServices.
  * @endcode
  */
 template<typename Derived>
@@ -191,6 +191,16 @@ private:
     HideFn    hide_     = lv_Default_onHide;
     LogicFn   appLogic_ = nullptr;
 };
+
+/// Default app factory — eliminates per-platform boilerplate.
+/// Usage: `config.app_factory = crosspad_gui::defaultAppFactory<App>;`
+template<typename AppType>
+ILvglApp* defaultAppFactory(
+    lv_obj_t* container, const char* name, const char* icon,
+    lv_obj_t* (*create)(lv_obj_t*, AppType*),
+    void (*destroy)(lv_obj_t*)) {
+    return new AppType(container, name, icon, create, destroy);
+}
 
 } // namespace crosspad_gui
 
