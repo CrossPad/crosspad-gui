@@ -114,7 +114,7 @@ static void renderLine(lv_obj_t* parent, const ParsedLine& line)
             break;
         case LineType::H2:
             lv_label_set_text(lbl, line.text.c_str());
-            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
             lv_obj_set_style_text_color(lbl, COLOR_H2, 0);
             break;
         case LineType::BULLET: {
