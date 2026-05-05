@@ -23,6 +23,28 @@ struct PopupCtx {
     launcher_close_popup_cb_t on_close;
 };
 
+// Encoder group state for the active power off dialog
+static lv_group_t* s_powerOffGroup = nullptr;
+static lv_group_t* s_powerOffPrevGroup = nullptr;
+
+static void RestorePowerOffEncoder() {
+    lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
+    if (nav && s_powerOffPrevGroup) {
+        lv_indev_set_group(nav, s_powerOffPrevGroup);
+    }
+    if (s_powerOffGroup) {
+        lv_group_delete(s_powerOffGroup);
+        s_powerOffGroup = nullptr;
+    }
+    s_powerOffPrevGroup = nullptr;
+}
+
+static void ClosePowerOffMsgboxEvent(lv_event_t* e) {
+    if (lv_event_get_code(e) == LV_EVENT_DELETE) {
+        RestorePowerOffEncoder();
+    }
+}
+
 static void ClosePopUpApp(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 
@@ -79,6 +101,19 @@ lv_obj_t* launcher_create_power_off_dialog(
     auto* ctx = new PopupCtx{app_ptr, on_close};
     lv_obj_add_event_cb(no, ClosePopUpApp, LV_EVENT_CLICKED, ctx);
     lv_obj_add_event_cb(closeBtn, ClosePopUpApp, LV_EVENT_CLICKED, ctx);
+
+    // Route encoder to msgbox buttons; restore previous group on delete
+    lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
+    if (nav) {
+        s_powerOffPrevGroup = lv_indev_get_group(nav);
+        s_powerOffGroup = lv_group_create();
+        lv_group_add_obj(s_powerOffGroup, no);
+        lv_group_add_obj(s_powerOffGroup, yes);
+        lv_group_add_obj(s_powerOffGroup, closeBtn);
+        lv_group_focus_obj(no);
+        lv_indev_set_group(nav, s_powerOffGroup);
+        lv_obj_add_event_cb(msgbox, ClosePowerOffMsgboxEvent, LV_EVENT_DELETE, nullptr);
+    }
 
     return msgbox;
 }

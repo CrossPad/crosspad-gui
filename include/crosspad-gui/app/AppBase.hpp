@@ -5,6 +5,7 @@
 #include "lvgl.h"
 #include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/components/app_lifecycle.h"
+#include <memory>
 
 namespace crosspad_gui {
 
@@ -194,12 +195,17 @@ private:
 
 /// Default app factory — eliminates per-platform boilerplate.
 /// Usage: `config.app_factory = crosspad_gui::defaultAppFactory<App>;`
+///
+/// Returns a std::shared_ptr so that AppType (which derives from
+/// std::enable_shared_from_this) can call shared_from_this() at runtime
+/// (required by destroyAppAsync()). Constructing via raw `new` would leave
+/// the internal weak_ptr unset and break shared_from_this().
 template<typename AppType>
-ILvglApp* defaultAppFactory(
+std::shared_ptr<ILvglApp> defaultAppFactory(
     lv_obj_t* container, const char* name, const char* icon,
     lv_obj_t* (*create)(lv_obj_t*, AppType*),
     void (*destroy)(lv_obj_t*)) {
-    return new AppType(container, name, icon, create, destroy);
+    return std::make_shared<AppType>(container, name, icon, create, destroy);
 }
 
 } // namespace crosspad_gui

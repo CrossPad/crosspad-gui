@@ -17,6 +17,7 @@
 #include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/components/main_screen.h"
 #include "crosspad/app/AppEntry.hpp"
+#include <memory>
 #include <vector>
 
 namespace crosspad_gui {
@@ -33,7 +34,11 @@ using IconResolverFn = const char* (*)(size_t index, const char* icon);
 
 /// Factory that creates a platform-specific App (which inherits ILvglApp)
 /// from an AppEntry.  Called once per registered LVGL app during populateApps().
-using AppFactoryFn = ILvglApp* (*)(lv_obj_t* container,
+///
+/// Must return a std::shared_ptr so that App (which uses
+/// std::enable_shared_from_this) can call shared_from_this() at runtime —
+/// required by App::destroyAppAsync(). Use crosspad_gui::defaultAppFactory<App>.
+using AppFactoryFn = std::shared_ptr<ILvglApp> (*)(lv_obj_t* container,
                                     const char* name,
                                     const char* icon,
                                     lv_obj_t* (*createLVGL)(lv_obj_t*, App*),
@@ -78,7 +83,7 @@ public:
     ILvglApp* getRunningApp() const { return runningApp_; }
     void setRunningApp(ILvglApp* app) { runningApp_ = app; }
 
-    const std::vector<ILvglApp*>& getApps() const { return apps_; }
+    const std::vector<std::shared_ptr<ILvglApp>>& getApps() const { return apps_; }
     const std::vector<LauncherAppInfo>& getAppInfos() const { return infos_; }
 
 private:
@@ -87,8 +92,8 @@ private:
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
 
-    std::vector<ILvglApp*>      apps_;   ///< Owned App objects (ILvglApp*)
-    std::vector<LauncherAppInfo> infos_;  ///< Parallel launcher descriptors
+    std::vector<std::shared_ptr<ILvglApp>> apps_;   ///< Owned App objects
+    std::vector<LauncherAppInfo>           infos_;  ///< Parallel launcher descriptors
 };
 
 } // namespace crosspad_gui

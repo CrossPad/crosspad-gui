@@ -16,16 +16,15 @@ void AppOrchestrator::init(const OrchestratorConfig& config) {
 }
 
 void AppOrchestrator::populateApps(lv_obj_t* container) {
-    // Clean up previously created apps to avoid memory leaks
-    for (auto* app : apps_) {
+    // Tear down currently running app before releasing owners
+    for (auto& app : apps_) {
         if (!app) continue;
-        if (app == runningApp_) {
+        if (app.get() == runningApp_) {
             if (app->isStarted()) app->destroyApp();
             runningApp_ = nullptr;
         }
-        delete app;
     }
-    apps_.clear();
+    apps_.clear();   // shared_ptr destructors release memory
     infos_.clear();
 
     if (!config_.app_factory) {
@@ -47,7 +46,7 @@ void AppOrchestrator::populateApps(lv_obj_t* container) {
             icon = config_.icon_resolver(apps_.size(), entry.icon);
         }
 
-        ILvglApp* app = config_.app_factory(
+        std::shared_ptr<ILvglApp> app = config_.app_factory(
             container, entry.name, icon,
             entry.createLVGL, entry.destroyLVGL);
         if (!app) continue;
@@ -57,8 +56,9 @@ void AppOrchestrator::populateApps(lv_obj_t* container) {
             app->AddFlag(crosspad::APP_FLAG_MSGBOX);
         }
 
-        apps_.push_back(app);
-        infos_.push_back({app->getName(), app->getIcon(), app});
+        ILvglApp* raw = app.get();
+        apps_.push_back(std::move(app));
+        infos_.push_back({raw->getName(), raw->getIcon(), raw});
     }
 
     LV_LOG_INFO("AppOrchestrator: populated %d apps", (int)apps_.size());
