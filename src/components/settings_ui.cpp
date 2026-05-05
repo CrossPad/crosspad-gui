@@ -254,6 +254,10 @@ static void switch_value_changed_cb(lv_event_t * e) {
     }
 }
 
+static void switch_row_delete_cb(lv_event_t * e) {
+    delete (SwitchRowCtx *)lv_event_get_user_data(e);
+}
+
 lv_obj_t * settings_row_switch(lv_obj_t * parent, lv_group_t * group,
                                 const char * label, bool * setting,
                                 lv_event_cb_t extra_cb) {
@@ -280,6 +284,7 @@ lv_obj_t * settings_row_switch(lv_obj_t * parent, lv_group_t * group,
 
     SwitchRowCtx * ctx = new SwitchRowCtx{setting, extra_cb};
     lv_obj_add_event_cb(sw, switch_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(sw, switch_row_delete_cb, LV_EVENT_DELETE, ctx);
 
     if (group) lv_group_add_obj(group, sw);
 
@@ -310,6 +315,10 @@ static void slider_value_changed_cb(lv_event_t * e) {
     if (ctx->extra_cb) {
         ctx->extra_cb(e);
     }
+}
+
+static void slider_row_delete_cb(lv_event_t * e) {
+    delete (SliderRowCtx *)lv_event_get_user_data(e);
 }
 
 lv_obj_t * settings_row_slider(lv_obj_t * parent, lv_group_t * group,
@@ -348,6 +357,7 @@ lv_obj_t * settings_row_slider(lv_obj_t * parent, lv_group_t * group,
 
     SliderRowCtx * ctx = new SliderRowCtx{setting, extra_cb, val_lbl};
     lv_obj_add_event_cb(slider, slider_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(slider, slider_row_delete_cb, LV_EVENT_DELETE, ctx);
 
     if (group) lv_group_add_obj(group, slider);
 
@@ -446,6 +456,10 @@ static void dropdown_value_changed_cb(lv_event_t * e) {
     }
 }
 
+static void dropdown_row_delete_cb(lv_event_t * e) {
+    delete (DropdownRowCtx *)lv_event_get_user_data(e);
+}
+
 lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
                                   const char * label, const char * options,
                                   uint8_t * setting,
@@ -490,6 +504,7 @@ lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
 
     DropdownRowCtx * ctx = new DropdownRowCtx{setting, extra_cb};
     lv_obj_add_event_cb(dd, dropdown_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(dd, dropdown_row_delete_cb, LV_EVENT_DELETE, ctx);
 
     if (group) lv_group_add_obj(group, dd);
 
@@ -515,6 +530,10 @@ static void bitswitch_value_changed_cb(lv_event_t * e) {
     save_settings();
 
     if (ctx->extra_cb) ctx->extra_cb(e);
+}
+
+static void bitswitch_row_delete_cb(lv_event_t * e) {
+    delete (BitSwitchRowCtx *)lv_event_get_user_data(e);
 }
 
 static lv_obj_t * settings_row_bitswitch(lv_obj_t * parent, lv_group_t * group,
@@ -543,6 +562,7 @@ static lv_obj_t * settings_row_bitswitch(lv_obj_t * parent, lv_group_t * group,
 
     BitSwitchRowCtx * ctx = new BitSwitchRowCtx{flags, bit, extra_cb};
     lv_obj_add_event_cb(sw, bitswitch_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(sw, bitswitch_row_delete_cb, LV_EVENT_DELETE, ctx);
 
     if (group) lv_group_add_obj(group, sw);
     return row;
@@ -561,12 +581,12 @@ static CrosspadSettings* get_settings() {
 static void theme_color_changed_cb(lv_event_t * e) {
     (void)e;
     reinitStyles();
-    // Rebuild the display settings page to reflect new color
-    show_detail(0);
+    show_detail(s_current_category);
 }
 
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_row_slider(parent, group, "Brightness", 0, 127,
                         &s->LCDbrightness);
@@ -604,6 +624,7 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
 
 static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_row_switch(parent, group, "Audio Engine",
                         &s->AudioEngineEnabled);
@@ -644,6 +665,7 @@ static void rgb_brightness_hw_cb(lv_event_t * e) {
 
 static void cat_build_pads(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_row_slider(parent, group, "RGB Brightness", 0, 255,
                         &s->RGBbrightness, rgb_brightness_hw_cb);
@@ -679,6 +701,7 @@ static void vibration_enable_cb(lv_event_t * e) {
 
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_row_switch(parent, group, "Vibration Enable",
                         &s->vibration.enable, vibration_enable_cb);
@@ -729,6 +752,7 @@ static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group) {
 
 static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_row_switch(parent, group, "WiFi",
                         &s->wireless.enableWiFi);
@@ -756,6 +780,7 @@ static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group) {
 
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
+    if (!s) return;
 
     settings_section_header(parent, "Keypad Routing");
 
@@ -835,6 +860,7 @@ static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
 static void factory_reset_cb(lv_event_t * e) {
     (void)e;
     auto * s = CrosspadSettings::getInstance();
+    if (!s) return;
     // Reset to defaults by constructing fresh sub-structs
     s->keypad = crosspad::KeypadSettings();
     s->stmRouting = crosspad::STMRoutingSettings();
