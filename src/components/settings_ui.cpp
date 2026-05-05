@@ -631,12 +631,60 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
 
 // ---- Audio ----
 
+// Audio engine dropdown index storage. Initialized from current settings on
+// each panel build. extra_cb writes the resolved kSampleRates[]/kFrameCounts[]
+// value back into audioEngine on change. Restart required to take effect.
+static uint8_t s_audioEngineSrIdx  = 1;
+static uint8_t s_audioEngineFcIdx  = 2;
+
+static void audio_engine_sr_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (!s) return;
+    if (s_audioEngineSrIdx < AudioEngineSettings::kSampleRatesCount) {
+        s->audioEngine.sampleRate = AudioEngineSettings::kSampleRates[s_audioEngineSrIdx];
+    }
+}
+
+static void audio_engine_fc_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (!s) return;
+    if (s_audioEngineFcIdx < AudioEngineSettings::kFrameCountsCount) {
+        s->audioEngine.frameCount = AudioEngineSettings::kFrameCounts[s_audioEngineFcIdx];
+    }
+}
+
 static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
 
     settings_row_switch(parent, group, "Audio Engine",
                         &s->AudioEngineEnabled);
+
+    settings_section_header(parent, "Engine (restart required)");
+
+    s_audioEngineSrIdx = 1;
+    for (uint8_t i = 0; i < AudioEngineSettings::kSampleRatesCount; ++i) {
+        if (AudioEngineSettings::kSampleRates[i] == s->audioEngine.sampleRate) {
+            s_audioEngineSrIdx = i; break;
+        }
+    }
+    settings_row_dropdown(parent, group, "Sample Rate",
+                          "44100\n48000\n96000",
+                          &s_audioEngineSrIdx, audio_engine_sr_cb);
+
+    s_audioEngineFcIdx = 2;
+    for (uint8_t i = 0; i < AudioEngineSettings::kFrameCountsCount; ++i) {
+        if (AudioEngineSettings::kFrameCounts[i] == s->audioEngine.frameCount) {
+            s_audioEngineFcIdx = i; break;
+        }
+    }
+    settings_row_dropdown(parent, group, "Frame Count",
+                          "32\n48\n64\n128\n256\n512",
+                          &s_audioEngineFcIdx, audio_engine_fc_cb);
+
+    settings_section_header(parent, "Master");
 
     settings_row_switch(parent, group, "Master Mute",
                         &s->masterFX.mute);
