@@ -60,6 +60,17 @@ public:
     // Called when the user interacts with the touchscreen.
     // Platform can trigger haptic feedback, reset inactivity timers, etc.
     virtual void onUserInteraction(InteractionEvent /*event*/) {}
+
+    // Apply LCD backlight brightness (0..100). Default no-op for platforms
+    // without backlight control.
+    virtual void setLcdBrightness(uint8_t /*pct*/) {}
+
+    // Apply speaker codec output volume (0..100 codec range; callers may pass
+    // 0..127 — implementation should clamp).
+    virtual void setSpeakerVolume(uint8_t /*volume*/) {}
+
+    // Apply headphone codec output volume (0..100 codec range; same caveat).
+    virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 };
 
 // Set the platform implementation (call once at startup)

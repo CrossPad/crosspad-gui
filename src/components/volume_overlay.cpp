@@ -4,6 +4,7 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
+#include "crosspad/settings/ISettingsUI.hpp"
 
 extern crosspad::CrosspadSettings * settings;
 
@@ -41,6 +42,21 @@ static void slider_cb(lv_event_t * e) {
     lv_obj_t * slider = (lv_obj_t *)lv_event_get_target(e);
     uint8_t val = (uint8_t)lv_slider_get_value(slider);
 
+    // Persist into settings (per-codec, OUT1 = speakers/headphones).
+    if (settings) {
+        if (s_mode == 1) {
+            settings->masterFX.outVolumeCodec[0][0] = val;
+        } else if (s_mode == 2) {
+            settings->masterFX.outVolumeCodec[1][0] = val;
+        }
+    }
+
+    // Hardware apply through the GUI platform.
+    auto & plat = crosspad_gui::getGuiPlatform();
+    if (s_mode == 1) plat.setSpeakerVolume(val);
+    else if (s_mode == 2) plat.setHeadphoneVolume(val);
+
+    // Optional legacy callback hook (kept for compatibility).
     if (s_apply_cb) s_apply_cb(s_mode, val);
 
     if (s_value_label) {
@@ -55,12 +71,12 @@ static void show(int mode) {
         s_mode = mode;
         if (mode == 1) {
             lv_label_set_text(s_label, LV_SYMBOL_VOLUME_MAX " Speakers");
-            uint8_t v = settings->masterFX.outVolumeCodec[0][1];
+            uint8_t v = settings->masterFX.outVolumeCodec[0][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         } else {
             lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-            uint8_t v = settings->masterFX.outVolumeCodec[1][1];
+            uint8_t v = settings->masterFX.outVolumeCodec[1][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         }
@@ -101,12 +117,12 @@ static void show(int mode) {
 
     if (mode == 1) {
         lv_label_set_text(s_label, LV_SYMBOL_VOLUME_MAX " Speakers");
-        uint8_t v = settings->masterFX.outVolumeCodec[0][1];
+        uint8_t v = settings->masterFX.outVolumeCodec[0][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     } else {
         lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-        uint8_t v = settings->masterFX.outVolumeCodec[1][1];
+        uint8_t v = settings->masterFX.outVolumeCodec[1][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     }
@@ -146,6 +162,9 @@ void volume_overlay_dismiss() {
         s_auto_hide_timer = nullptr;
     }
     if (s_overlay) {
+        // Persist updated volumes to NVS once the overlay closes.
+        auto * ui = crosspad::getSettingsUI();
+        if (ui) ui->saveSettings();
         lv_obj_del(s_overlay);
         s_overlay     = nullptr;
         s_slider      = nullptr;

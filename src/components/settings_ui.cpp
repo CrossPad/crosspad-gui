@@ -3,6 +3,7 @@
 #include "crosspad-gui/components/settings_ui.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
+#include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
@@ -302,18 +303,20 @@ struct SliderRowCtx {
 static void slider_value_changed_cb(lv_event_t * e) {
     SliderRowCtx * ctx = (SliderRowCtx *)lv_event_get_user_data(e);
     lv_obj_t * slider = (lv_obj_t *)lv_event_get_target(e);
-    int32_t val = lv_slider_get_value(slider);
+    lv_event_code_t code = lv_event_get_code(e);
 
-    *(ctx->setting) = (uint8_t)val;
-
-    if (ctx->value_label) {
-        lv_label_set_text_fmt(ctx->value_label, "%d", (int)val);
-    }
-
-    save_settings();
-
-    if (ctx->extra_cb) {
-        ctx->extra_cb(e);
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        int32_t val = lv_slider_get_value(slider);
+        *(ctx->setting) = (uint8_t)val;
+        if (ctx->value_label) {
+            lv_label_set_text_fmt(ctx->value_label, "%d", (int)val);
+        }
+        // Live hardware apply during drag — NVS save deferred to RELEASED.
+        if (ctx->extra_cb) {
+            ctx->extra_cb(e);
+        }
+    } else if (code == LV_EVENT_RELEASED) {
+        save_settings();
     }
 }
 
@@ -357,6 +360,7 @@ lv_obj_t * settings_row_slider(lv_obj_t * parent, lv_group_t * group,
 
     SliderRowCtx * ctx = new SliderRowCtx{setting, extra_cb, val_lbl};
     lv_obj_add_event_cb(slider, slider_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(slider, slider_value_changed_cb, LV_EVENT_RELEASED, ctx);
     lv_obj_add_event_cb(slider, slider_row_delete_cb, LV_EVENT_DELETE, ctx);
 
     if (group) lv_group_add_obj(group, slider);
@@ -584,12 +588,17 @@ static void theme_color_changed_cb(lv_event_t * e) {
     show_detail(s_current_category);
 }
 
+static void lcd_brightness_hw_cb(lv_event_t * e) {
+    (void)e;
+    crosspad_gui::getGuiPlatform().setLcdBrightness(get_settings()->LCDbrightness);
+}
+
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
 
-    settings_row_slider(parent, group, "Brightness", 0, 127,
-                        &s->LCDbrightness);
+    settings_row_slider(parent, group, "Brightness", 5, 100,
+                        &s->LCDbrightness, lcd_brightness_hw_cb);
 
     // Build theme color options string from palette (bounded to prevent overflow)
     static char theme_options[256];

@@ -5,7 +5,9 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 
 #include "crosspad/settings/CrosspadSettings.hpp"
+#include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
+#include "crosspad/pad/PadLedController.hpp"
 
 #if LV_USE_PERF_MONITOR && LV_VERSION_CHECK(9,4,0)
 #include "debugging/sysmon/lv_sysmon.h"
@@ -652,10 +654,31 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
 
 // ── Quick settings panel ────────────────────────────────────────────────────
 
-static void slider_event_cb(lv_event_t * e) {
-    int value = lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
-    uint8_t * setting = (uint8_t *)lv_event_get_user_data(e);
-    *setting = value;
+// Drawer slider context — holds setting pointer plus optional hardware-apply hook.
+struct DrawerSliderCtx {
+    uint8_t * setting;
+    lv_event_cb_t hw_apply_cb; // optional
+};
+
+static void drawer_slider_event_cb(lv_event_t * e) {
+    auto * ctx = (DrawerSliderCtx *)lv_event_get_user_data(e);
+    if (!ctx || !ctx->setting) return;
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        int value = lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
+        *(ctx->setting) = (uint8_t)value;
+        // Live hardware apply on every drag tick — keep slider feeling responsive.
+        if (ctx->hw_apply_cb) ctx->hw_apply_cb(e);
+    } else if (code == LV_EVENT_RELEASED) {
+        // Persist only after the user lets go: NVS writes are slow.
+        auto * ui = crosspad::getSettingsUI();
+        if (ui) ui->saveSettings();
+    }
+}
+
+static void drawer_slider_delete_cb(lv_event_t * e) {
+    delete (DrawerSliderCtx *)lv_event_get_user_data(e);
 }
 
 static void check_ram_timer_cb(lv_timer_t * timer) {
@@ -672,7 +695,7 @@ static lv_style_t style_knob;
 static lv_style_t style_pressed_color;
 
 static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int min, int max,
-                                        uint8_t * setting, lv_event_cb_t cb, lv_event_code_t cb_event_type)
+                                        uint8_t * setting, lv_event_cb_t hw_apply_cb)
 {
     lv_obj_t * cont = lv_obj_create(parent);
     lv_obj_set_style_border_width(cont, 0, 0);
@@ -693,10 +716,10 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int m
     lv_slider_set_range(slider, min, max);
     if (setting != NULL) {
         lv_slider_set_value(slider, *setting, LV_ANIM_OFF);
-        if (cb != NULL) {
-            lv_obj_add_event_cb(slider, cb, cb_event_type, setting);
-        }
-        lv_obj_add_event_cb(slider, slider_event_cb, LV_EVENT_VALUE_CHANGED, setting);
+        auto * ctx = new DrawerSliderCtx{setting, hw_apply_cb};
+        lv_obj_add_event_cb(slider, drawer_slider_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+        lv_obj_add_event_cb(slider, drawer_slider_event_cb, LV_EVENT_RELEASED, ctx);
+        lv_obj_add_event_cb(slider, drawer_slider_delete_cb, LV_EVENT_DELETE, ctx);
     } else {
         lv_slider_set_value(slider, 50, LV_ANIM_OFF);
         lv_obj_set_state(slider, LV_STATE_DISABLED, 0);
@@ -757,9 +780,26 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_grid_dsc_array(cont, column_dsc, row_dsc);
 
     initSliderStyle();
-    lv_obj_t * slider1 = lv_create_my_slider(cont, "SPK", 0, 100, NULL, NULL, LV_EVENT_ALL);
-    lv_obj_t * slider2 = lv_create_my_slider(cont, "PAD Brightness", 0, 255, &(settings->RGBbrightness), NULL, LV_EVENT_VALUE_CHANGED);
-    lv_obj_t * slider3 = lv_create_my_slider(cont, "SCR Brightness", 5, 100, &(settings->LCDbrightness), NULL, LV_EVENT_VALUE_CHANGED);
+
+    auto spk_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+    };
+    auto rgb_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad::getPadLedController().setBrightness(settings->RGBbrightness);
+    };
+    auto lcd_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad_gui::getGuiPlatform().setLcdBrightness(settings->LCDbrightness);
+    };
+
+    lv_obj_t * slider1 = lv_create_my_slider(cont, "SPK", 0, 127,
+                                              &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
+    lv_obj_t * slider2 = lv_create_my_slider(cont, "PAD Brightness", 0, 255,
+                                              &(settings->RGBbrightness), rgb_apply);
+    lv_obj_t * slider3 = lv_create_my_slider(cont, "SCR Brightness", 5, 100,
+                                              &(settings->LCDbrightness), lcd_apply);
     lv_obj_t * footer = lv_obj_create(cont);
 
     lv_obj_set_grid_cell(slider1, LV_GRID_ALIGN_CENTER, 0, 3, LV_GRID_ALIGN_CENTER, 0, 1);
