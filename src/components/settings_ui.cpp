@@ -3,6 +3,7 @@
 #include "crosspad-gui/components/settings_ui.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
+#include "crosspad-gui/components/dfu_panel.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
@@ -620,6 +621,13 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           &s->themeColorIndex,
                           theme_color_changed_cb);
 
+    settings_row_switch(parent, group, "Quick Settings Drawer",
+                        &s->quickSettingsEnabled,
+                        [](lv_event_t *) {
+                            crosspad_gui::statusbar_set_drawer_enabled(
+                                get_settings()->quickSettingsEnabled);
+                        });
+
     settings_section_header(parent, "Perf Stats");
     settings_row_bitswitch(parent, group, "FPS", &s->perfStatsFlags, PERF_FLAG_FPS,
                            [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
@@ -939,6 +947,13 @@ static void factory_reset_cb(lv_event_t * e) {
     ui_toast_show("Settings reset to defaults", 2000, UI_TOAST_WARNING);
 }
 
+static void stm32_dfu_cb(lv_event_t * e) {
+    (void)e;
+    auto* ui = getSettingsUI();
+    if (ui) ui->enterStm32Dfu();
+    lv_CreateDfuScreen(lv_scr_act());
+}
+
 static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
     settings_section_header(parent, "Information");
 
@@ -955,6 +970,9 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
 
     settings_row_action(parent, group, nullptr, "Factory Reset",
                         factory_reset_cb, nullptr);
+
+    settings_row_action(parent, group, nullptr, "STM32 Update (DFU)",
+                        stm32_dfu_cb, nullptr);
 }
 
 // ===================================================================
