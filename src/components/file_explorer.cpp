@@ -25,6 +25,8 @@ static std::vector<crosspad_gui::FileItem> entries;
 
 static bool alreadyOpened = false;
 static FileFilter _fileFilter;
+static lv_group_t * s_prevEncoderGroup = nullptr;
+static lv_indev_t * s_prevEncoderIndev = nullptr;
 
 // Optional callbacks
 static file_preview_cb_t s_previewCb = nullptr;
@@ -115,17 +117,35 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     currentFile = {"", "", false};
     currentFolder = {startPath, "", true};
 
-    // Encoder group
+    // Encoder group — remember previous binding so we can restore on close
     static lv_group_t * fe_group = lv_group_create();
     file_explorer_group = fe_group;
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
-    if (nav) lv_indev_set_group(nav, fe_group);
+    if (nav) {
+        s_prevEncoderIndev = nav;
+        s_prevEncoderGroup = lv_indev_get_group(nav);
+        lv_indev_set_group(nav, fe_group);
+    }
 
     // Container
     lv_obj_t * cont = lv_obj_create(parent);
     lv_obj_set_size(cont, lv_obj_get_content_width(parent), lv_obj_get_content_height(parent));
     lv_obj_add_style(cont, &styleAppContainer, 0);
     lv_obj_add_flag(cont, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+
+    // Reset open flag + restore encoder group on any deletion path
+    // (Load button, Close button, app exit, async wipe)
+    lv_obj_add_event_cb(cont, [](lv_event_t *) {
+        alreadyOpened = false;
+        itemList = NULL;
+        loadButton = NULL;
+        entries.clear();
+        if (s_prevEncoderIndev) {
+            lv_indev_set_group(s_prevEncoderIndev, s_prevEncoderGroup);
+            s_prevEncoderIndev = nullptr;
+            s_prevEncoderGroup = nullptr;
+        }
+    }, LV_EVENT_DELETE, NULL);
 
     // Subject for folder title
     static char buf1[MAX_PATH_LEN];
