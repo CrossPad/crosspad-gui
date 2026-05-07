@@ -109,6 +109,8 @@ static void drawer_close_end_cb(lv_anim_t * a);
 
 static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * parent);
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont);
+static void create_open_button();
+static void delete_open_button();
 
 // ── Loading API ─────────────────────────────────────────────────────────────
 
@@ -123,7 +125,7 @@ lv_subject_t * statusbar_get_loading_subject() {
 }
 
 void statusbar_show_loader_message(const char * title, const char * message, bool isError) {
-    lv_obj_t * mbox = lv_msgbox_create(status_c ? lv_obj_get_parent(status_c) : lv_scr_act());
+    lv_obj_t * mbox = lv_msgbox_create(lv_layer_top());
     lv_obj_add_style(mbox, &styleStatusBar, 0);
     lv_obj_set_style_border_width(mbox, 2, 0);
     lv_msgbox_add_title(mbox, title);
@@ -313,6 +315,18 @@ void statusbar_set_perf_level(uint8_t flags) {
     apply_perf_column_visibility();
 }
 
+void statusbar_set_drawer_enabled(bool enabled) {
+#if LV_HIDE_QUICK_SETTINGS
+    enabled = false;
+#endif
+    if (enabled) {
+        if (!openButton) create_open_button();
+    } else {
+        // If drawer open, leave deletion to drawer_close_end_cb.
+        if (!quickSettingsPanelVisible) delete_open_button();
+    }
+}
+
 } // namespace crosspad_gui
 
 // ── Status check timer ──────────────────────────────────────────────────────
@@ -455,7 +469,43 @@ static void drawer_close_end_cb(lv_anim_t * a) {
         s_drawer_overlay = NULL;
     }
     closeButton = NULL;
-    lv_obj_remove_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
+#if LV_HIDE_QUICK_SETTINGS
+    drawer_enabled = false;
+#endif
+    if (drawer_enabled) {
+        if (openButton) lv_obj_remove_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        delete_open_button();
+    }
+}
+
+// ── Open button (drawer arrow) lifecycle ────────────────────────────────────
+
+static void create_open_button() {
+    if (openButton || !statusBarPanel) return;
+    openButton = lv_button_create(statusBarPanel);
+    lv_obj_add_style(openButton, &styleStatusBar, 0);
+    lv_obj_t * img_open = lv_image_create(openButton);
+    lv_image_set_src(img_open, asset_drawer_down);
+    lv_obj_center(img_open);
+    lv_obj_set_size(openButton, QUICK_BUTTON_SIZE * 1.5, LV_STATUS_BAR_HEIGHT);
+    lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_set_ext_click_area(openButton, 8);
+    lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    if (s_app_icon_zone_right) {
+        lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
+    }
+}
+
+static void delete_open_button() {
+    if (!openButton) return;
+    lv_obj_delete(openButton);
+    openButton = NULL;
+    if (s_app_icon_zone_right) {
+        lv_obj_set_style_pad_right(s_app_icon_zone_right, 4, 0);
+    }
 }
 
 // ── Main creation ───────────────────────────────────────────────────────────
@@ -484,20 +534,14 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
-    // Open button (drawer arrow)
-    openButton = lv_button_create(statusBarPanel);
-    lv_obj_add_style(openButton, &styleStatusBar, 0);
-    lv_obj_t * img_open = lv_image_create(openButton);
-    lv_image_set_src(img_open, asset_drawer_down);
-    lv_obj_center(img_open);
-    lv_obj_set_size(openButton, QUICK_BUTTON_SIZE * 1.5, LV_STATUS_BAR_HEIGHT);
-    lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_set_ext_click_area(openButton, 8);
-    lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    // Open button (drawer arrow) — only built when drawer enabled
+    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
 #if LV_HIDE_QUICK_SETTINGS
-    lv_obj_add_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+    drawer_enabled = false;
 #endif
+    if (drawer_enabled) {
+        create_open_button();
+    }
 
     // Init RAM subjects once (reused across open/close cycles)
     if (!s_ram_subjects_initialized) {
@@ -583,7 +627,8 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_flex_align(s_app_icon_zone_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_flex_grow(s_app_icon_zone_right, 1);
     lv_obj_set_style_pad_all(s_app_icon_zone_right, 0, 0);
-    lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
+    // Default padding assumes no drawer arrow; create_open_button() bumps it.
+    lv_obj_set_style_pad_right(s_app_icon_zone_right, 4, 0);
     lv_obj_set_style_pad_column(s_app_icon_zone_right, 3, 0);
     lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
     lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);

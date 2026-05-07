@@ -84,6 +84,13 @@ void statusbar_clear_all_icons();
 #define PERF_FLAG_MEM  (1 << 2)
 void statusbar_set_perf_level(uint8_t flags);
 
+// ── Drawer (quick-settings) toggle ───────────────────────────────────────────
+
+// Enable/disable the status-bar drawer (header dropdown + arrow button).
+// When disabled: the open arrow is hidden and any open drawer is closed.
+// Must be called from LVGL task context.
+void statusbar_set_drawer_enabled(bool enabled);
+
 } // namespace crosspad_gui
 
 // Create the status bar as a child of the given parent.
