@@ -127,11 +127,16 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
         lv_indev_set_group(nav, fe_group);
     }
 
-    // Container
+    // Container — fills parent exactly. PCT(100) ties to parent's actual
+    // post-layout box, avoiding stale content_height from caller. SCROLLABLE
+    // off so children can't push the explorer beyond its visible bounds.
     lv_obj_t * cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, lv_obj_get_content_width(parent), lv_obj_get_content_height(parent));
+    lv_obj_set_size(cont, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_pos(cont, 0, 0);
     lv_obj_add_style(cont, &styleAppContainer, 0);
-    lv_obj_add_flag(cont, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_update_layout(cont);
 
     // Reset open flag + restore encoder group on any deletion path
     // (Load button, Close button, app exit, async wipe)
@@ -152,36 +157,50 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     static char buf2[MAX_PATH_LEN];
     lv_subject_init_string(&Folder, buf1, buf2, MAX_PATH_LEN, startPath.c_str());
 
+    // Hardcoded for 320x240 device — explicit Y positions. List capped well
+    // above the footer band so a long file list cannot displace the buttons.
+    const int titleY    = 4;
+    const int listY     = 30;
+    const int listH     = 140;       
+    const int listLR    = 8;
+    const int contW     = lv_obj_get_content_width(cont);
+    const int btnW      = 90;
+    const int btnGap    = 12;
+    const int btnXOff   = (btnW + btnGap) / 2;
+
+    // Force absolute layout — prevents any flex from re-flowing children
+    lv_obj_set_layout(cont, LV_LAYOUT_NONE);
+    const int titleW = contW - 2 * listLR;
+    const int listW  = contW - 2 * listLR;
+    const int titleX = (contW - titleW) / 2;
+    const int listX  = (contW - listW) / 2;
+
     // Title label
     lv_obj_t * title = lv_label_create(cont);
     lv_label_bind_text(title, &Folder, NULL);
     lv_obj_add_style(title, &styleTitle, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+    lv_obj_set_size(title, titleW, LV_SIZE_CONTENT);
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(title, lv_obj_get_content_width(lv_screen_active()));
+    lv_obj_set_pos(title, titleX, titleY);
 
-    // Close button — resets current file and triggers load callback
-    lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -50, [](lv_event_t * event) {
-        alreadyOpened = false;
-        currentFile = {"", "", false};
-        lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
-    });
-
-    // Load button
-    loadButton = lv_CreateFooterButton(cont, "Load", 50, cb, user_data);
-
-    // Item list
-    const int offsetLR = 15;
-    const int yOffset = -5;
-    const int height = 140;
-    const int width = lv_obj_get_content_width(parent) - (2 * offsetLR);
-
+    // Item list — fixed size + position, no align
     itemList = lv_list_create(cont);
     lv_group_add_obj(fe_group, itemList);
     lv_obj_add_style(itemList, &styleFileExplorerList, 0);
     lv_obj_add_style(itemList, &styleFileExplorerScrollbar, LV_PART_SCROLLBAR);
-    lv_obj_set_size(itemList, width, height);
-    lv_obj_align(itemList, LV_ALIGN_CENTER, 0, yOffset);
+    lv_obj_set_size(itemList, listW, listH);
+    lv_obj_set_pos(itemList, listX, listY);
+
+    // Close + Load buttons — footer helper anchors them to BOTTOM_MID
+    lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t * event) {
+        alreadyOpened = false;
+        currentFile = {"", "", false};
+        lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
+    });
+    lv_obj_set_width(closeBtn, btnW);
+
+    loadButton = lv_CreateFooterButton(cont, "Load", btnXOff, cb, user_data);
+    lv_obj_set_width(loadButton, btnW);
 
     lv_group_add_obj(fe_group, closeBtn);
     lv_group_add_obj(fe_group, loadButton);
