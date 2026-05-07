@@ -339,8 +339,8 @@ static bool s_lastCharging = false;
 static uint8_t s_lastBatteryPct = 0;
 
 static void check_status_timer_cb(lv_timer_t * timer) {
-    // SD card
-    bool sd = status.stm32.sdDetected;
+    // SD card — ESP filesystem mount state is authoritative; STM32 detect is fallback
+    bool sd = status.sdCardDetected;
     if (sd != s_lastSd) {
         s_lastSd = sd;
         lv_obj_set_hidden(status_sd, !sd);
@@ -363,12 +363,32 @@ static void check_status_timer_cb(lv_timer_t * timer) {
         s_lastCharging = charging;
         lv_obj_set_hidden(status_charging, !charging);
     }
-    // Battery level
-    const int bat_hist = 2;
-    if (s_lastBatteryPct > status.batteryPct + bat_hist || s_lastBatteryPct < status.batteryPct - bat_hist) {
-        s_lastBatteryPct = status.batteryPct;
-        PickCorrectBatteryIcon(s_lastBatteryPct);
-        lv_obj_invalidate(status_battery);
+    // Battery level — negative pct means STM32 reports no battery (VBAT < 3200 mV).
+    // Blink empty/full to signal it.
+    static bool s_batMissing = false;
+    static uint8_t s_batBlinkPhase = 0xFF;
+    if (status.batteryPct < 0) {
+        uint8_t phase = (lv_tick_get() / 500) & 1;
+        if (!s_batMissing || phase != s_batBlinkPhase) {
+            s_batMissing = true;
+            s_batBlinkPhase = phase;
+            lv_obj_remove_flag(status_battery, LV_OBJ_FLAG_HIDDEN);
+            lv_image_set_src(status_battery,
+                phase ? LV_SYMBOL_BATTERY_FULL : LV_SYMBOL_BATTERY_EMPTY);
+            lv_obj_invalidate(status_battery);
+        }
+        s_lastBatteryPct = 0; // force re-pick when battery returns
+    } else {
+        const int bat_hist = 2;
+        if (s_batMissing ||
+            s_lastBatteryPct > status.batteryPct + bat_hist ||
+            s_lastBatteryPct < status.batteryPct - bat_hist) {
+            s_batMissing = false;
+            s_batBlinkPhase = 0xFF;
+            s_lastBatteryPct = status.batteryPct;
+            PickCorrectBatteryIcon(s_lastBatteryPct);
+            lv_obj_invalidate(status_battery);
+        }
     }
 }
 
