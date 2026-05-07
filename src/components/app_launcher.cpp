@@ -3,6 +3,8 @@
 #include "crosspad-gui/components/app_launcher.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
+#include "crosspad-gui/theme/crosspad_theme.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/app/AppRegistry.hpp"
 #include <cstring>
 #include <cstdio>
@@ -202,6 +204,10 @@ lv_obj_t* launcher_create_button_grid(
         lv_obj_t* img = lv_image_create(btn);
         if (img) {
             lv_image_set_src(img, info.icon);
+            lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
+            lv_obj_set_size(img, s_config.icon_size, s_config.icon_size);
+            lv_obj_set_style_image_recolor(img, lv_color_bw_from_color(CROSSPAD_THEME_CARD_BG), 0);
+            lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
             lv_obj_center(img);
         }
 

@@ -27,6 +27,7 @@ struct LauncherConfig {
     launcher_app_select_cb_t on_select = nullptr;  // App button click callback
     launcher_close_popup_cb_t on_close = nullptr;  // Popup dismiss callback
     int button_size = 64;                          // Button size in pixels
+    int icon_size = 32;                            // Icon render size (sources scaled to fit, aspect preserved)
     int button_spacing = 10;                       // Spacing between buttons
     bool show_names = true;                        // Show app name labels under icons
 };
