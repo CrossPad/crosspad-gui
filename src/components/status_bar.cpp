@@ -229,6 +229,12 @@ void statusbar_set_icon_content(const char * id, const char * content) {
     if (slot->obj) lv_label_set_text(slot->obj, content);
 }
 
+void statusbar_set_icon_font(const char * id, const lv_font_t * font) {
+    StatusBarAppIcon * slot = find_app_icon(id);
+    if (!slot || !slot->obj) return;
+    lv_obj_set_style_text_font(slot->obj, font, 0);
+}
+
 void statusbar_set_icon_visible(const char * id, bool visible) {
     StatusBarAppIcon * slot = find_app_icon(id);
     if (!slot || !slot->obj) return;

@@ -69,6 +69,10 @@ void statusbar_set_icon_color(const char * id, lv_color_t color);
 // Update content (symbol or text) of an existing icon. No-op if not found.
 void statusbar_set_icon_content(const char * id, const char * content);
 
+// Override the text font for an existing icon. No-op if not found.
+// Pass nullptr to reset to the status-bar default.
+void statusbar_set_icon_font(const char * id, const lv_font_t * font);
+
 // Show or hide an existing icon without removing its slot. No-op if not found.
 void statusbar_set_icon_visible(const char * id, bool visible);
 
