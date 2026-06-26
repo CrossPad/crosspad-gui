@@ -42,16 +42,18 @@ static void cat_build_pads(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group);
+static void cat_build_analog(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_system(lv_obj_t * parent, lv_group_t * group);
 
 static const SettingsCategory s_builtin_categories[] = {
-    { "Display",       LV_SYMBOL_EYE_OPEN,   cat_build_display },
-    { "Audio",         LV_SYMBOL_AUDIO,       cat_build_audio },
-    { "Pads & LEDs",   LV_SYMBOL_KEYBOARD,    cat_build_pads },
-    { "Vibration",     LV_SYMBOL_BELL,        cat_build_vibration },
-    { "Connectivity",  LV_SYMBOL_WIFI,        cat_build_connectivity },
-    { "MIDI",          LV_SYMBOL_SHUFFLE,     cat_build_midi },
-    { "System",        LV_SYMBOL_SETTINGS,    cat_build_system },
+    { "Display",          LV_SYMBOL_EYE_OPEN,   cat_build_display },
+    { "Audio",            LV_SYMBOL_AUDIO,       cat_build_audio },
+    { "Pads & LEDs",      LV_SYMBOL_KEYBOARD,    cat_build_pads },
+    { "Vibration",        LV_SYMBOL_BELL,        cat_build_vibration },
+    { "Connectivity",     LV_SYMBOL_WIFI,        cat_build_connectivity },
+    { "MIDI",             LV_SYMBOL_SHUFFLE,     cat_build_midi },
+    { "Analog / Velocity", LV_SYMBOL_KEYBOARD,   cat_build_analog },
+    { "System",           LV_SYMBOL_SETTINGS,    cat_build_system },
 };
 static constexpr int s_builtin_count = sizeof(s_builtin_categories) / sizeof(s_builtin_categories[0]);
 
@@ -949,6 +951,63 @@ static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
                               "-24\n-12\n-7\n-5\n0\n+5\n+7\n+12\n+24",
                               &s_noteOffsetIdx, stm_note_offset_cb);
     }
+}
+
+// ---- Analog / Velocity ----
+
+static bool s_panCcEnProxy = false;
+
+static void stm_vel_curve_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_VEL_CURVE_DEF, s->stm.velCurveDef);
+}
+static void stm_vel_floor_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_VEL_FLOOR_DEF, s->stm.velFloorDef);
+}
+static void stm_cc_press_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_CC_PRESS_BASE, s->stm.ccPressBase);
+}
+static void stm_pan_en_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    s->stm.panCcEn = s_panCcEnProxy ? 1 : 0;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_PAN_CC_EN, s->stm.panCcEn);
+}
+static void stm_cc_pan_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_CC_PAN_BASE, s->stm.ccPanBase);
+}
+static void stm_analog_minms_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_ANALOG_MIN_MS, s->stm.analogMinMs);
+}
+static void stm_analog_delta_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_ANALOG_DELTA, s->stm.analogDelta);
+}
+
+static void cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
+    auto* s = get_settings(); if (!s) return;
+
+    settings_section_header(parent, "Velocity");
+    settings_row_dropdown(parent, group, "Curve", "Linear\nExp Soft\nExp Hard",
+                          &s->stm.velCurveDef, stm_vel_curve_cb);
+    settings_row_slider(parent, group, "Floor", 0, 127, &s->stm.velFloorDef, stm_vel_floor_cb);
+
+    settings_section_header(parent, "Pressure / Pan CC");
+    settings_row_slider(parent, group, "Pressure CC base", 0, 127,
+                        &s->stm.ccPressBase, stm_cc_press_cb);
+    s_panCcEnProxy = s->stm.panCcEn != 0;
+    settings_row_switch(parent, group, "Pan -> CC", &s_panCcEnProxy, stm_pan_en_cb);
+    settings_row_slider(parent, group, "Pan CC base", 0, 127,
+                        &s->stm.ccPanBase, stm_cc_pan_cb);
+
+    settings_section_header(parent, "Stream rate");
+    settings_row_slider(parent, group, "Min interval (ms)", 4, 100,
+                        &s->stm.analogMinMs, stm_analog_minms_cb);
+    settings_row_slider(parent, group, "Min delta", 0, 32,
+                        &s->stm.analogDelta, stm_analog_delta_cb);
 }
 
 // ---- System ----
