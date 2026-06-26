@@ -1010,6 +1010,57 @@ static void cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
                         &s->stm.analogDelta, stm_analog_delta_cb);
 }
 
+// ---- System / STM Power+Input ----
+
+static const uint16_t kTimeoutSecs[] = { 0, 30, 60, 300, 600, 1800, 3600 }; // 0 = never
+static const char* kTimeoutOpts = "Never\n30s\n1m\n5m\n10m\n30m\n1h";
+static uint8_t s_dimIdx = 0, s_sleepIdx = 0;
+
+static const uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000 };
+static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s";
+static uint8_t s_longPressIdx = 3; // default 2000ms
+
+static uint8_t idx_for_u16(const uint16_t* arr, uint8_t n, uint16_t val, uint8_t dflt) {
+    for (uint8_t i = 0; i < n; ++i) if (arr[i] == val) return i;
+    return dflt;
+}
+
+// autoSleep is uint8_t in Stm32Settings; use a bool proxy like s_panCcEnProxy
+static bool s_autoSleepProxy = true;
+
+static void stm_auto_sleep_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    s->stm.autoSleep = s_autoSleepProxy ? 1 : 0;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_AUTO_SLEEP, s->stm.autoSleep);
+}
+static void stm_keypad_en_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    // REG_CTL_KEYPAD_DIS is the INVERSE of keypadEnabled
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_KEYPAD_DIS, s->stm.keypadEnabled ? 0 : 1);
+}
+static void stm_wake_bright_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_WAKE_BRIGHT, s->stm.wakeBrightness);
+}
+static void stm_dim_to_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_dimIdx >= sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0])) s_dimIdx = 0;
+    s->stm.dimTimeoutS = kTimeoutSecs[s_dimIdx];
+    crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_DIM_TO_S_HI, s->stm.dimTimeoutS);
+}
+static void stm_sleep_to_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_sleepIdx >= sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0])) s_sleepIdx = 0;
+    s->stm.sleepTimeoutS = kTimeoutSecs[s_sleepIdx];
+    crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
+}
+static void stm_long_press_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_longPressIdx >= sizeof(kLongPressMs)/sizeof(kLongPressMs[0])) s_longPressIdx = 3;
+    s->stm.longPressMs = kLongPressMs[s_longPressIdx];
+    crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
+}
+
 // ---- System ----
 
 static void factory_reset_cb(lv_event_t * e) {
@@ -1063,6 +1114,22 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
 
     settings_row_action(parent, group, nullptr, "STM32 Update (DFU)",
                         stm32_dfu_cb, nullptr);
+
+    auto* s = get_settings();
+    if (s) {
+        settings_section_header(parent, "STM Power / Input");
+        s_autoSleepProxy = s->stm.autoSleep != 0;
+        settings_row_switch(parent, group, "Auto Sleep", &s_autoSleepProxy, stm_auto_sleep_cb);
+        settings_row_switch(parent, group, "Keypad Enabled", &s->stm.keypadEnabled, stm_keypad_en_cb);
+        settings_row_slider(parent, group, "Wake Brightness", 0, 100,
+                            &s->stm.wakeBrightness, stm_wake_bright_cb);
+        s_dimIdx = idx_for_u16(kTimeoutSecs, sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]), s->stm.dimTimeoutS, 0);
+        settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
+        s_sleepIdx = idx_for_u16(kTimeoutSecs, sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]), s->stm.sleepTimeoutS, 0);
+        settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
+        s_longPressIdx = idx_for_u16(kLongPressMs, sizeof(kLongPressMs)/sizeof(kLongPressMs[0]), s->stm.longPressMs, 3);
+        settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
+    }
 }
 
 // ===================================================================
