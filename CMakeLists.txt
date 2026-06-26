@@ -12,5 +12,6 @@ idf_component_register(
     REQUIRES
         lvgl
         crosspad-core
+        crosspad-platform-idf
         freertos
 )

@@ -10,6 +10,8 @@
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/pad/PadLedController.hpp"
+#include "crosspad/stm32/reg_map.h"
+#include "CrosspadPlatform.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -843,6 +845,21 @@ static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group) {
 
 // ---- MIDI ----
 
+// STM note-offset presets (semitones). int8_t field <- dropdown index.
+static const int8_t kNoteOffsetVals[] = { -24, -12, -7, -5, 0, 5, 7, 12, 24 };
+static uint8_t s_noteOffsetIdx = 4;  // default index -> 0 semitones
+
+static void stm_midi_chan_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad::getStm32Manager().configWrite8(REG_CTL_MIDI_CHAN, s->stm.midiChannel);
+}
+static void stm_note_offset_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_noteOffsetIdx >= (sizeof(kNoteOffsetVals)/sizeof(kNoteOffsetVals[0]))) s_noteOffsetIdx = 4;
+    s->stm.noteOffset = kNoteOffsetVals[s_noteOffsetIdx];
+    crosspad::getStm32Manager().configWrite8(REG_CTL_NOTE_OFFSET, (uint8_t)s->stm.noteOffset);
+}
+
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
@@ -918,6 +935,21 @@ static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
 
     settings_row_switch(parent, group, "MIDI -> Audio",
                         &s->esp32Routing.Midi2Audio);
+
+    settings_section_header(parent, "STM Pads (MIDI)");
+    // MIDI channel 0..15 (display 1..16 is fine to leave as 0..15 raw)
+    settings_row_slider(parent, group, "STM MIDI Channel", 0, 15,
+                        &s->stm.midiChannel, stm_midi_chan_cb);
+    // Note offset preset dropdown -> kNoteOffsetVals
+    {
+        // sync proxy index from the stored value
+        s_noteOffsetIdx = 4;
+        for (uint8_t i = 0; i < sizeof(kNoteOffsetVals)/sizeof(kNoteOffsetVals[0]); ++i)
+            if (kNoteOffsetVals[i] == s->stm.noteOffset) { s_noteOffsetIdx = i; break; }
+        settings_row_dropdown(parent, group, "Note Offset",
+                              "-24\n-12\n-7\n-5\n0\n+5\n+7\n+12\n+24",
+                              &s_noteOffsetIdx, stm_note_offset_cb);
+    }
 }
 
 // ---- System ----
