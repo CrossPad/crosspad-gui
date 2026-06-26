@@ -4,6 +4,7 @@
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/components/dfu_panel.h"
+#include "crosspad-gui/components/stm_pad_editor_screen.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
@@ -1008,6 +1009,11 @@ static void cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
                         &s->stm.analogMinMs, stm_analog_minms_cb);
     settings_row_slider(parent, group, "Min delta", 0, 32,
                         &s->stm.analogDelta, stm_analog_delta_cb);
+
+    settings_section_header(parent, "Per-Pad");
+    settings_row_action(parent, group, "Per-Pad Tuning", "Open",
+        [](lv_event_t*) { crosspad_gui::stm_pad_editor_create(lv_screen_active()); },
+        nullptr);
 }
 
 // ---- System / STM Power+Input ----

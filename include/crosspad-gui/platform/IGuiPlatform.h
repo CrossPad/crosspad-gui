@@ -75,6 +75,9 @@ public:
     // Write one STM config register (ESP boards only; no-op elsewhere).
     virtual void writeStmConfig8(uint16_t /*reg*/, uint8_t /*val*/) {}
     virtual void writeStmConfig16(uint16_t /*hiReg*/, uint16_t /*val*/) {}
+
+    // Write one pad's full 6-byte STM analog config block (ESP boards only; no-op elsewhere).
+    virtual void writeStmConfigPad(uint8_t /*padIdx*/) {}
 };
 
 // Set the platform implementation (call once at startup)
