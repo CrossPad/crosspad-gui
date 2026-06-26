@@ -71,6 +71,10 @@ public:
 
     // Apply headphone codec output volume (0..100 codec range; same caveat).
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
+
+    // Write one STM config register (ESP boards only; no-op elsewhere).
+    virtual void writeStmConfig8(uint16_t /*reg*/, uint8_t /*val*/) {}
+    virtual void writeStmConfig16(uint16_t /*hiReg*/, uint16_t /*val*/) {}
 };
 
 // Set the platform implementation (call once at startup)

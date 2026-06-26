@@ -11,7 +11,6 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/pad/PadLedController.hpp"
 #include "crosspad/stm32/reg_map.h"
-#include "CrosspadPlatform.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -851,13 +850,13 @@ static uint8_t s_noteOffsetIdx = 4;  // default index -> 0 semitones
 
 static void stm_midi_chan_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
-    crosspad::getStm32Manager().configWrite8(REG_CTL_MIDI_CHAN, s->stm.midiChannel);
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_MIDI_CHAN, s->stm.midiChannel);
 }
 static void stm_note_offset_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     if (s_noteOffsetIdx >= (sizeof(kNoteOffsetVals)/sizeof(kNoteOffsetVals[0]))) s_noteOffsetIdx = 4;
     s->stm.noteOffset = kNoteOffsetVals[s_noteOffsetIdx];
-    crosspad::getStm32Manager().configWrite8(REG_CTL_NOTE_OFFSET, (uint8_t)s->stm.noteOffset);
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_NOTE_OFFSET, (uint8_t)s->stm.noteOffset);
 }
 
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
