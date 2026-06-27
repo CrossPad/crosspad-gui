@@ -78,6 +78,10 @@ public:
 
     // Write one pad's full 6-byte STM analog config block (ESP boards only; no-op elsewhere).
     virtual void writeStmConfigPad(uint8_t /*padIdx*/) {}
+
+    // Read one pad's last note-on pre-curve linear value (0..127). Returns false
+    // off-ESP / on bus error (caller shows "—"). ESP boards only.
+    virtual bool readStmPadVelRaw(uint8_t /*padIdx*/, uint8_t& /*out*/) { return false; }
 };
 
 // Set the platform implementation (call once at startup)

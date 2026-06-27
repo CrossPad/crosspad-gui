@@ -27,6 +27,7 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/pad/PadManager.hpp"
 #include "crosspad/led/RgbColor.hpp"
+#include "crosspad/stm32/VelocityCurve.hpp"
 
 #include <lvgl.h>
 #include <cstdio>
@@ -47,6 +48,14 @@ static lv_obj_t* s_analogDrop  = nullptr;  // padAnalogMode (0..3)
 static lv_obj_t* s_curveDrop   = nullptr;  // padVelCurve (0xFF/0/1/2)
 static lv_obj_t* s_floorSlider = nullptr;  // padVelFloor (0..127 or 0xFF inherit)
 static lv_obj_t* s_floorInherit = nullptr; // switch: floor == 0xFF (inherit)
+
+// Live-feedback widgets (RAW/VEL readout + velocity-curve chart with hit marker).
+static lv_obj_t*          s_rawLabel = nullptr;
+static lv_obj_t*          s_velLabel = nullptr;
+static lv_obj_t*          s_chart    = nullptr;
+static lv_chart_series_t* s_curveSer = nullptr; // cyan: velocity curve, 128 pts
+static lv_chart_series_t* s_markSer  = nullptr; // red: single-point last-hit marker
+static uint8_t            s_lastRaw  = 0xFF;
 
 static crosspad::RgbColor s_prevColors[16];
 
@@ -96,6 +105,31 @@ static uint8_t curve_idx_to_val(uint16_t idx) {
     }
 }
 
+// ── Velocity-curve chart helpers ────────────────────────────────────────────
+// Redraw the cyan velocity curve for the currently-selected pad's resolved
+// (curve, floor). Called from load_pad_fields() and every curve/floor edit.
+static void redraw_curve(void) {
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    if (!s || !s_chart || !s_curveSer) return;
+    uint8_t curve = s->stm.padVelCurve[s_sel];
+    uint8_t floor = s->stm.padVelFloor[s_sel];
+    if (curve == crosspad::STM32_VEL_INHERIT) curve = s->stm.velCurveDef;
+    if (floor == crosspad::STM32_VEL_INHERIT) floor = s->stm.velFloorDef;
+    for (uint16_t x = 0; x < 128; ++x)
+        lv_chart_set_series_value_by_id(s_chart, s_curveSer, x,
+                                        crosspad::stm32VelCurveApply((uint8_t)x, curve, floor));
+    lv_chart_refresh(s_chart);
+}
+
+// Place the red marker at the last hit's (raw, vel). All other points hidden.
+static void update_marker(uint8_t raw, uint8_t vel) {
+    if (!s_chart || !s_markSer) return;
+    for (uint16_t x = 0; x < 128; ++x)
+        lv_chart_set_series_value_by_id(s_chart, s_markSer, x, LV_CHART_POINT_NONE);
+    if (raw < 128) lv_chart_set_series_value_by_id(s_chart, s_markSer, raw, vel);
+    lv_chart_refresh(s_chart);
+}
+
 // ── Load the currently-selected pad's values into the widgets ───────────────
 // Runs ON the LVGL task only.
 static void load_pad_fields(uint8_t pad) {
@@ -126,6 +160,10 @@ static void load_pad_fields(uint8_t pad) {
     }
 
     s_loading = false;
+
+    // Repaint the curve for the new pad and force the next velraw read to repaint.
+    s_lastRaw = 0xFF;
+    redraw_curve();
 }
 
 static void push_pad() {
@@ -162,6 +200,7 @@ static void curve_cb(lv_event_t* e) {
     uint16_t idx = lv_dropdown_get_selected((lv_obj_t*)lv_event_get_target(e));
     s->stm.padVelCurve[s_sel] = curve_idx_to_val(idx);
     push_pad();
+    redraw_curve();
 }
 
 static void floor_slider_cb(lv_event_t* e) {
@@ -170,6 +209,7 @@ static void floor_slider_cb(lv_event_t* e) {
     // Moving the slider implies a concrete floor (not inherit).
     s->stm.padVelFloor[s_sel] = (uint8_t)lv_slider_get_value((lv_obj_t*)lv_event_get_target(e));
     push_pad();
+    redraw_curve();
 }
 
 static void floor_inherit_cb(lv_event_t* e) {
@@ -186,6 +226,7 @@ static void floor_inherit_cb(lv_event_t* e) {
         if (s_floorSlider) lv_obj_remove_state(s_floorSlider, LV_STATE_DISABLED);
     }
     push_pad();
+    redraw_curve();
 }
 
 // ── Cross-task select marshaling ────────────────────────────────────────────
@@ -202,7 +243,26 @@ static void poll_cb(lv_timer_t*) {
         s_pendingSelValid = false;
         s_sel = s_pendingSel;
         if (s_sel >= 16) s_sel = 0;
-        load_pad_fields(s_sel);
+        load_pad_fields(s_sel); // resets s_lastRaw, repaints curve
+    }
+
+    // Live per-pad RAW (pre-curve linear hit) + computed VELOCITY + hit marker.
+    uint8_t raw = 0;
+    if (crosspad_gui::getGuiPlatform().readStmPadVelRaw(s_sel, raw)) {
+        if (raw != s_lastRaw) {
+            s_lastRaw = raw;
+            auto* s = crosspad::CrosspadSettings::getInstance();
+            if (s) {
+                uint8_t curve = s->stm.padVelCurve[s_sel];
+                uint8_t floor = s->stm.padVelFloor[s_sel];
+                if (curve == crosspad::STM32_VEL_INHERIT) curve = s->stm.velCurveDef;
+                if (floor == crosspad::STM32_VEL_INHERIT) floor = s->stm.velFloorDef;
+                uint8_t vel = crosspad::stm32VelCurveApply(raw, curve, floor);
+                if (s_rawLabel) lv_label_set_text_fmt(s_rawLabel, "RAW: %u", (unsigned)raw);
+                if (s_velLabel) lv_label_set_text_fmt(s_velLabel, "VEL: %u", (unsigned)vel);
+                update_marker(raw, vel);
+            }
+        }
     }
 }
 
@@ -227,6 +287,9 @@ static void on_delete(lv_event_t*) {
     // Clear widget pointers (root + children are being destroyed).
     s_root = s_headerLabel = s_sensSlider = s_lrSlider = nullptr;
     s_analogDrop = s_curveDrop = s_floorSlider = s_floorInherit = nullptr;
+    s_rawLabel = s_velLabel = s_chart = nullptr;
+    s_curveSer = s_markSer = nullptr;
+    s_lastRaw = 0xFF;
 
     // Persist the edited per-pad arrays to NVS.
     save_settings();
@@ -320,6 +383,32 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_set_width(s_floorSlider, LV_PCT(55));
         lv_obj_add_event_cb(s_floorSlider, floor_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
+
+    // Live RAW + computed VELOCITY readout (one row, side by side).
+    {
+        lv_obj_t* row = make_row(root, "Last Hit");
+        s_rawLabel = lv_label_create(row);
+        lv_label_set_text(s_rawLabel, "RAW: --");
+        lv_obj_set_style_text_color(s_rawLabel, lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_rawLabel, &lv_font_montserrat_14, 0);
+        s_velLabel = lv_label_create(row);
+        lv_label_set_text(s_velLabel, "VEL: --");
+        lv_obj_set_style_text_color(s_velLabel, lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_velLabel, &lv_font_montserrat_14, 0);
+    }
+
+    // Velocity-curve chart: input 0..127 on X (point index), velocity 0..127 on Y.
+    // Cyan series = the curve; red series = a single-point marker at the last hit.
+    s_chart = lv_chart_create(root);
+    lv_obj_set_size(s_chart, LV_PCT(90), 120);
+    lv_obj_set_style_pad_all(s_chart, 2, 0);
+    lv_chart_set_type(s_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(s_chart, 128);
+    lv_chart_set_axis_range(s_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 127);
+    s_curveSer = lv_chart_add_series(s_chart, lv_palette_main(LV_PALETTE_CYAN), LV_CHART_AXIS_PRIMARY_Y);
+    s_markSer  = lv_chart_add_series(s_chart, lv_palette_main(LV_PALETTE_RED),  LV_CHART_AXIS_PRIMARY_Y);
+    // Marker: fat dot, no connecting line (single visible point).
+    lv_obj_set_style_size(s_chart, 6, 6, LV_PART_INDICATOR);
 
     // Close button.
     lv_obj_t* closeBtn = lv_button_create(root);
