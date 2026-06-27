@@ -57,6 +57,11 @@ static lv_chart_series_t* s_curveSer = nullptr; // cyan: velocity curve, 128 pts
 static lv_chart_series_t* s_markSer  = nullptr; // red: single-point last-hit marker
 static uint8_t            s_lastRaw  = 0xFF;
 
+// Realtime live-feedback widgets (Task 3).
+static lv_obj_t*          s_rawAbLabel  = nullptr; // 12-bit A/B raw readout
+static lv_obj_t*          s_lrSliderRO  = nullptr; // read-only L/R balance slider
+static lv_chart_cursor_t* s_liveCursor  = nullptr; // amber "+" crosshair on the curve
+
 static crosspad::RgbColor s_prevColors[16];
 
 // Cross-task select marshaling (callback fires from the pad-event task).
@@ -246,23 +251,30 @@ static void poll_cb(lv_timer_t*) {
         load_pad_fields(s_sel); // resets s_lastRaw, repaints curve
     }
 
-    // Live per-pad RAW (pre-curve linear hit) + computed VELOCITY + hit marker.
-    uint8_t raw = 0;
-    if (crosspad_gui::getGuiPlatform().readStmPadVelRaw(s_sel, raw)) {
-        if (raw != s_lastRaw) {
-            s_lastRaw = raw;
-            auto* s = crosspad::CrosspadSettings::getInstance();
-            if (s) {
-                uint8_t curve = s->stm.padVelCurve[s_sel];
-                uint8_t floor = s->stm.padVelFloor[s_sel];
-                if (curve == crosspad::STM32_VEL_INHERIT) curve = s->stm.velCurveDef;
-                if (floor == crosspad::STM32_VEL_INHERIT) floor = s->stm.velFloorDef;
-                uint8_t vel = crosspad::stm32VelCurveApply(raw, curve, floor);
-                if (s_rawLabel) lv_label_set_text_fmt(s_rawLabel, "RAW: %u", (unsigned)raw);
-                if (s_velLabel) lv_label_set_text_fmt(s_velLabel, "VEL: %u", (unsigned)vel);
-                update_marker(raw, vel);
-            }
+    // Combined live read: last-hit dot (static, velRaw) + live crosshair/raw/L-R.
+    crosspad::Stm32PadLive lv;
+    if (crosspad_gui::getGuiPlatform().readStmPadLive(s_sel, lv)) {
+        // Last-hit dot (latched note-on) — unchanged behaviour.
+        auto* s = crosspad::CrosspadSettings::getInstance();
+        if (s) {
+            uint8_t curve = s->stm.padVelCurve[s_sel];
+            uint8_t floor = s->stm.padVelFloor[s_sel];
+            if (curve == crosspad::STM32_VEL_INHERIT) curve = s->stm.velCurveDef;
+            if (floor == crosspad::STM32_VEL_INHERIT) floor = s->stm.velFloorDef;
+            uint8_t hitVel = crosspad::stm32VelCurveApply(lv.velRaw, curve, floor);
+            if (s_rawLabel) lv_label_set_text_fmt(s_rawLabel, "HIT: %u", (unsigned)lv.velRaw);
+            if (s_velLabel) lv_label_set_text_fmt(s_velLabel, "VEL: %u", (unsigned)hitVel);
+            update_marker(lv.velRaw, hitVel); // static red dot at last hit
         }
+
+        // Live crosshair parked on the curve at current pressure (every tick).
+        if (s_chart && s_liveCursor && s_curveSer)
+            lv_chart_set_cursor_point(s_chart, s_liveCursor, s_curveSer, lv.sum);
+
+        // Raw 12-bit A/B + L/R balance slider.
+        if (s_rawAbLabel) lv_label_set_text_fmt(s_rawAbLabel, "A:%4u  B:%4u",
+                                                (unsigned)lv.rawA, (unsigned)lv.rawB);
+        if (s_lrSliderRO) lv_slider_set_value(s_lrSliderRO, lv.pan, LV_ANIM_OFF);
     }
 }
 
@@ -289,6 +301,9 @@ static void on_delete(lv_event_t*) {
     s_analogDrop = s_curveDrop = s_floorSlider = s_floorInherit = nullptr;
     s_rawLabel = s_velLabel = s_chart = nullptr;
     s_curveSer = s_markSer = nullptr;
+    // Cursor is owned by the chart and freed with it — just null the pointer.
+    s_rawAbLabel = s_lrSliderRO = nullptr;
+    s_liveCursor = nullptr;
     s_lastRaw = 0xFF;
 
     // Persist the edited per-pad arrays to NVS.
@@ -410,6 +425,30 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
     // Marker: fat dot, no connecting line (single visible point).
     lv_obj_set_style_size(s_chart, 6, 6, LV_PART_INDICATOR);
 
+    // Live amber "+" crosshair cursor that tracks current pressure on the curve.
+    s_liveCursor = lv_chart_add_cursor(s_chart, lv_palette_main(LV_PALETTE_AMBER),
+                                       (lv_dir_t)(LV_DIR_HOR | LV_DIR_VER));
+
+    // Raw 12-bit A/B readout.
+    {
+        lv_obj_t* row = make_row(root, "Raw A/B");
+        s_rawAbLabel = lv_label_create(row);
+        lv_label_set_text(s_rawAbLabel, "A: ----  B: ----");
+        lv_obj_set_style_text_color(s_rawAbLabel, lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_rawAbLabel, &lv_font_montserrat_14, 0);
+    }
+
+    // Read-only L/R balance slider (live pan; not user-adjustable).
+    {
+        lv_obj_t* row = make_row(root, "L/R Balance");
+        s_lrSliderRO = lv_slider_create(row);
+        lv_slider_set_range(s_lrSliderRO, -127, 127);
+        lv_slider_set_value(s_lrSliderRO, 0, LV_ANIM_OFF);
+        lv_obj_set_width(s_lrSliderRO, LV_PCT(55));
+        lv_obj_add_state(s_lrSliderRO, LV_STATE_DISABLED);
+        lv_obj_remove_flag(s_lrSliderRO, LV_OBJ_FLAG_CLICKABLE);
+    }
+
     // Close button.
     lv_obj_t* closeBtn = lv_button_create(root);
     lv_obj_set_size(closeBtn, LV_SIZE_CONTENT, 32);
@@ -434,7 +473,7 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
 
     // 6. Cross-task poll timer.
     s_pendingSelValid = false;
-    s_pollTimer = lv_timer_create(poll_cb, 100, nullptr);
+    s_pollTimer = lv_timer_create(poll_cb, 50, nullptr);
 
     // 7. Encoder focus: save the caller's group, build ours, bind the encoder.
     //    Mirrors midi_ble_panel.cpp (crosspad-gui native, no platform-idf dep).

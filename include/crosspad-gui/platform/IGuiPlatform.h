@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "lvgl.h"
+#include "crosspad/stm32/Stm32ConfigSync.hpp"  // crosspad::Stm32PadLive
 
 namespace crosspad_gui {
 
@@ -82,6 +83,9 @@ public:
     // Read one pad's last note-on pre-curve linear value (0..127). Returns false
     // off-ESP / on bus error (caller shows "—"). ESP boards only.
     virtual bool readStmPadVelRaw(uint8_t /*padIdx*/, uint8_t& /*out*/) { return false; }
+
+    // Read one pad's combined live state (pressure/pan/last-velraw + raw A/B). False off-ESP.
+    virtual bool readStmPadLive(uint8_t /*padIdx*/, crosspad::Stm32PadLive& /*out*/) { return false; }
 };
 
 // Set the platform implementation (call once at startup)
