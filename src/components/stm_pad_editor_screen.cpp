@@ -62,8 +62,6 @@ static lv_obj_t*          s_rawAbLabel  = nullptr; // 12-bit A/B raw readout
 static lv_obj_t*          s_lrSliderRO  = nullptr; // read-only L/R balance slider
 static lv_chart_cursor_t* s_liveCursor  = nullptr; // amber "+" crosshair on the curve
 
-static crosspad::RgbColor s_prevColors[16];
-
 // Cross-task select marshaling (callback fires from the pad-event task).
 static volatile uint8_t s_pendingSel      = 0;
 static volatile bool    s_pendingSelValid = false;
@@ -285,8 +283,12 @@ static void on_delete(lv_event_t*) {
     pm.setActivePadLogic("");
     pm.unregisterPadLogic("StmPadEditor");
 
-    // Restore RGB colors snapshotted at create.
-    for (int i = 0; i < 16; ++i) pm.setPadColor((uint8_t)i, s_prevColors[i]);
+    // Clear the custom-color override the editor set while painting selection.
+    // setPadColor() sets hasCustomColor=true, which hijacks the pressed-LED
+    // feedback (AFTERTOUCH mode renders defaultColor instead of pressedColor),
+    // so we must drop the flag — not just re-set a colour — on teardown. The
+    // home/app repaints its own palette when re-entered.
+    for (int i = 0; i < 16; ++i) pm.clearPadColor((uint8_t)i);
 
     if (s_pollTimer) { lv_timer_delete(s_pollTimer); s_pollTimer = nullptr; }
 
@@ -339,9 +341,10 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
     lv_obj_add_event_cb(root, on_delete, LV_EVENT_DELETE, nullptr);
     s_root = root;
 
-    // 2. Snapshot current pad colors so we can restore on close.
+    // 2. Pad manager — selection painting + handler registration below.
+    //    (No colour snapshot needed: on_delete clears the custom-colour override
+    //    so pads return to default-managed state.)
     auto& pm = crosspad::getPadManager();
-    for (int i = 0; i < 16; ++i) s_prevColors[i] = pm.getPadColor((uint8_t)i);
 
     // 3. Header + the 5 hand-rolled field widgets + a Close button.
     s_headerLabel = lv_label_create(root);
