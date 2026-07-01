@@ -988,6 +988,64 @@ static void stm_analog_delta_cb(lv_event_t*) {
     crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_ANALOG_DELTA, s->stm.analogDelta);
 }
 
+// ---- Global pad fallback (CROSSPAD_PAD_EDITOR_ENABLED == 0) ----
+
+#if !CROSSPAD_PAD_EDITOR_ENABLED
+
+static void global_sens_val_cb(lv_event_t* e) {
+    auto* s = get_settings(); if (!s) return;
+    s->stm.sensitivity(0) = (uint16_t)lv_slider_get_value((lv_obj_t*)lv_event_get_target(e));
+    for (int i = 0; i < 16; ++i) getGuiPlatform().writeStmConfigPad((uint8_t)i);
+    auto* ui = crosspad::getSettingsUI(); if (ui) ui->saveSettings();
+}
+
+static void global_push_pads_cb(lv_event_t*) {
+    for (int i = 0; i < 16; ++i) getGuiPlatform().writeStmConfigPad((uint8_t)i);
+    auto* ui = crosspad::getSettingsUI(); if (ui) ui->saveSettings();
+}
+
+static void global_lr_cb(lv_event_t* e)     { global_push_pads_cb(e); }
+static void global_vcurve_cb(lv_event_t* e) { global_push_pads_cb(e); }
+static void global_vfloor_cb(lv_event_t* e) { global_push_pads_cb(e); }
+static void global_analog_cb(lv_event_t* e) { global_push_pads_cb(e); }
+
+static void open_global_pad_sliders(lv_obj_t* parent, lv_group_t* group) {
+    auto* s = get_settings(); if (!s) return;
+
+    // Sensitivity: uint16_t (1..4095) — use a hand-rolled slider (no settings_row_slider uint16 variant).
+    settings_section_header(parent, "Global Pad Defaults");
+    {
+        lv_obj_t* lbl = lv_label_create(parent);
+        lv_label_set_text(lbl, "Sensitivity");
+        lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+        lv_obj_t* sl = lv_slider_create(parent);
+        lv_slider_set_range(sl, 1, 4095);
+        lv_slider_set_value(sl, (int32_t)s->stm.sensitivity(0), LV_ANIM_OFF);
+        lv_obj_set_size(sl, LV_PCT(95), 10);
+        lv_obj_set_style_bg_color(sl, lv_color_make(60, 60, 60), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(sl, CROSSPAD_THEME_PRIMARY, LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(sl, lv_color_white(), LV_PART_KNOB);
+        lv_obj_set_style_pad_all(sl, 3, LV_PART_KNOB);
+        lv_obj_add_event_cb(sl, global_sens_val_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+        lv_obj_add_event_cb(sl, global_sens_val_cb, LV_EVENT_RELEASED, nullptr);
+        if (group) lv_group_add_obj(group, sl);
+    }
+
+    settings_row_slider(parent, group, "L/R Ratio", 1, 99,
+                        &s->stm.lrRatio(0), global_lr_cb);
+    settings_row_dropdown(parent, group, "Vel Curve",
+                          "Linear\nExp Soft\nExp Hard",
+                          &s->stm.velCurve(0), global_vcurve_cb);
+    settings_row_slider(parent, group, "Vel Floor", 0, 127,
+                        &s->stm.velFloor(0), global_vfloor_cb);
+    settings_row_dropdown(parent, group, "Analog Mode",
+                          "Disable\nCC\nAftertouch\nBoth",
+                          &s->stm.analogMode(0), global_analog_cb);
+}
+
+#endif // !CROSSPAD_PAD_EDITOR_ENABLED
+
 static void cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
     auto* s = get_settings(); if (!s) return;
 
@@ -1011,9 +1069,13 @@ static void cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
                         &s->stm.analogDelta, stm_analog_delta_cb);
 
     settings_section_header(parent, "Per-Pad");
+#if CROSSPAD_PAD_EDITOR_ENABLED
     settings_row_action(parent, group, "Per-Pad Tuning", "Open",
         [](lv_event_t*) { crosspad_gui::stm_pad_editor_create(lv_screen_active()); },
         nullptr);
+#else
+    open_global_pad_sliders(parent, group);
+#endif
 }
 
 // ---- System / STM Power+Input ----

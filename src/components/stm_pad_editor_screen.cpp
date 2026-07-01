@@ -18,9 +18,12 @@
 //  * The select callback fires from the pad-event task, NOT the LVGL task, so it
 //    only sets a pending flag; an LVGL timer applies it (mirrors midi_ble_panel).
 
+#include "crosspad-gui/components/stm_pad_editor_screen.h"
+
+#if CROSSPAD_PAD_EDITOR_ENABLED
+
 #ifdef USE_LVGL
 
-#include "crosspad-gui/components/stm_pad_editor_screen.h"
 #include "crosspad-gui/components/stm_pad_editor_logic.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
@@ -500,3 +503,4 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
 } // namespace crosspad_gui
 
 #endif // USE_LVGL
+#endif // CROSSPAD_PAD_EDITOR_ENABLED
