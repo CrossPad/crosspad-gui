@@ -105,7 +105,10 @@ public:
             visible_ = true;
         }
 
-        if (padLogicName_ && padLogicName_[0] != '\0') {
+        // Guard on `app`: a failed create_() (returns nullptr) must not push —
+        // destroyApp()'s `if (app == nullptr) return;` guard would make the
+        // matching pop unreachable, leaking a stack frame forever.
+        if (app && padLogicName_ && padLogicName_[0] != '\0') {
             crosspad::getPadManager().pushPadLogic(padLogicName_);
         }
 
