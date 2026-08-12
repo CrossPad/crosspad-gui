@@ -35,6 +35,7 @@
 #include <lvgl.h>
 #include <cstdio>
 #include <memory>
+#include <string>
 
 namespace crosspad_gui {
 
@@ -42,6 +43,10 @@ namespace crosspad_gui {
 
 static StmPadEditorLogic s_logic;
 static uint8_t           s_sel = 0;
+
+// Pad logic that was active when the editor opened (e.g. "Sampler"). Restored
+// on teardown so the previous app's onActivate() repaints its own pad palette.
+static std::string s_prevLogic;
 
 static lv_obj_t* s_root        = nullptr;
 static lv_obj_t* s_headerLabel = nullptr;
@@ -289,9 +294,14 @@ static void on_delete(lv_event_t*) {
     // Clear the custom-color override the editor set while painting selection.
     // setPadColor() sets hasCustomColor=true, which hijacks the pressed-LED
     // feedback (AFTERTOUCH mode renders defaultColor instead of pressedColor),
-    // so we must drop the flag — not just re-set a colour — on teardown. The
-    // home/app repaints its own palette when re-entered.
+    // so we must drop the flag — not just re-set a colour — on teardown.
     for (int i = 0; i < 16; ++i) pm.clearPadColor((uint8_t)i);
+
+    // Reactivate whatever pad logic was running before the editor opened
+    // (paused apps get no onShow on our exit, so nobody else re-activates it);
+    // its onActivate() repaints the app palette the clear above just wiped.
+    if (!s_prevLogic.empty()) pm.setActivePadLogic(s_prevLogic);
+    s_prevLogic.clear();
 
     if (s_pollTimer) { lv_timer_delete(s_pollTimer); s_pollTimer = nullptr; }
 
@@ -471,6 +481,7 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
     static auto s_logicSp = std::shared_ptr<StmPadEditorLogic>(&s_logic, [](StmPadEditorLogic*){});
     pm.registerPadLogic("StmPadEditor", s_logicSp);
     s_logic.setSelectCallback(on_pad_selected, nullptr);
+    s_prevLogic = pm.getActivePadLogic();
     pm.setActivePadLogic("StmPadEditor");
 
     // 5. Initialize selection.
