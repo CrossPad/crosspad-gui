@@ -51,6 +51,8 @@ void AppOrchestrator::populateApps(lv_obj_t* container) {
             entry.createLVGL, entry.destroyLVGL);
         if (!app) continue;
 
+        app->setPadLogicName(entry.padLogic);
+
         // Flag Power OFF as message box
         if (strcmp(entry.name, "Power OFF") == 0) {
             app->AddFlag(crosspad::APP_FLAG_MSGBOX);

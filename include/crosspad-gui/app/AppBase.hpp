@@ -5,6 +5,7 @@
 #include "lvgl.h"
 #include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/components/app_lifecycle.h"
+#include "crosspad/pad/PadManager.hpp"
 #include <memory>
 
 namespace crosspad_gui {
@@ -104,6 +105,10 @@ public:
             visible_ = true;
         }
 
+        if (padLogicName_ && padLogicName_[0] != '\0') {
+            crosspad::getPadManager().pushPadLogic(padLogicName_);
+        }
+
         // Call app initialization for auto-registered apps
         if (HasFlag(crosspad::APP_FLAG_AUTO_REGISTERED)) {
             this->onAppInit();
@@ -156,6 +161,10 @@ public:
         lv_obj_t* app_to_destroy = app;
         app = nullptr;
 
+        if (padLogicName_ && padLogicName_[0] != '\0') {
+            crosspad::getPadManager().popPadLogic();
+        }
+
         if (destroy_) {
             destroy_(app_to_destroy);
         } else {
@@ -170,6 +179,7 @@ public:
     void setOnShow(ShowFn show)       { show_ = show; }
     void setOnHide(HideFn hide)       { hide_ = hide; }
     void setOnDestroy(DestroyFn dest)  { destroy_ = dest; }
+    void setPadLogicName(const char* name) override { padLogicName_ = name; }
 
     // ── Getters ─────────────────────────────────────────────────────────
 
@@ -185,6 +195,7 @@ private:
     bool visible_ = false;
     bool started_ = false;
     AppFlags type_ = crosspad::APP_FLAG_NONE;
+    const char* padLogicName_ = nullptr;
 
     CreateFn  create_   = nullptr;
     DestroyFn destroy_  = lv_Default_onDestroy;

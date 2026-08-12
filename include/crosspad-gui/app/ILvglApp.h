@@ -30,6 +30,10 @@ struct ILvglApp : public crosspad::IApp {
     virtual void destroyApp() = 0;
     virtual lv_obj_t* getAppContainer() = 0;
 
+    /// Declarative pad logic: name auto-activated on start() and restored on
+    /// destroyApp(). Default no-op so non-AppBase implementers are unaffected.
+    virtual void setPadLogicName(const char* name) { (void)name; }
+
     // ── Flag management ──────────────────────────────────────────────────
     virtual void AddFlag(crosspad::AppFlags flag) = 0;
     virtual bool HasFlag(crosspad::AppFlags flag) = 0;
