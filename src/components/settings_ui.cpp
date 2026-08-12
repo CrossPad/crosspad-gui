@@ -12,6 +12,7 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/pad/PadLedController.hpp"
 #include "crosspad/stm32/reg_map.h"
+#include "crosspad/platform/IVibration.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -758,14 +759,22 @@ static void cat_build_pads(lv_obj_t * parent, lv_group_t * group) {
 
 static lv_obj_t * s_vibration_dependent = nullptr;
 
-static void vibration_enable_cb(lv_event_t * e) {
+static void vibration_apply_cb(lv_event_t * e)
+{
     (void)e;
+    if (auto * s = get_settings()) {
+        crosspad::getVibration().applySettings(s->vibration);
+    }
+}
+
+static void vibration_enable_cb(lv_event_t * e) {
     if (!s_vibration_dependent) return;
     if (get_settings()->vibration.enable) {
         lv_obj_remove_flag(s_vibration_dependent, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_vibration_dependent, LV_OBJ_FLAG_HIDDEN);
     }
+    vibration_apply_cb(e);
 }
 
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group) {
@@ -789,32 +798,32 @@ static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group) {
     }
 
     settings_row_switch(s_vibration_dependent, group, "On Touch",
-                        &s->vibration.enableVibrationOnTouch);
+                        &s->vibration.enableVibrationOnTouch, vibration_apply_cb);
 
     settings_row_switch(s_vibration_dependent, group, "On Error",
-                        &s->vibration.enableVibrationOnError);
+                        &s->vibration.enableVibrationOnError, vibration_apply_cb);
 
     settings_row_switch(s_vibration_dependent, group, "Audio to Vibe",
-                        &s->vibration.enableAudioToVibe);
+                        &s->vibration.enableAudioToVibe, vibration_apply_cb);
 
     settings_section_header(s_vibration_dependent, "Input Range");
 
     settings_row_slider(s_vibration_dependent, group, "Input Min", 0, 255,
-                        &s->vibration.inputMin);
+                        &s->vibration.inputMin, vibration_apply_cb);
 
     settings_row_slider(s_vibration_dependent, group, "Input Max", 0, 255,
-                        &s->vibration.inputMax);
+                        &s->vibration.inputMax, vibration_apply_cb);
 
     settings_section_header(s_vibration_dependent, "Output Range");
 
     settings_row_slider(s_vibration_dependent, group, "Output Min", 0, 255,
-                        &s->vibration.outputMin);
+                        &s->vibration.outputMin, vibration_apply_cb);
 
     settings_row_slider(s_vibration_dependent, group, "Output Max", 0, 255,
-                        &s->vibration.outputMax);
+                        &s->vibration.outputMax, vibration_apply_cb);
 
     settings_row_switch(s_vibration_dependent, group, "Debug Mode",
-                        &s->vibration.debugging);
+                        &s->vibration.debugging, vibration_apply_cb);
 }
 
 // ---- Connectivity ----
