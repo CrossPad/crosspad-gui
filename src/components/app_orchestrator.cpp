@@ -2,7 +2,9 @@
 
 #include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad/app/AppRegistry.hpp"
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace crosspad_gui {
 
@@ -36,9 +38,23 @@ void AppOrchestrator::populateApps(lv_obj_t* container) {
     const auto* entries = registry.getApps();
     size_t count = registry.getAppCount();
 
-    for (size_t i = 0; i < count; i++) {
-        const auto& entry = entries[i];
-        if (entry.createLVGL == nullptr) continue;
+    // Stable ordering lets ad-hoc app registrations choose their launcher
+    // position with AppEntry::priority while preserving registration order for
+    // entries with the same priority.
+    std::vector<const crosspad::AppEntry*> sortedEntries;
+    sortedEntries.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        if (entries[i].createLVGL != nullptr) {
+            sortedEntries.push_back(&entries[i]);
+        }
+    }
+    std::stable_sort(sortedEntries.begin(), sortedEntries.end(),
+        [](const crosspad::AppEntry* lhs, const crosspad::AppEntry* rhs) {
+            return lhs->priority > rhs->priority;
+        });
+
+    for (const auto* entryPtr : sortedEntries) {
+        const auto& entry = *entryPtr;
 
         // Resolve icon path (platform may prepend asset prefix)
         const char* icon = entry.icon;
