@@ -146,7 +146,7 @@ void launcher_register_power_off() {
         nullptr,  // no simple GUI
         nullptr,  // no refresh
         nullptr,  // no cleanup
-        100       // high priority -> last on app list
+        100       // priority (decorative — launcher lists apps in registration order)
     });
 }
 
