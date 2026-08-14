@@ -261,7 +261,7 @@ lv_obj_t* lv_CreateMidiBLE(lv_obj_t * parent, App * a) {
 
     // BLE enable switch
     lv_obj_t * sw = lv_switch_create(g_cont);
-    lv_obj_add_state(sw, settings->keypad.send2BLE ? LV_STATE_CHECKED : 0);
+    lv_obj_add_state(sw, settings->keypad.send2BLE ? LV_STATE_CHECKED : LV_STATE_DEFAULT);
     lv_obj_add_event_cb(sw, ble_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_add_style(sw, &style_switch, LV_PART_INDICATOR);
     lv_obj_align_to(sw, backBtn, LV_ALIGN_OUT_LEFT_MID, -7, 0);
