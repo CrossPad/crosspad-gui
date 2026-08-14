@@ -32,7 +32,9 @@ jobs:
         run: sudo apt-get install -y doxygen
 
       - name: Generate docs
-        run: doxygen
+        run: |
+          mkdir -p docs/doxygen
+          doxygen
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
