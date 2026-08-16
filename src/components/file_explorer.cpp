@@ -33,6 +33,27 @@ static file_preview_cb_t s_previewCb = nullptr;
 static file_scan_lifecycle_cb_t s_beforeScanCb = nullptr;
 static file_scan_lifecycle_cb_t s_afterScanCb = nullptr;
 
+// Debounced preview: encoder scroll fires FOCUSED per detent — previewing
+// each one floods the SD/audio path. A one-shot timer fires only after the
+// selection rests for the debounce window.
+static lv_timer_t * s_previewTimer = nullptr;
+static char         s_previewPath[MAX_PATH_LEN] = {0};
+
+static void previewTimer_cb(lv_timer_t * t) {
+    lv_timer_pause(t); // one-shot per arming
+    if (s_previewPath[0] && s_previewCb) {
+        s_previewCb(s_previewPath);
+    }
+}
+
+static void SchedulePreview(const char * path) {
+    strncpy(s_previewPath, path, MAX_PATH_LEN - 1);
+    s_previewPath[MAX_PATH_LEN - 1] = '\0';
+    if (!s_previewTimer) s_previewTimer = lv_timer_create(previewTimer_cb, 220, nullptr);
+    lv_timer_reset(s_previewTimer); // restart the window on each new focus
+    lv_timer_resume(s_previewTimer);
+}
+
 void file_explorer_set_preview_callback(file_preview_cb_t cb) {
     s_previewCb = cb;
 }
@@ -145,6 +166,10 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
         itemList = NULL;
         loadButton = NULL;
         entries.clear();
+        if (s_previewTimer) {
+            lv_timer_delete(s_previewTimer);
+            s_previewTimer = nullptr;
+        }
         if (s_prevEncoderIndev) {
             lv_indev_set_group(s_prevEncoderIndev, s_prevEncoderGroup);
             s_prevEncoderIndev = nullptr;
@@ -322,7 +347,7 @@ static void ItemSelected_cb(lv_event_t * e) {
         currentFile = *foundItem;
         if (!foundItem->isFolder && s_previewCb) {
             if (lv_indev_get_type(lv_indev_active()) == LV_INDEV_TYPE_ENCODER) {
-                s_previewCb(foundItem->path.c_str());
+                SchedulePreview(foundItem->path.c_str());
             }
         }
         break;

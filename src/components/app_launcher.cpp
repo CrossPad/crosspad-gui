@@ -181,7 +181,10 @@ lv_obj_t* launcher_create_button_grid(
     lv_obj_set_style_bg_opa(btn_wrap, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(btn_wrap, 0, 0);
     lv_obj_set_style_pad_all(btn_wrap, 0, 0);
-    lv_obj_set_scrollbar_mode(btn_wrap, LV_SCROLLBAR_MODE_AUTO);
+    // All tiles fit on one screen (small button_size from the platform) —
+    // scrolling off keeps encoder focus from dragging the grid around.
+    lv_obj_set_scrollbar_mode(btn_wrap, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(btn_wrap, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(btn_wrap, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(btn_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(btn_wrap, s_config.button_spacing, 0);
