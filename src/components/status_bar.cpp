@@ -862,7 +862,8 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         crosspad_gui::getGuiPlatform().setLcdBrightness(settings->LCDbrightness);
     };
 
-    lv_obj_t * slider1 = lv_create_my_slider(cont, "SPK", 0, 127,
+    // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
+    lv_obj_t * slider1 = lv_create_my_slider(cont, "SPK", 0, 100,
                                               &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
     lv_obj_t * slider2 = lv_create_my_slider(cont, "PAD Brightness", 0, 255,
                                               &(settings->RGBbrightness), rgb_apply);

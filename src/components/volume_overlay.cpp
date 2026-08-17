@@ -109,7 +109,7 @@ static void show(int mode) {
     lv_obj_align(s_value_label, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     s_slider = lv_slider_create(s_overlay);
-    lv_slider_set_range(s_slider, 0, 127);
+    lv_slider_set_range(s_slider, 0, 100);  // codec volume range
     lv_obj_set_width(s_slider, 256);
     lv_obj_set_height(s_slider, 10);
     lv_obj_align(s_slider, LV_ALIGN_BOTTOM_MID, 0, 0);

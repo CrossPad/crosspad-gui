@@ -73,6 +73,17 @@ public:
     // Apply headphone codec output volume (0..100 codec range; same caveat).
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 
+    // USB device profile. Boards that can re-enumerate between a data profile
+    // (CDC+MIDI) and a USB Audio profile (UAC2) override these; the settings UI
+    // hides the row where usbAudioSupported() is false.
+    virtual bool usbAudioSupported() { return false; }
+    virtual void setUsbAudioEnabled(bool /*enabled*/) {}
+
+    // True when writeStmConfig*() actually reaches the STM32 (rev2 I2C control
+    // plane). The settings UI hides the STM-backed panels when this is false so
+    // no board shows sliders that cannot take effect.
+    virtual bool hasStmConfigWrite() { return false; }
+
     // Write one STM config register (ESP boards only; no-op elsewhere).
     virtual void writeStmConfig8(uint16_t /*reg*/, uint8_t /*val*/) {}
     virtual void writeStmConfig16(uint16_t /*hiReg*/, uint16_t /*val*/) {}

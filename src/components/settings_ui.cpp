@@ -10,6 +10,7 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/settings/ISettingsUI.hpp"
+#include "crosspad/settings/SettingsIo.hpp"
 #include "crosspad/pad/PadLedController.hpp"
 #include "crosspad/stm32/reg_map.h"
 #include "crosspad/platform/IVibration.hpp"
@@ -42,9 +43,11 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_audio(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_pads(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group);
-static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_analog(lv_obj_t * parent, lv_group_t * group);
+static void cat_build_backup(lv_obj_t * parent, lv_group_t * group);
+static void cat_build_programming(lv_obj_t * parent, lv_group_t * group);
+static void cat_build_info(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_system(lv_obj_t * parent, lv_group_t * group);
 
 static const SettingsCategory s_builtin_categories[] = {
@@ -52,14 +55,22 @@ static const SettingsCategory s_builtin_categories[] = {
     { "Audio",            LV_SYMBOL_AUDIO,       cat_build_audio },
     { "Pads & LEDs",      LV_SYMBOL_KEYBOARD,    cat_build_pads },
     { "Vibration",        LV_SYMBOL_BELL,        cat_build_vibration },
-    { "Connectivity",     LV_SYMBOL_WIFI,        cat_build_connectivity },
     { "MIDI",             LV_SYMBOL_SHUFFLE,     cat_build_midi },
     { "Analog / Velocity", LV_SYMBOL_KEYBOARD,   cat_build_analog },
+    { "Backup (SD)",      LV_SYMBOL_SD_CARD,     cat_build_backup },
+    { "Programming",      LV_SYMBOL_DOWNLOAD,    cat_build_programming },
+    { "Info",             LV_SYMBOL_LIST,        cat_build_info },
     { "System",           LV_SYMBOL_SETTINGS,    cat_build_system },
 };
 static constexpr int s_builtin_count = sizeof(s_builtin_categories) / sizeof(s_builtin_categories[0]);
 
 static int total_category_count() { return s_builtin_count + s_extra_cat_count; }
+
+// STM-backed panels (Analog/Velocity, System → STM Power) only do something on
+// boards whose GUI platform can write STM config registers.
+static bool stm_config_available() {
+    return getGuiPlatform().hasStmConfigWrite();
+}
 
 static const SettingsCategory* get_category(int idx) {
     if (idx < s_builtin_count) return &s_builtin_categories[idx];
@@ -164,6 +175,7 @@ static void show_categories() {
     for (int i = 0; i < total; i++) {
         const SettingsCategory* cat = get_category(i);
         if (!cat) continue;
+        if (cat->build == cat_build_analog && !stm_config_available()) continue;
 
         lv_obj_t * row = lv_button_create(s_content);
         lv_obj_set_size(row, LV_PCT(100), 36);
@@ -659,6 +671,48 @@ static void audio_engine_sr_cb(lv_event_t * e) {
     }
 }
 
+// Speaker amplifier master switch. ON does not power the amp permanently — it
+// permits Stm32Manager's SpeakerAmpGate to raise REG_CTL_AUDIO_EN while the
+// output bus carries signal and to drop it after the quiet hold, so an idle
+// device draws no amp current. OFF forces it down immediately.
+static void speaker_amp_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (!s) return;
+    // The gate itself reads speakersEnabled from settings on its own tick
+    // (Stm32Manager), so the UI only mirrors the field and kills the amp at once
+    // when switching off — waiting 100 ms for the poll would be audible.
+    s->stm.audioEn = s->masterFX.speakersEnabled ? 1 : 0;
+    if (!s->masterFX.speakersEnabled) {
+        getGuiPlatform().writeStmConfig8(REG_CTL_AUDIO_EN, 0);
+    } else {
+        getGuiPlatform().setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
+    }
+}
+
+static void usb_audio_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (!s) return;
+    getGuiPlatform().setUsbAudioEnabled(s->usbAudioEnabled);
+    ui_toast_show(s->usbAudioEnabled ? "USB Audio on — device re-enumerating"
+                                     : "USB Serial+MIDI on — device re-enumerating",
+                  2500, UI_TOAST_INFO);
+    show_detail(s_current_category);
+}
+
+static void speaker_volume_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (s) crosspad_gui::getGuiPlatform().setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
+}
+
+static void headphone_volume_cb(lv_event_t * e) {
+    (void)e;
+    auto* s = get_settings();
+    if (s) crosspad_gui::getGuiPlatform().setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+}
+
 static void audio_engine_fc_cb(lv_event_t * e) {
     (void)e;
     auto* s = get_settings();
@@ -697,33 +751,30 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
                           "32\n48\n64\n128\n256\n512",
                           &s_audioEngineFcIdx, audio_engine_fc_cb);
 
-    settings_section_header(parent, "Master");
+    settings_section_header(parent, "Output Volume");
 
-    settings_row_switch(parent, group, "Master Mute",
-                        &s->masterFX.mute);
+    settings_row_switch(parent, group, "Speakers (auto on play)",
+                        &s->masterFX.speakersEnabled, speaker_amp_cb);
 
-    settings_row_slider(parent, group, "Input Volume", 0, 127,
-                        &s->masterFX.inVolume);
+    // Codec volumes are the only ones on a real signal path (the drawer and the
+    // volume overlay drive the same fields). masterFX.inVolume/outVolume and the
+    // per-effect bypass flags have no consumer on any platform — they are not
+    // exposed here so the panel cannot promise what the firmware does not do.
+    settings_row_slider(parent, group, "Speakers", 0, 100,
+                        &s->masterFX.outVolumeCodec[0][0], speaker_volume_cb);
 
-    settings_row_slider(parent, group, "Output Volume", 0, 127,
-                        &s->masterFX.outVolume);
+    settings_row_slider(parent, group, "Headphones", 0, 100,
+                        &s->masterFX.outVolumeCodec[1][0], headphone_volume_cb);
 
-    settings_section_header(parent, "Effects Bypass");
-
-    settings_row_switch(parent, group, "Delay",
-                        &s->masterFX.delay.bypass);
-
-    settings_row_switch(parent, group, "Reverb",
-                        &s->masterFX.reverb.bypass);
-
-    settings_row_switch(parent, group, "Distortion",
-                        &s->masterFX.distortion.bypass);
-
-    settings_row_switch(parent, group, "Chorus",
-                        &s->masterFX.chorus.bypass);
-
-    settings_row_switch(parent, group, "Flanger",
-                        &s->masterFX.flanger.bypass);
+    if (getGuiPlatform().usbAudioSupported()) {
+        settings_section_header(parent, "USB");
+        // Persisted preference: it is re-applied on the next boot, so this is
+        // both the live switch and the default profile.
+        settings_row_switch(parent, group, "USB Audio (UAC2)",
+                            &s->usbAudioEnabled, usb_audio_cb);
+        settings_row_info(parent, "Profile",
+                          s->usbAudioEnabled ? "Audio + MIDI" : "Serial + MIDI");
+    }
 }
 
 // ---- Pads & LEDs ----
@@ -742,17 +793,17 @@ static void cat_build_pads(lv_obj_t * parent, lv_group_t * group) {
 
     settings_section_header(parent, "Behavior");
 
+    // Gates pad→MIDI in PadManager. Was unreachable from the UI until now
+    // (System → "STM Keypad Scan" is a different thing: the STM scan enable).
+    settings_row_switch(parent, group, "Pad MIDI Output",
+                        &s->keypad.enableKeypad);
+
     settings_row_switch(parent, group, "Note Off on Release",
                         &s->keypad.noteOffOnRelease);
 
-    settings_row_switch(parent, group, "Inactive Lights",
-                        &s->keypad.inactiveLights);
-
+    // Consumed by the sequencer app (top row = transport/function keys).
     settings_row_switch(parent, group, "Upper Row Functions",
                         &s->keypad.upperRowFunctions);
-
-    settings_row_switch(parent, group, "Eco Mode",
-                        &s->keypad.ecoMode);
 }
 
 // ---- Vibration ----
@@ -824,34 +875,6 @@ static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group) {
 
     settings_row_switch(s_vibration_dependent, group, "Debug Mode",
                         &s->vibration.debugging, vibration_apply_cb);
-}
-
-// ---- Connectivity ----
-
-static void cat_build_connectivity(lv_obj_t * parent, lv_group_t * group) {
-    auto* s = get_settings();
-    if (!s) return;
-
-    settings_row_switch(parent, group, "WiFi",
-                        &s->wireless.enableWiFi);
-
-    settings_row_switch(parent, group, "Bluetooth LE",
-                        &s->wireless.enableBLE);
-
-    settings_row_switch(parent, group, "OSC",
-                        &s->wireless.enableOSC);
-
-    settings_row_switch(parent, group, "OSC Server",
-                        &s->wireless.enableOSCServer);
-
-    settings_row_switch(parent, group, "UDP",
-                        &s->wireless.enableUDP);
-
-    settings_row_switch(parent, group, "TCP",
-                        &s->wireless.enableTCP);
-
-    settings_row_switch(parent, group, "Web Server",
-                        &s->wireless.enableWebServer);
 }
 
 // ---- MIDI ----
@@ -935,17 +958,13 @@ static void cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
 
     settings_section_header(parent, "ESP32 Routing");
 
+    // BLE2Audio / Midi2Audio have no consumer in the firmware — only the two
+    // forwarding paths below are wired (MidiInputHandler).
     settings_row_switch(parent, group, "BLE -> MIDI",
                         &s->esp32Routing.BLE2Midi);
 
-    settings_row_switch(parent, group, "BLE -> Audio",
-                        &s->esp32Routing.BLE2Audio);
-
     settings_row_switch(parent, group, "MIDI -> BLE",
                         &s->esp32Routing.Midi2BLE);
-
-    settings_row_switch(parent, group, "MIDI -> Audio",
-                        &s->esp32Routing.Midi2Audio);
 
     settings_section_header(parent, "STM Pads (MIDI)");
     // MIDI channel 0..15 (display 1..16 is fine to leave as 0..15 raw)
@@ -1093,6 +1112,10 @@ static const uint16_t kTimeoutSecs[] = { 0, 30, 60, 300, 600, 1800, 3600 }; // 0
 static const char* kTimeoutOpts = "Never\n30s\n1m\n5m\n10m\n30m\n1h";
 static uint8_t s_dimIdx = 0, s_sleepIdx = 0;
 
+static const uint8_t kUsbSuspSecs[] = { 0, 15, 30, 60, 120 };   // 0 = never
+static const char* kUsbSuspOpts = "Never\n15s\n30s\n1m\n2m";
+static uint8_t s_usbSuspIdx = 2;   // default 30 s
+
 static const uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000 };
 static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s";
 static uint8_t s_longPressIdx = 3; // default 2000ms
@@ -1100,6 +1123,20 @@ static uint8_t s_longPressIdx = 3; // default 2000ms
 static uint8_t idx_for_u16(const uint16_t* arr, uint8_t n, uint16_t val, uint8_t dflt) {
     for (uint8_t i = 0; i < n; ++i) if (arr[i] == val) return i;
     return dflt;
+}
+
+// A stored timeout that is not one of the presets (older firmware defaulted the
+// dim timeout to 1000 s) used to fall back to index 0 = "Never" while the STM
+// happily kept counting — the panel said one thing, the hardware did another.
+// Snap to the closest preset instead and write the snapped value back.
+static uint8_t nearest_idx_u16(const uint16_t* arr, uint8_t n, uint16_t val) {
+    uint8_t best = 0;
+    uint32_t bestDist = 0xFFFFFFFFu;
+    for (uint8_t i = 0; i < n; ++i) {
+        uint32_t d = (arr[i] > val) ? (uint32_t)(arr[i] - val) : (uint32_t)(val - arr[i]);
+        if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
 }
 
 // autoSleep is uint8_t in Stm32Settings; use a bool proxy like s_panCcEnProxy
@@ -1119,23 +1156,211 @@ static void stm_wake_bright_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_WAKE_BRIGHT, s->stm.wakeBrightness);
 }
+// The STM only promotes LIGHT → DEEP while sleep_to > dim_to (sleep.c
+// light_sleep_tick). Picking sleep <= dim therefore disables sleep silently, so
+// the UI repairs the pair instead of storing a combination that does nothing.
+static void stm_push_timeouts(crosspad::CrosspadSettings* s) {
+    auto& plat = getGuiPlatform();
+    plat.writeStmConfig16(REG_CTL_DIM_TO_S_HI, s->stm.dimTimeoutS);
+    plat.writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
+}
+
 static void stm_dim_to_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     if (s_dimIdx >= sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0])) s_dimIdx = 0;
     s->stm.dimTimeoutS = kTimeoutSecs[s_dimIdx];
-    crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_DIM_TO_S_HI, s->stm.dimTimeoutS);
+    if (s->stm.sleepTimeoutS > 0 && s->stm.sleepTimeoutS <= s->stm.dimTimeoutS) {
+        s->stm.sleepTimeoutS = 0;   // "Never" — the honest reading of an unreachable sleep
+        s_sleepIdx = 0;
+        ui_toast_show("Sleep must be longer than Dim — sleep set to Never",
+                      2500, UI_TOAST_WARNING);
+        save_settings();
+        stm_push_timeouts(s);
+        show_detail(s_current_category);
+        return;
+    }
+    stm_push_timeouts(s);
 }
 static void stm_sleep_to_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     if (s_sleepIdx >= sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0])) s_sleepIdx = 0;
     s->stm.sleepTimeoutS = kTimeoutSecs[s_sleepIdx];
-    crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
+    if (s->stm.sleepTimeoutS > 0 && s->stm.dimTimeoutS >= s->stm.sleepTimeoutS) {
+        // Pull dim down to the next preset below sleep so both stages stay live.
+        uint16_t newDim = 0;
+        uint8_t newIdx = 0;
+        for (uint8_t i = 0; i < sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]); ++i) {
+            if (kTimeoutSecs[i] > 0 && kTimeoutSecs[i] < s->stm.sleepTimeoutS &&
+                kTimeoutSecs[i] > newDim) { newDim = kTimeoutSecs[i]; newIdx = i; }
+        }
+        s->stm.dimTimeoutS = newDim;   // 0 → dim disabled, STM goes straight to DEEP
+        s_dimIdx = newIdx;
+        ui_toast_show("Dim shortened to stay below Sleep", 2500, UI_TOAST_INFO);
+        save_settings();
+        stm_push_timeouts(s);
+        show_detail(s_current_category);
+        return;
+    }
+    stm_push_timeouts(s);
+}
+static void stm_usb_susp_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_usbSuspIdx >= sizeof(kUsbSuspSecs)/sizeof(kUsbSuspSecs[0])) s_usbSuspIdx = 2;
+    s->stm.usbSuspendS = kUsbSuspSecs[s_usbSuspIdx];
+    getGuiPlatform().writeStmConfig8(REG_CTL_USB_SUSP_S, s->stm.usbSuspendS);
 }
 static void stm_long_press_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     if (s_longPressIdx >= sizeof(kLongPressMs)/sizeof(kLongPressMs[0])) s_longPressIdx = 3;
     s->stm.longPressMs = kLongPressMs[s_longPressIdx];
     crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
+}
+
+// ---- Backup (SD) ----
+//
+// Two independent files: the full settings snapshot and a pad-tuning-only file.
+// Pads are separate on purpose — pad calibration belongs to a physical unit and
+// is worth carrying between firmware profiles without dragging along someone
+// else's brightness, routing and audio setup.
+
+static const char* kBackupAllName  = "crosspad-settings.json";
+static const char* kBackupPadsName = "crosspad-pads.json";
+
+static bool backup_path(char* buf, size_t len, const char* file) {
+    auto* ui = getSettingsUI();
+    const char* dir = ui ? ui->getBackupDir() : nullptr;
+    if (!dir) return false;
+    snprintf(buf, len, "%s/%s", dir, file);
+    return true;
+}
+
+static void backup_report(const crosspad::SettingsIoResult& r, const char* okMsg) {
+    if (r.ok) {
+        ui_toast_show(okMsg, 2000, UI_TOAST_INFO);
+    } else {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "%s", r.error ? r.error : "failed");
+        ui_toast_show(msg, 3000, UI_TOAST_WARNING);
+    }
+}
+
+static void backup_export_all_cb(lv_event_t *) {
+    auto* s = get_settings(); char p[128];
+    if (!s || !backup_path(p, sizeof(p), kBackupAllName)) return;
+    backup_report(crosspad::settingsExportAll(*s, p), "Settings exported to SD");
+}
+
+static void backup_import_all_cb(lv_event_t *) {
+    auto* s = get_settings(); char p[128];
+    if (!s || !backup_path(p, sizeof(p), kBackupAllName)) return;
+    auto r = crosspad::settingsImportAll(*s, p);
+    backup_report(r, "Settings imported");
+    if (r.ok) {
+        // Imported values only live in RAM until something persists and applies
+        // them — do both, then redraw so the page shows what was loaded.
+        save_settings();
+        auto& plat = getGuiPlatform();
+        plat.setLcdBrightness(s->LCDbrightness);
+        plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
+        plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+        crosspad::getPadLedController().setBrightness(s->RGBbrightness);
+        crosspad::getVibration().applySettings(s->vibration);
+        if (stm_config_available()) {
+            for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
+            stm_push_timeouts(s);
+        }
+        reinitStyles();
+        show_detail(s_current_category);
+    }
+}
+
+static void backup_export_pads_cb(lv_event_t *) {
+    auto* s = get_settings(); char p[128];
+    if (!s || !backup_path(p, sizeof(p), kBackupPadsName)) return;
+    backup_report(crosspad::settingsExportPads(*s, p), "Pad tuning exported to SD");
+}
+
+static void backup_import_pads_cb(lv_event_t *) {
+    auto* s = get_settings(); char p[128];
+    if (!s || !backup_path(p, sizeof(p), kBackupPadsName)) return;
+    auto r = crosspad::settingsImportPads(*s, p);
+    backup_report(r, "Pad tuning imported");
+    if (r.ok) {
+        save_settings();
+        if (stm_config_available()) {
+            auto& plat = getGuiPlatform();
+            for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
+            plat.writeStmConfig8(REG_CTL_VEL_CURVE_DEF, s->stm.velCurveDef);
+            plat.writeStmConfig8(REG_CTL_VEL_FLOOR_DEF, s->stm.velFloorDef);
+            plat.writeStmConfig8(REG_CTL_CC_PRESS_BASE, s->stm.ccPressBase);
+            plat.writeStmConfig8(REG_CTL_PAN_CC_EN,     s->stm.panCcEn);
+            plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,   s->stm.ccPanBase);
+            plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS, s->stm.analogMinMs);
+            plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,  s->stm.analogDelta);
+        }
+    }
+}
+
+static void cat_build_backup(lv_obj_t * parent, lv_group_t * group) {
+    char path[128];
+    if (!backup_path(path, sizeof(path), kBackupAllName)) {
+        settings_row_info(parent, "Storage", "no SD card support");
+        return;
+    }
+
+    settings_section_header(parent, "All settings");
+    settings_row_action(parent, group, kBackupAllName, "Export",
+                        backup_export_all_cb, nullptr);
+    settings_row_action(parent, group, nullptr, "Import",
+                        backup_import_all_cb, nullptr);
+
+    settings_section_header(parent, "Pad tuning only");
+    settings_row_action(parent, group, kBackupPadsName, "Export",
+                        backup_export_pads_cb, nullptr);
+    settings_row_action(parent, group, nullptr, "Import",
+                        backup_import_pads_cb, nullptr);
+
+    char ver[32];
+    snprintf(ver, sizeof(ver), "v%u", (unsigned)crosspad::kSettingsFileVersion);
+    settings_row_info(parent, "File format", ver);
+}
+
+// ---- Programming ----
+
+static void stm32_dfu_cb(lv_event_t * e);
+
+static void cat_build_programming(lv_obj_t * parent, lv_group_t * group) {
+    settings_section_header(parent, "Co-processor");
+    settings_row_action(parent, group, "STM32 firmware", "DFU Mode",
+                        stm32_dfu_cb, nullptr);
+    settings_row_info(parent, "ESP32 firmware", "OTA over USB CDC");
+}
+
+// ---- Info ----
+
+static void cat_build_info(lv_obj_t * parent, lv_group_t * group) {
+    (void)group;
+    auto* ui = getSettingsUI();
+
+    settings_section_header(parent, "Device");
+    settings_row_info(parent, "Platform", ui ? ui->getPlatformName() : "CrossPad");
+    if (ui) {
+        const char* profile = ui->getPlatformInfo();
+        if (profile) settings_row_info(parent, "Profile", profile);
+    }
+
+    // Everything else is platform-reported (firmware/library revisions, STM32
+    // identity, serial) so this page grows without touching the shared UI.
+    if (ui) {
+        int n = ui->getInfoRowCount();
+        for (int i = 0; i < n; ++i) {
+            const char* label = nullptr;
+            const char* value = nullptr;
+            if (ui->getInfoRow(i, &label, &value) && label && value) {
+                settings_row_info(parent, label, value);
+            }
+        }
+    }
 }
 
 // ---- System ----
@@ -1152,17 +1377,53 @@ static void factory_reset_cb(lv_event_t * e) {
     s->vibration = crosspad::VibrationSettings();
     s->masterFX = crosspad::AudioSettings();
     s->previewAudio = crosspad::AudioSettings();
+    s->stm = crosspad::Stm32Settings();
+    s->audioEngine = crosspad::AudioEngineSettings();
     s->LCDbrightness = 100;
     s->themeColorIndex = CROSSPAD_THEME_DEFAULT_INDEX;
     s->perfStatsFlags = 0;
     s->RGBbrightness = 100;
+    s->quickSettingsEnabled = true;
     s->AudioEngineEnabled = true;
     s->Kit = 0;
     for (int i = 0; i < crosspad::CROSSPAD_MAX_PADS; i++) {
         s->audio[i] = crosspad::AudioSettings();
     }
     save_settings();
+
+    // Re-apply everything that lives in hardware — a reset that only rewrites
+    // NVS leaves the device running the old brightness / LEDs / haptics until
+    // the next reboot.
+    auto& plat = getGuiPlatform();
+    plat.setLcdBrightness(s->LCDbrightness);
+    plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
+    plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+    crosspad::getPadLedController().setBrightness(s->RGBbrightness);
+    crosspad::getVibration().applySettings(s->vibration);
+    if (stm_config_available()) {
+        for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
+        plat.writeStmConfig8(REG_CTL_MIDI_CHAN,      s->stm.midiChannel);
+        plat.writeStmConfig8(REG_CTL_NOTE_OFFSET,    (uint8_t)s->stm.noteOffset);
+        plat.writeStmConfig8(REG_CTL_VEL_CURVE_DEF,  s->stm.velCurveDef);
+        plat.writeStmConfig8(REG_CTL_VEL_FLOOR_DEF,  s->stm.velFloorDef);
+        plat.writeStmConfig8(REG_CTL_CC_PRESS_BASE,  s->stm.ccPressBase);
+        plat.writeStmConfig8(REG_CTL_PAN_CC_EN,      s->stm.panCcEn);
+        plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,    s->stm.ccPanBase);
+        plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
+        plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
+        plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
+        plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
+        plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);
+        plat.writeStmConfig16(REG_CTL_DIM_TO_S_HI,   s->stm.dimTimeoutS);
+        plat.writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
+        plat.writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
+    }
+    statusbar_set_drawer_enabled(s->quickSettingsEnabled);
+    statusbar_set_perf_level(s->perfStatsFlags);
+    reinitStyles();
+
     ui_toast_show("Settings reset to defaults", 2000, UI_TOAST_WARNING);
+    show_detail(s_current_category);
 }
 
 static void stm32_dfu_cb(lv_event_t * e) {
@@ -1173,39 +1434,45 @@ static void stm32_dfu_cb(lv_event_t * e) {
 }
 
 static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
-    settings_section_header(parent, "Information");
-
-    auto* ui = getSettingsUI();
-    const char* platform = ui ? ui->getPlatformName() : "CrossPad";
-    settings_row_info(parent, "Platform", platform);
-
-    const char* info = ui ? ui->getPlatformInfo() : nullptr;
-    if (info) {
-        settings_row_info(parent, "Profile", info);
-    }
-
+    // Versions live under Info and firmware flashing under Programming — System
+    // is the runtime behaviour of this unit, nothing else.
     settings_section_header(parent, "Maintenance");
 
     settings_row_action(parent, group, nullptr, "Factory Reset",
                         factory_reset_cb, nullptr);
 
-    settings_row_action(parent, group, nullptr, "STM32 Update (DFU)",
-                        stm32_dfu_cb, nullptr);
-
     auto* s = get_settings();
-    if (s) {
+    if (s && stm_config_available()) {
         settings_section_header(parent, "STM Power / Input");
         s_autoSleepProxy = s->stm.autoSleep != 0;
         settings_row_switch(parent, group, "Auto Sleep", &s_autoSleepProxy, stm_auto_sleep_cb);
-        settings_row_switch(parent, group, "Keypad Enabled", &s->stm.keypadEnabled, stm_keypad_en_cb);
+        // STM-side pad scanning (distinct from keypad.enableKeypad, which gates
+        // pad→MIDI in PadManager — that one lives under Pads & LEDs).
+        settings_row_switch(parent, group, "STM Keypad Scan", &s->stm.keypadEnabled, stm_keypad_en_cb);
         settings_row_slider(parent, group, "Wake Brightness", 0, 100,
                             &s->stm.wakeBrightness, stm_wake_bright_cb);
-        s_dimIdx = idx_for_u16(kTimeoutSecs, sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]), s->stm.dimTimeoutS, 0);
+        constexpr uint8_t kTimeoutCount = sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]);
+        s_dimIdx   = nearest_idx_u16(kTimeoutSecs, kTimeoutCount, s->stm.dimTimeoutS);
+        s_sleepIdx = nearest_idx_u16(kTimeoutSecs, kTimeoutCount, s->stm.sleepTimeoutS);
+        if (kTimeoutSecs[s_dimIdx] != s->stm.dimTimeoutS ||
+            kTimeoutSecs[s_sleepIdx] != s->stm.sleepTimeoutS) {
+            s->stm.dimTimeoutS   = kTimeoutSecs[s_dimIdx];
+            s->stm.sleepTimeoutS = kTimeoutSecs[s_sleepIdx];
+            save_settings();
+            stm_push_timeouts(s);
+        }
         settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
-        s_sleepIdx = idx_for_u16(kTimeoutSecs, sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]), s->stm.sleepTimeoutS, 0);
         settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
         s_longPressIdx = idx_for_u16(kLongPressMs, sizeof(kLongPressMs)/sizeof(kLongPressMs[0]), s->stm.longPressMs, 3);
         settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
+        // Host-suspend grace before the STM drops to soft-off. Was reachable only
+        // over I2C — a device on a sleeping host powered itself down after 30 s
+        // with no way to change or disable that from the UI.
+        s_usbSuspIdx = 2;
+        for (uint8_t i = 0; i < sizeof(kUsbSuspSecs)/sizeof(kUsbSuspSecs[0]); ++i)
+            if (kUsbSuspSecs[i] == s->stm.usbSuspendS) { s_usbSuspIdx = i; break; }
+        settings_row_dropdown(parent, group, "USB Suspend Off", kUsbSuspOpts,
+                              &s_usbSuspIdx, stm_usb_susp_cb);
     }
 }
 
