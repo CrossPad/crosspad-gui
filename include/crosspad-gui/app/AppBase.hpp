@@ -5,6 +5,7 @@
 #include "lvgl.h"
 #include "crosspad-gui/app/ILvglApp.h"
 #include "crosspad-gui/components/app_lifecycle.h"
+#include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad/pad/PadManager.hpp"
 #include <memory>
 
@@ -95,6 +96,14 @@ public:
             return;
         }
 
+        // Remember whoever owns encoder navigation before the app takes it
+        // over. Apps routinely create their own lv_group and delete it on
+        // teardown; without a framework-owned restore, the indev is left
+        // pointing at a deleted group and the launcher loses the encoder.
+        // Same ownership model as pushPadLogic()/popPadLogic() below.
+        lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
+        priorEncoderGroup_ = enc ? lv_indev_get_group(enc) : nullptr;
+
         app = create_(parent, static_cast<Derived*>(this));
         this->app_c = parent;
         LV_LOG_TRACE("App created");
@@ -172,8 +181,11 @@ public:
             destroy_(app_to_destroy);
         } else {
             LV_LOG_WARN("App with no destroy function, marked as destroyed");
+            restoreEncoderGroup();
             return;
         }
+        // After destroy_, because that is where the app deletes its own group.
+        restoreEncoderGroup();
         LV_LOG_INFO("App destroyed");
     }
 
@@ -193,12 +205,25 @@ public:
     bool isPaused()                     { return !visible_; }
 
 private:
+    /// Hand encoder navigation back to whoever held it when this app started.
+    /// No-op when the app never took it over, so apps that manage the encoder
+    /// themselves (modal overlays restoring their own prior group) are not
+    /// second-guessed.
+    void restoreEncoderGroup() {
+        lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
+        if (!enc || !priorEncoderGroup_) return;
+        if (lv_indev_get_group(enc) == priorEncoderGroup_) return;
+        lv_indev_set_group(enc, priorEncoderGroup_);
+        priorEncoderGroup_ = nullptr;
+    }
+
     const char* name_;
     const char* icon_;
     bool visible_ = false;
     bool started_ = false;
     AppFlags type_ = crosspad::APP_FLAG_NONE;
     const char* padLogicName_ = nullptr;
+    lv_group_t* priorEncoderGroup_ = nullptr;
 
     CreateFn  create_   = nullptr;
     DestroyFn destroy_  = lv_Default_onDestroy;
