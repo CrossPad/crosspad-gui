@@ -1,6 +1,6 @@
 {
     "name": "crosspad-gui",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "CrossPad shared LVGL GUI components",
     "keywords": ["crosspad", "lvgl", "gui", "embedded"],
     "frameworks": ["arduino", "espidf"],

@@ -30,7 +30,9 @@ lv_obj_t * lv_CreateStandardSpinbox(lv_obj_t * parent, int32_t min_value, int32_
 
     lv_obj_add_event_cb(spinbox, [](lv_event_t * e) {
         lv_obj_t * obj = (lv_obj_t *)lv_event_get_target(e);
+        int32_t step = lv_spinbox_get_step(obj); // set_cursor_pos(0) below forces step back to 1
         lv_spinbox_set_cursor_pos(obj, 0);
+        lv_spinbox_set_step(obj, step);
         auto group = lv_obj_get_group(obj);
         if (group) lv_group_set_editing(group, false);
     }, LV_EVENT_SHORT_CLICKED, NULL);
