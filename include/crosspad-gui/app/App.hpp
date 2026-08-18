@@ -32,27 +32,8 @@ public:
 
     virtual ~App() = default;
 
-    /**
-     * @brief Safely destroy app asynchronously (LVGL callback-safe)
-     *
-     * Uses shared_from_this() to keep App alive until callback executes.
-     * Prevents use-after-free if App is deleted before lv_async_call runs.
-     *
-     * @note Requires App to be managed by std::shared_ptr, not raw pointer!
-     */
-    void destroyAppAsync() {
-        try {
-            auto self = shared_from_this();
-            lv_async_call([](void* user_data) {
-                auto* app_ptr = static_cast<std::shared_ptr<App>*>(user_data);
-                (*app_ptr)->destroyApp();
-                delete app_ptr;
-            }, new std::shared_ptr<App>(self));
-        } catch (const std::bad_weak_ptr& e) {
-            LV_LOG_ERROR("destroyAppAsync failed: App not managed by shared_ptr!");
-            destroyApp();
-        }
-    }
+    // destroyAppAsync() now lives in AppBase, where every platform gets the
+    // same deferred, orchestrator-aware close path.
 
     // ── Platform-specific resource accessors ─────────────────────────────
     class Sequencer& sequencer();

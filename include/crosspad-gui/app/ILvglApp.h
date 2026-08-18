@@ -16,6 +16,8 @@
 #include "crosspad/app/IApp.hpp"
 #include "crosspad/app/AppFlags.hpp"
 
+#include <memory>
+
 namespace crosspad_gui {
 
 struct ILvglApp : public crosspad::IApp {
@@ -28,6 +30,18 @@ struct ILvglApp : public crosspad::IApp {
     virtual void pause() = 0;
     virtual void resume() = 0;
     virtual void destroyApp() = 0;
+
+    /// Close this app from inside itself — the path an in-app Back button
+    /// takes. Deferred to the next LVGL iteration, so it is safe to call from
+    /// an event callback of a widget the app is about to delete, and it clears
+    /// the orchestrator's running-app pointer. Apps should prefer this over
+    /// calling destroyApp() directly.
+    virtual void destroyAppAsync() { destroyApp(); }
+
+    /// Set by the app factory so a deferred self-close can hold the app alive
+    /// until the callback runs. Default no-op for hand-built implementations.
+    virtual void setSelfRef(std::weak_ptr<ILvglApp> self) { (void)self; }
+
     virtual lv_obj_t* getAppContainer() = 0;
 
     /// Declarative pad logic: name auto-activated on start() and restored on

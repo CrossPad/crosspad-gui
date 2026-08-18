@@ -4,6 +4,7 @@
 
 #include "lvgl.h"
 #include "crosspad-gui/app/ILvglApp.h"
+#include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/components/app_lifecycle.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad/pad/PadManager.hpp"
@@ -149,6 +150,29 @@ public:
         }
     }
 
+    void setSelfRef(std::weak_ptr<ILvglApp> self) override { selfRef_ = self; }
+
+    /// Close this app from inside itself. Deferring matters: a Back button
+    /// calls this from an LVGL event callback of a widget that destroyApp()
+    /// is about to delete, and LVGL does not survive having the object it is
+    /// dispatching torn down underneath it.
+    void destroyAppAsync() override {
+        if (auto self = selfRef_.lock()) {
+            lv_async_call([](void* user_data) {
+                auto* keep = static_cast<std::shared_ptr<ILvglApp>*>(user_data);
+                (*keep)->destroyApp();
+                delete keep;
+            }, new std::shared_ptr<ILvglApp>(self));
+            return;
+        }
+        // No shared_ptr owner registered (hand-built app, test harness): the
+        // deferral still beats destroying mid-event, there is just nothing
+        // holding the object alive but the caller.
+        lv_async_call([](void* user_data) {
+            static_cast<ILvglApp*>(user_data)->destroyApp();
+        }, this);
+    }
+
     void destroyApp() override {
         if (app == nullptr) {
             LV_LOG_WARN("App doesn't exist");
@@ -168,6 +192,15 @@ public:
 
         visible_ = false;
         started_ = false;
+
+        // An app can be closed from the launcher or from inside itself (a Back
+        // button). Only the launcher path used to clear this, so a self-close
+        // left the orchestrator pointing at a torn-down app — which is what
+        // APP_LIST then reported as still running.
+        auto& orch = AppOrchestrator::getInstance();
+        if (orch.getRunningApp() == this) {
+            orch.setRunningApp(nullptr);
+        }
 
         // Cache and clear before destroying
         lv_obj_t* app_to_destroy = app;
@@ -230,6 +263,9 @@ private:
     ShowFn    show_     = lv_Default_onShow;
     HideFn    hide_     = lv_Default_onHide;
     LogicFn   appLogic_ = nullptr;
+
+    /// Set by defaultAppFactory; empty for hand-built apps.
+    std::weak_ptr<ILvglApp> selfRef_;
 };
 
 /// Default app factory — eliminates per-platform boilerplate.
@@ -244,7 +280,11 @@ std::shared_ptr<ILvglApp> defaultAppFactory(
     lv_obj_t* container, const char* name, const char* icon,
     lv_obj_t* (*create)(lv_obj_t*, AppType*),
     void (*destroy)(lv_obj_t*)) {
-    return std::make_shared<AppType>(container, name, icon, create, destroy);
+    auto app = std::make_shared<AppType>(container, name, icon, create, destroy);
+    // Hand the app a weak reference to its own owner so a deferred self-close
+    // can keep it alive across the async hop.
+    app->setSelfRef(std::weak_ptr<ILvglApp>(app));
+    return app;
 }
 
 } // namespace crosspad_gui
