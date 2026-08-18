@@ -3,7 +3,7 @@
 #include "lvgl.h"
 #include "crosspad/config/crosspad_config.h"
 
-#if defined(FEAT_PAD_EDITOR) && (CROSSPAD_PAD_CONFIG_LEVEL == CROSSPAD_PAD_CONFIG_FULL)
+#if FEAT_PAD_EDITOR && (CROSSPAD_PAD_CONFIG_LEVEL == CROSSPAD_PAD_CONFIG_FULL)
 #  define CROSSPAD_PAD_EDITOR_ENABLED 1
 #else
 #  define CROSSPAD_PAD_EDITOR_ENABLED 0

@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/settings_ui.h"
+#include "crosspad/config/crosspad_config.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/components/dfu_panel.h"
@@ -45,7 +46,9 @@ static void cat_build_pads(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_analog(lv_obj_t * parent, lv_group_t * group);
+#if FEAT_SETTINGS_BACKUP
 static void cat_build_backup(lv_obj_t * parent, lv_group_t * group);
+#endif
 static void cat_build_programming(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_info(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_system(lv_obj_t * parent, lv_group_t * group);
@@ -57,7 +60,9 @@ static const SettingsCategory s_builtin_categories[] = {
     { "Vibration",        LV_SYMBOL_BELL,        cat_build_vibration },
     { "MIDI",             LV_SYMBOL_SHUFFLE,     cat_build_midi },
     { "Analog / Velocity", LV_SYMBOL_KEYBOARD,   cat_build_analog },
+#if FEAT_SETTINGS_BACKUP
     { "Backup (SD)",      LV_SYMBOL_SD_CARD,     cat_build_backup },
+#endif
     { "Programming",      LV_SYMBOL_DOWNLOAD,    cat_build_programming },
     { "Info",             LV_SYMBOL_LIST,        cat_build_info },
     { "System",           LV_SYMBOL_SETTINGS,    cat_build_system },
@@ -645,6 +650,7 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                                 get_settings()->quickSettingsEnabled);
                         });
 
+#if FEAT_PERF_STATS
     settings_section_header(parent, "Perf Stats");
     settings_row_bitswitch(parent, group, "FPS", &s->perfStatsFlags, PERF_FLAG_FPS,
                            [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
@@ -652,6 +658,7 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                            [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
     settings_row_bitswitch(parent, group, "Memory", &s->perfStatsFlags, PERF_FLAG_MEM,
                            [](lv_event_t *) { statusbar_set_perf_level(get_settings()->perfStatsFlags); });
+#endif
 }
 
 // ---- Audio ----
@@ -1216,6 +1223,7 @@ static void stm_long_press_cb(lv_event_t*) {
     crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
 }
 
+#if FEAT_SETTINGS_BACKUP
 // ---- Backup (SD) ----
 //
 // Two independent files: the full settings snapshot and a pad-tuning-only file.
@@ -1324,6 +1332,7 @@ static void cat_build_backup(lv_obj_t * parent, lv_group_t * group) {
     snprintf(ver, sizeof(ver), "v%u", (unsigned)crosspad::kSettingsFileVersion);
     settings_row_info(parent, "File format", ver);
 }
+#endif  // FEAT_SETTINGS_BACKUP
 
 // ---- Programming ----
 
