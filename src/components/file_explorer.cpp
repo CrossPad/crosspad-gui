@@ -19,6 +19,11 @@ static lv_obj_t * loadButton = NULL;
 #define MAX_PATH_LEN 128
 
 static crosspad_gui::FileItem currentFile;
+// Set once the user explicitly clicks a file. Reaching the Load button with the
+// encoder walks the focus back over the other entries, and a plain
+// focus-follows-selection would quietly swap the pick for whatever the focus
+// passed last — the user loaded 05.wav and got the first file in the folder.
+static bool currentFilePinned = false;
 static crosspad_gui::FileItem currentFolder;
 static lv_subject_t Folder;
 static std::vector<crosspad_gui::FileItem> entries;
@@ -136,6 +141,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     alreadyOpened = true;
     _fileFilter = fileFilter;
     currentFile = {"", "", false};
+    currentFilePinned = false;
     currentFolder = {startPath, "", true};
 
     // Encoder group — remember previous binding so we can restore on close
@@ -220,6 +226,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t * event) {
         alreadyOpened = false;
         currentFile = {"", "", false};
+        currentFilePinned = false;
         lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
     });
     lv_obj_set_width(closeBtn, btnW);
@@ -293,6 +300,22 @@ static void UpdateEntriesList() {
     }
 }
 
+// Descend into a folder. The path MUST be taken by value: `item` lives inside
+// `entries`, and IndexDirectory() clears that vector before refilling it — so
+// passing item.path by reference left listDirectory() building every entry's
+// path from a destroyed string. Names (short, SSO) survived, paths (heap) came
+// back empty, and the sample the user picked was stored as "" — a pad that
+// loads without error and then plays nothing.
+static void EnterFolder(const crosspad_gui::FileItem & item)
+{
+    const std::string folderPath = item.path;
+    currentFolder = item;
+    currentFilePinned = false;   // new listing, old pick is gone
+    SetFolderTitle(folderPath);
+    IndexDirectory(folderPath);
+    UpdateEntriesList();
+}
+
 // ── Item selection callback ─────────────────────────────────────────────────
 
 static void ItemSelected_cb(lv_event_t * e) {
@@ -315,12 +338,10 @@ static void ItemSelected_cb(lv_event_t * e) {
     switch (code) {
     case LV_EVENT_LONG_PRESSED:
         if (foundItem->isFolder) {
-            currentFolder = *foundItem;
-            SetFolderTitle(foundItem->path);
-            IndexDirectory(foundItem->path);
-            UpdateEntriesList();
+            EnterFolder(*foundItem);
         } else {
             currentFile = *foundItem;
+            currentFilePinned = true;
             if (loadButton) {
                 lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
             }
@@ -334,17 +355,20 @@ static void ItemSelected_cb(lv_event_t * e) {
                 s_previewCb(foundItem->path.c_str());
             }
             currentFile = *foundItem;
+            currentFilePinned = true;
         } else if (lv_indev_get_type(lv_indev_active()) == LV_INDEV_TYPE_ENCODER) {
             // Encoder click on folder = enter
-            currentFolder = *foundItem;
-            SetFolderTitle(foundItem->path);
-            IndexDirectory(foundItem->path);
-            UpdateEntriesList();
+            EnterFolder(*foundItem);
         }
         break;
 
     case LV_EVENT_FOCUSED:
-        currentFile = *foundItem;
+        // Folders never become the selection: focusing one on the way to Load
+        // would otherwise leave the explorer with a folder "selected" and the
+        // Load button silently doing nothing.
+        if (!foundItem->isFolder && !currentFilePinned) {
+            currentFile = *foundItem;
+        }
         if (!foundItem->isFolder && s_previewCb) {
             if (lv_indev_get_type(lv_indev_active()) == LV_INDEV_TYPE_ENCODER) {
                 SchedulePreview(foundItem->path.c_str());
