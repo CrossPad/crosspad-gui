@@ -22,6 +22,20 @@ struct PerfStats {
     uint32_t stm32_mps;   // STM32 messages per second
 };
 
+// What the USB Audio host records, and where each codec sends its output.
+// Codes match the firmware's audio-route wire format (see the ESP-IDF
+// audio_route_control.h): ADC 0=DIFF 1=LINE1 2=LINE2, DAC 1=LINE1 2=LINE2 3=ALL.
+struct AudioRouteState {
+    uint8_t captureCodec;   // codec feeding the USB mic endpoint (0|1)
+    uint8_t adcInput[2];    // ADC source per codec
+    uint8_t dacOutput[2];   // DAC destination per codec
+    uint8_t mute[2];        // 0|1 per codec
+    uint8_t preset;         // index into the platform preset table, or kAudioRoutePresetCustom
+};
+
+// Reported (and stored) when the routing matches no preset.
+static constexpr uint8_t kAudioRoutePresetCustom = 0x7F;
+
 // GUI interaction event types for haptic/activity feedback
 enum class InteractionEvent : uint8_t {
     Pressed,
@@ -97,6 +111,23 @@ public:
 
     // Read one pad's combined live state (pressure/pan/last-velraw + raw A/B). False off-ESP.
     virtual bool readStmPadLive(uint8_t /*padIdx*/, crosspad::Stm32PadLive& /*out*/) { return false; }
+
+    // Live codec routing behind the USB Audio profile. Boards without a
+    // switchable capture path leave audioRouteSupported() false and the
+    // settings UI omits the whole section, so no board shows a preset it
+    // cannot honour. getAudioRoute() returns false when unsupported.
+    // Appended at the end deliberately: inserting virtuals mid-class renumbers
+    // every slot after them, and any translation unit compiled against an
+    // older copy of this header then calls the wrong one.
+    virtual bool audioRouteSupported() { return false; }
+    virtual bool getAudioRoute(AudioRouteState & /*out*/) { return false; }
+    // Preset index; out-of-range values (including kAudioRoutePresetCustom)
+    // are ignored rather than clamped — a custom routing has no target state.
+    virtual void setAudioRoutePreset(uint8_t /*preset*/) {}
+    virtual void setAudioCaptureCodec(uint8_t /*codec*/) {}
+    virtual void setAudioAdcInput(uint8_t /*codec*/, uint8_t /*input*/) {}
+    virtual void setAudioDacOutput(uint8_t /*codec*/, uint8_t /*output*/) {}
+    virtual void setAudioCodecMute(uint8_t /*codec*/, bool /*mute*/) {}
 };
 
 // Set the platform implementation (call once at startup)

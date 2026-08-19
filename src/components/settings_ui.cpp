@@ -729,6 +729,170 @@ static void audio_engine_fc_cb(lv_event_t * e) {
     }
 }
 
+// ---- USB Audio routing ----
+//
+// Mirrors of the live codec routing, refreshed from the platform on every
+// panel build. They are UI shadows, not settings: only the chosen preset is
+// persisted (CrosspadSettings::usbAudioPreset) and re-applied at boot, because
+// the individual codec registers are write-mostly and a half-restored routing
+// is worse than none.
+static uint8_t s_routePresetIdx  = 0;
+static uint8_t s_routeCaptureIdx = 0;
+static uint8_t s_routeAdcIdx[2]  = {0, 0};
+static uint8_t s_routeDacIdx[2]  = {2, 2};
+static bool    s_routeMute[2]    = {false, false};
+
+// The dropdowns themselves, so a change on one row can correct the others in
+// place. Rebuilding the panel from a row's own VALUE_CHANGED handler would
+// delete the widget mid-dispatch. Rewritten on every build of this panel and
+// only ever read from those widgets' own callbacks, so they cannot outlive it.
+static lv_obj_t * s_routePresetDd  = nullptr;
+static lv_obj_t * s_routeCaptureDd = nullptr;
+static lv_obj_t * s_routeAdcDd[2]  = {nullptr, nullptr};
+
+// Order must match the platform's preset table; the trailing entry is the
+// read-only "no preset describes this" state.
+static const char * kRoutePresetOptions =
+    "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nCustom";
+static constexpr uint8_t kRoutePresetCustomIdx = 4;
+
+// The dropdown widget inside a row built by settings_row_dropdown(): label
+// first, dropdown second.
+static lv_obj_t * row_dropdown(lv_obj_t * row) {
+    return row ? lv_obj_get_child(row, 1) : nullptr;
+}
+
+static void dd_select(lv_obj_t * dd, uint8_t idx) {
+    if (dd) lv_dropdown_set_selected(dd, idx);
+}
+
+// Pull the live routing back into the widgets after any row changed it, and
+// persist the preset the device ended up in (including "custom", so boot does
+// not overwrite a hand-tuned routing with a preset the user moved away from).
+static void route_sync_from_device() {
+    AudioRouteState st{};
+    if (!getGuiPlatform().getAudioRoute(st)) return;
+
+    s_routePresetIdx  = (st.preset >= kRoutePresetCustomIdx) ? kRoutePresetCustomIdx : st.preset;
+    s_routeCaptureIdx = st.captureCodec <= 1 ? st.captureCodec : 0;
+    for (int c = 0; c < 2; ++c) {
+        s_routeAdcIdx[c] = st.adcInput[c] <= 2 ? st.adcInput[c] : 0;
+    }
+
+    dd_select(s_routePresetDd, s_routePresetIdx);
+    dd_select(s_routeCaptureDd, s_routeCaptureIdx);
+    dd_select(s_routeAdcDd[0], s_routeAdcIdx[0]);
+    dd_select(s_routeAdcDd[1], s_routeAdcIdx[1]);
+
+    if (auto* s = get_settings()) {
+        s->usbAudioPreset = (s_routePresetIdx >= kRoutePresetCustomIdx)
+                              ? kAudioRoutePresetCustom : s_routePresetIdx;
+        // The row helpers save before invoking extra_cb, so the write above
+        // would otherwise miss its own store and the choice would not survive
+        // a reboot.
+        save_settings();
+    }
+}
+
+static void route_preset_cb(lv_event_t * e) {
+    (void)e;
+    if (s_routePresetIdx >= kRoutePresetCustomIdx) {
+        // "Custom" is a report, not a destination — re-applying it would mean
+        // picking an arbitrary routing on the user's behalf. Snap back.
+        route_sync_from_device();
+        return;
+    }
+    getGuiPlatform().setAudioRoutePreset(s_routePresetIdx);
+    route_sync_from_device();
+}
+
+static void route_capture_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioCaptureCodec(s_routeCaptureIdx);
+    route_sync_from_device();
+}
+
+static void route_adc0_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioAdcInput(0, s_routeAdcIdx[0]);
+    route_sync_from_device();
+}
+
+static void route_adc1_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioAdcInput(1, s_routeAdcIdx[1]);
+    route_sync_from_device();
+}
+
+// DAC codes are 1-based (1=LINE1 2=LINE2 3=ALL); the dropdown is 0-based.
+// Output routing is independent of the capture path, so it never changes the
+// preset.
+static void route_dac0_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioDacOutput(0, (uint8_t)(s_routeDacIdx[0] + 1));
+}
+
+static void route_dac1_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioDacOutput(1, (uint8_t)(s_routeDacIdx[1] + 1));
+}
+
+static void route_mute0_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioCodecMute(0, s_routeMute[0]);
+}
+
+static void route_mute1_cb(lv_event_t * e) {
+    (void)e;
+    getGuiPlatform().setAudioCodecMute(1, s_routeMute[1]);
+}
+
+// Builds the routing rows from the live state, so the panel always shows what
+// the codecs are actually doing — including a routing a HIL script or a host
+// tool set over SysEx behind the UI's back.
+static void build_audio_route_rows(lv_obj_t * parent, lv_group_t * group) {
+    s_routePresetDd = s_routeCaptureDd = s_routeAdcDd[0] = s_routeAdcDd[1] = nullptr;
+
+    AudioRouteState st{};
+    if (!getGuiPlatform().getAudioRoute(st)) return;
+
+    s_routePresetIdx  = (st.preset >= kRoutePresetCustomIdx) ? kRoutePresetCustomIdx : st.preset;
+    s_routeCaptureIdx = st.captureCodec <= 1 ? st.captureCodec : 0;
+    for (int c = 0; c < 2; ++c) {
+        s_routeAdcIdx[c] = st.adcInput[c] <= 2 ? st.adcInput[c] : 0;
+        s_routeDacIdx[c] = (st.dacOutput[c] >= 1 && st.dacOutput[c] <= 3)
+                             ? (uint8_t)(st.dacOutput[c] - 1) : 2;
+        s_routeMute[c]   = st.mute[c] != 0;
+    }
+
+    s_routePresetDd = row_dropdown(
+        settings_row_dropdown(parent, group, "Recording Source",
+                              kRoutePresetOptions, &s_routePresetIdx, route_preset_cb));
+
+    settings_section_header(parent, "Routing (advanced)");
+
+    s_routeCaptureDd = row_dropdown(
+        settings_row_dropdown(parent, group, "Capture Codec",
+                              "0 - Speakers\n1 - Headphones",
+                              &s_routeCaptureIdx, route_capture_cb));
+    s_routeAdcDd[0] = row_dropdown(
+        settings_row_dropdown(parent, group, "Codec 0 Input",
+                              "Differential\nLINE1 (loop)\nLINE2 (mics)",
+                              &s_routeAdcIdx[0], route_adc0_cb));
+    s_routeAdcDd[1] = row_dropdown(
+        settings_row_dropdown(parent, group, "Codec 1 Input",
+                              "Differential\nLINE1 (loop)\nLINE2 (line in)",
+                              &s_routeAdcIdx[1], route_adc1_cb));
+    settings_row_dropdown(parent, group, "Codec 0 Output",
+                          "LINE1\nLINE2\nBoth",
+                          &s_routeDacIdx[0], route_dac0_cb);
+    settings_row_dropdown(parent, group, "Codec 1 Output",
+                          "LINE1\nLINE2\nBoth",
+                          &s_routeDacIdx[1], route_dac1_cb);
+    settings_row_switch(parent, group, "Mute Codec 0", &s_routeMute[0], route_mute0_cb);
+    settings_row_switch(parent, group, "Mute Codec 1", &s_routeMute[1], route_mute1_cb);
+}
+
 static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
@@ -781,6 +945,14 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
                             &s->usbAudioEnabled, usb_audio_cb);
         settings_row_info(parent, "Profile",
                           s->usbAudioEnabled ? "Audio + MIDI" : "Serial + MIDI");
+
+        // Routing is live in both USB profiles — the codecs do not care which
+        // descriptor set is enumerated — so the rows stay usable while the
+        // device is still on CDC+MIDI and the choice is ready before the
+        // switch. audioRouteSupported() gates them for boards without it.
+        if (getGuiPlatform().audioRouteSupported()) {
+            build_audio_route_rows(parent, group);
+        }
     }
 }
 
@@ -1039,10 +1211,66 @@ static void global_push_pads_cb(lv_event_t*) {
     auto* ui = crosspad::getSettingsUI(); if (ui) ui->saveSettings();
 }
 
-static void global_lr_cb(lv_event_t* e)     { global_push_pads_cb(e); }
-static void global_vcurve_cb(lv_event_t* e) { global_push_pads_cb(e); }
-static void global_vfloor_cb(lv_event_t* e) { global_push_pads_cb(e); }
-static void global_analog_cb(lv_event_t* e) { global_push_pads_cb(e); }
+// These rows are labelled "Global Pad Defaults" and the callbacks push all 16
+// pads, so the edited value has to reach all 16 too. Binding a row straight to
+// pad 0's field wrote one pad and pushed the other fifteen unchanged — the
+// panel said "global" and the hardware ended up with pad 0 behaving unlike the
+// rest. Each row edits a proxy; these fan it out before pushing.
+static uint8_t s_globalLr      = 50;
+static uint8_t s_globalCurveIdx = 0;   // 0 = Inherit, 1..3 = Linear/Soft/Hard
+static uint8_t s_globalFloor   = 0;
+static bool    s_globalFloorInherit = true;
+static uint8_t s_globalAnalog  = 0;
+
+// Same map the per-pad editor uses (stm_pad_editor_screen.cpp): the per-pad
+// curve/floor carry an INHERIT sentinel that is not a point on either scale,
+// so it needs its own dropdown entry rather than being clamped into one.
+static uint8_t global_curve_idx_to_val(uint8_t idx) {
+    switch (idx) {
+        case 1:  return 0;   // Linear
+        case 2:  return 1;   // Exp Soft
+        case 3:  return 2;   // Exp Hard
+        default: return crosspad::STM32_VEL_INHERIT;
+    }
+}
+static uint8_t global_curve_val_to_idx(uint8_t val) {
+    switch (val) {
+        case 0:  return 1;
+        case 1:  return 2;
+        case 2:  return 3;
+        default: return 0;   // INHERIT, and anything a stale NVS invented
+    }
+}
+
+static void global_lr_cb(lv_event_t* e) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_globalLr < 1)  s_globalLr = 1;
+    if (s_globalLr > 99) s_globalLr = 99;
+    for (int i = 0; i < 16; ++i) s->stm.lrRatio(i) = s_globalLr;
+    global_push_pads_cb(e);
+}
+
+static void global_vcurve_cb(lv_event_t* e) {
+    auto* s = get_settings(); if (!s) return;
+    uint8_t val = global_curve_idx_to_val(s_globalCurveIdx);
+    for (int i = 0; i < 16; ++i) s->stm.velCurve(i) = val;
+    global_push_pads_cb(e);
+}
+
+static void global_vfloor_cb(lv_event_t* e) {
+    auto* s = get_settings(); if (!s) return;
+    uint8_t val = s_globalFloorInherit ? crosspad::STM32_VEL_INHERIT
+                                       : (s_globalFloor > 127 ? 127 : s_globalFloor);
+    for (int i = 0; i < 16; ++i) s->stm.velFloor(i) = val;
+    global_push_pads_cb(e);
+}
+
+static void global_analog_cb(lv_event_t* e) {
+    auto* s = get_settings(); if (!s) return;
+    if (s_globalAnalog > 3) s_globalAnalog = 0;
+    for (int i = 0; i < 16; ++i) s->stm.analogMode(i) = s_globalAnalog;
+    global_push_pads_cb(e);
+}
 
 static void open_global_pad_sliders(lv_obj_t* parent, lv_group_t* group) {
     auto* s = get_settings(); if (!s) return;
@@ -1067,16 +1295,29 @@ static void open_global_pad_sliders(lv_obj_t* parent, lv_group_t* group) {
         if (group) lv_group_add_obj(group, sl);
     }
 
+    // Seeded from pad 0 — with every row now fanning out to all 16, pad 0 is a
+    // faithful sample of the set.
+    s_globalLr           = s->stm.lrRatio(0);
+    if (s_globalLr < 1)  s_globalLr = 1;
+    if (s_globalLr > 99) s_globalLr = 99;
+    s_globalCurveIdx     = global_curve_val_to_idx(s->stm.velCurve(0));
+    s_globalFloorInherit = (s->stm.velFloor(0) == crosspad::STM32_VEL_INHERIT);
+    s_globalFloor        = s_globalFloorInherit ? s->stm.velFloorDef : s->stm.velFloor(0);
+    if (s_globalFloor > 127) s_globalFloor = 127;
+    s_globalAnalog       = s->stm.analogMode(0) > 3 ? 0 : s->stm.analogMode(0);
+
     settings_row_slider(parent, group, "L/R Ratio", 1, 99,
-                        &s->stm.lrRatio(0), global_lr_cb);
+                        &s_globalLr, global_lr_cb);
     settings_row_dropdown(parent, group, "Vel Curve",
-                          "Linear\nExp Soft\nExp Hard",
-                          &s->stm.velCurve(0), global_vcurve_cb);
+                          "Inherit\nLinear\nExp Soft\nExp Hard",
+                          &s_globalCurveIdx, global_vcurve_cb);
+    settings_row_switch(parent, group, "Floor Inherit",
+                        &s_globalFloorInherit, global_vfloor_cb);
     settings_row_slider(parent, group, "Vel Floor", 0, 127,
-                        &s->stm.velFloor(0), global_vfloor_cb);
+                        &s_globalFloor, global_vfloor_cb);
     settings_row_dropdown(parent, group, "Analog Mode",
                           "Disable\nCC\nAftertouch\nBoth",
-                          &s->stm.analogMode(0), global_analog_cb);
+                          &s_globalAnalog, global_analog_cb);
 }
 
 #endif // !CROSSPAD_PAD_EDITOR_ENABLED
