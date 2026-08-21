@@ -17,26 +17,41 @@ void vu_set_levels(int16_t left, int16_t right) {
 
 static const int REFRESH_MS = 16; // 60 Hz
 
-// Convert int16 audio level (0-32767) to dB-like logarithmic scale
+// Convert int16 audio level (0-32767) to dB-like logarithmic scale.
+//
+// The gate is the meter's zero point and the bottom of the dB range at once.
+// It used to be neither: NOISE_GATE was 800 while the curve carried a second,
+// independent floor of its own (values below normalized 0.018 were forced to
+// zero, i.e. val < ~166). Two floors that disagree meant the lower one was
+// dead code, and the higher one did not line up with the start of the curve —
+// 800 already maps to 39% of the bar, so the display jumped from empty to
+// two-fifths full with nothing in between. The whole bottom of the meter was
+// unreachable.
+//
+// 800 was set that high to hide a constant the sample player used to leave on
+// the bus after a one-shot voice ended (a DC offset measured at exactly 1118,
+// now removed by the DC blocker in MarcelSampleNode). With that gone the idle
+// residue settles around 29, so the gate can sit just above it and the meter
+// gets its low end back.
+static const int16_t NOISE_GATE = 50;
+static const float   GAIN_MULTIPLIER = 3.5f;
+
 uint16_t int16toLogScale(int16_t val, int base) {
-    const int16_t NOISE_GATE = 800;
     if (val < NOISE_GATE) return 0;
 
-    float normalized = (float)val / 32767.0f;
-
-    const float GAIN_MULTIPLIER = 3.5f;
-    normalized *= GAIN_MULTIPLIER;
+    float normalized = ((float)val / 32767.0f) * GAIN_MULTIPLIER;
     if (normalized > 1.0f) normalized = 1.0f;
 
-    float db_normalized;
-    if (normalized < 0.018f) {
-        db_normalized = 0.0f;
-    } else {
-        float db = 20.0f * log10f(normalized);
-        db_normalized = (db + 35.0f) / 35.0f;
-        if (db_normalized < 0.0f) db_normalized = 0.0f;
-        if (db_normalized > 1.0f) db_normalized = 1.0f;
-    }
+    // Derived from the gate rather than hardcoded, so the two cannot drift
+    // apart again: the range is exactly "gate → full scale", which for a gate
+    // of 50 is about 45 dB.
+    static const float kRangeDb =
+        -20.0f * log10f(((float)NOISE_GATE / 32767.0f) * GAIN_MULTIPLIER);
+
+    float db = 20.0f * log10f(normalized);
+    float db_normalized = (db + kRangeDb) / kRangeDb;
+    if (db_normalized < 0.0f) db_normalized = 0.0f;
+    if (db_normalized > 1.0f) db_normalized = 1.0f;
 
     uint32_t scaled = (uint32_t)(db_normalized * (float)base);
     if (scaled > (uint32_t)base) scaled = base;
