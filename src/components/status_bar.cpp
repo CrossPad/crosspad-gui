@@ -69,6 +69,7 @@ struct StatusBarAppIcon {
     lv_color_t color;
     lv_obj_t * obj;
     bool active;
+    bool hidden;   ///< remembered so visibility survives a status-bar rebuild
 };
 
 static StatusBarAppIcon s_app_icons[STATUSBAR_MAX_APP_ICONS] = {};
@@ -237,7 +238,9 @@ void statusbar_set_icon_font(const char * id, const lv_font_t * font) {
 
 void statusbar_set_icon_visible(const char * id, bool visible) {
     StatusBarAppIcon * slot = find_app_icon(id);
-    if (!slot || !slot->obj) return;
+    if (!slot) return;
+    slot->hidden = !visible;
+    if (!slot->obj) return;
     if (visible) lv_obj_remove_flag(slot->obj, LV_OBJ_FLAG_HIDDEN);
     else         lv_obj_add_flag(slot->obj, LV_OBJ_FLAG_HIDDEN);
 }
@@ -340,6 +343,7 @@ void statusbar_set_drawer_enabled(bool enabled) {
 // Cached previous values — file-scoped so they can be reset on status bar re-creation
 static bool s_lastSd = false;
 static bool s_lastBt = false;
+static bool s_lastBtActive = false;
 static bool s_lastWifi = false;
 static bool s_lastCharging = false;
 static uint8_t s_lastBatteryPct = 0;
@@ -351,11 +355,20 @@ static void check_status_timer_cb(lv_timer_t * timer) {
         s_lastSd = sd;
         lv_obj_set_hidden(status_sd, !sd);
     }
-    // Bluetooth
+    // Bluetooth: hidden when the radio is off, dimmed while it is up but
+    // unconnected, solid once a peer is on the other end.
     bool bt = status.bluetoothConnected;
-    if (bt != s_lastBt) {
+    bool btActive = status.bluetoothActive || bt;
+    if (bt != s_lastBt || btActive != s_lastBtActive) {
         s_lastBt = bt;
-        lv_obj_set_hidden(status_bluetooth, !bt);
+        s_lastBtActive = btActive;
+        lv_obj_set_hidden(status_bluetooth, !btActive);
+        /* The glyph is a symbol, which LVGL draws through the text path, so
+         * dimming it needs text_opa; image_opa is set too in case the source is
+         * ever swapped for a real image. */
+        lv_opa_t opa = bt ? LV_OPA_COVER : LV_OPA_40;
+        lv_obj_set_style_image_opa(status_bluetooth, opa, 0);
+        lv_obj_set_style_text_opa(status_bluetooth, opa, 0);
     }
     // WiFi
     bool wifi = status.wifiConnected;
@@ -539,6 +552,20 @@ static void delete_open_button() {
 lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     build_asset_paths();
 
+    /* Everything the previous status bar owned died with its tree, but the
+     * file-static handles still point at it. The drawer arrow is the one that
+     * bites: create_open_button() returns early on a non-NULL openButton, so
+     * after the first launcher rebuild the arrow was never created again — and
+     * the paths that only unhide it wrote through freed memory. */
+    openButton = NULL;
+    closeButton = NULL;
+    s_drawer_overlay = NULL;
+    quickSettingsPanelVisible = false;
+    if (t_ramUpdate) {
+        lv_timer_delete(t_ramUpdate);
+        t_ramUpdate = NULL;
+    }
+
     lv_obj_t * cont = lv_obj_create(parent);
     lv_obj_set_width(cont, LV_PCT(100));
     lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT);
@@ -658,6 +685,25 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_style_pad_column(s_app_icon_zone_right, 3, 0);
     lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
     lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);
+
+    // Icons registered before this status bar existed belong to the tree that
+    // was just destroyed: their labels are gone but their slots still describe
+    // what should be shown. Re-create them here, so a caller that registers a
+    // long-lived icon (a radio's state, say) does not have to re-register it
+    // every time the launcher is rebuilt — and, more importantly, so nothing
+    // writes through a dangling label pointer.
+    for (int i = 0; i < STATUSBAR_MAX_APP_ICONS; i++) {
+        StatusBarAppIcon * slot = &s_app_icons[i];
+        if (!slot->active || !slot->content) continue;
+        lv_obj_t * zone = (slot->side == crosspad_gui::StatusIconSide::Left) ? s_app_icon_zone_left
+                                                               : s_app_icon_zone_right;
+        lv_obj_t * lbl = lv_label_create(zone);
+        lv_label_set_text(lbl, slot->content);
+        lv_obj_set_style_text_color(lbl, slot->color, 0);
+        lv_obj_set_height(lbl, LV_SIZE_CONTENT);
+        if (slot->hidden) lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+        slot->obj = lbl;
+    }
     lv_obj_remove_flag(s_app_icon_zone_right, LV_OBJ_FLAG_SCROLLABLE);
 
     // Clear all app icon slots
@@ -713,6 +759,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     // Reset cached values so icons are refreshed on first tick
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
+    s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
     s_lastWifi = !status.wifiConnected;
     s_lastCharging = !status.stm32.chargingStatus;
     s_lastBatteryPct = 0;
