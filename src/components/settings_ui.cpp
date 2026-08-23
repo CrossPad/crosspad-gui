@@ -42,6 +42,7 @@ static int s_extra_cat_count = 0;
 
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_audio(lv_obj_t * parent, lv_group_t * group);
+static void cat_build_usb(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_pads(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_vibration(lv_obj_t * parent, lv_group_t * group);
 static void cat_build_midi(lv_obj_t * parent, lv_group_t * group);
@@ -56,6 +57,7 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group);
 static const SettingsCategory s_builtin_categories[] = {
     { "Display",          LV_SYMBOL_EYE_OPEN,   cat_build_display },
     { "Audio",            LV_SYMBOL_AUDIO,       cat_build_audio },
+    { "USB",              LV_SYMBOL_USB,         cat_build_usb },
     { "Pads & LEDs",      LV_SYMBOL_KEYBOARD,    cat_build_pads },
     { "Vibration",        LV_SYMBOL_BELL,        cat_build_vibration },
     { "MIDI",             LV_SYMBOL_SHUFFLE,     cat_build_midi },
@@ -181,6 +183,7 @@ static void show_categories() {
         const SettingsCategory* cat = get_category(i);
         if (!cat) continue;
         if (cat->build == cat_build_analog && !stm_config_available()) continue;
+        if (cat->build == cat_build_usb && !getGuiPlatform().usbAudioSupported()) continue;
 
         lv_obj_t * row = lv_button_create(s_content);
         lv_obj_set_size(row, LV_PCT(100), 36);
@@ -697,13 +700,25 @@ static void speaker_amp_cb(lv_event_t * e) {
     }
 }
 
-static void usb_audio_cb(lv_event_t * e) {
+// The device enumerates one descriptor set at a time — CDC+MIDI or MIDI+UAC2 —
+// and only one of them carries audio, so this is a USB profile choice, not an
+// audio feature. s_usbModeIdx shadows the persisted bool because the dropdown
+// row helper writes a uint8_t index.
+static uint8_t s_usbModeIdx = 0;
+
+static void usb_mode_cb(lv_event_t * e) {
     (void)e;
     auto* s = get_settings();
     if (!s) return;
-    getGuiPlatform().setUsbAudioEnabled(s->usbAudioEnabled);
-    ui_toast_show(s->usbAudioEnabled ? "USB Audio on — device re-enumerating"
-                                     : "USB Serial+MIDI on — device re-enumerating",
+    bool audio = (s_usbModeIdx != 0);
+    if (audio == s->usbAudioEnabled) return;
+    s->usbAudioEnabled = audio;
+    // The row helper saves the shadow index before calling us; the bool it
+    // stands for still needs its own store or the choice dies at reboot.
+    save_settings();
+    getGuiPlatform().setUsbAudioEnabled(audio);
+    ui_toast_show(audio ? "USB Audio on — device re-enumerating"
+                        : "USB Serial+MIDI on — device re-enumerating",
                   2500, UI_TOAST_INFO);
     show_detail(s_current_category);
 }
@@ -936,23 +951,37 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
 
     settings_row_slider(parent, group, "Headphones", 0, 100,
                         &s->masterFX.outVolumeCodec[1][0], headphone_volume_cb);
+}
 
-    if (getGuiPlatform().usbAudioSupported()) {
-        settings_section_header(parent, "USB");
-        // Persisted preference: it is re-applied on the next boot, so this is
-        // both the live switch and the default profile.
-        settings_row_switch(parent, group, "USB Audio (UAC2)",
-                            &s->usbAudioEnabled, usb_audio_cb);
-        settings_row_info(parent, "Profile",
-                          s->usbAudioEnabled ? "Audio + MIDI" : "Serial + MIDI");
+// ---- USB ----
 
-        // Routing is live in both USB profiles — the codecs do not care which
-        // descriptor set is enumerated — so the rows stay usable while the
-        // device is still on CDC+MIDI and the choice is ready before the
-        // switch. audioRouteSupported() gates them for boards without it.
-        if (getGuiPlatform().audioRouteSupported()) {
-            build_audio_route_rows(parent, group);
-        }
+static void cat_build_usb(lv_obj_t * parent, lv_group_t * group) {
+    auto* s = get_settings();
+    if (!s) return;
+
+    // Persisted preference: re-applied on the next boot, so this row is both
+    // the live switch and the default profile.
+    s_usbModeIdx = s->usbAudioEnabled ? 1 : 0;
+    lv_obj_t * mode_row = settings_row_dropdown(parent, group, "Mode",
+                                                "MIDI + Serial\nMIDI + Audio",
+                                                &s_usbModeIdx, usb_mode_cb);
+    // The shared 90 px default clips both labels, and a mode you cannot read
+    // is the reason this row exists.
+    if (lv_obj_t * dd = row_dropdown(mode_row)) lv_obj_set_width(dd, 140);
+
+    settings_row_info(parent, "Active", s->usbAudioEnabled ? "MIDI + Audio (UAC2)"
+                                                           : "MIDI + Serial (CDC)");
+    // Audio mode has no CDC — five IN endpoints, and MIDI plus UAC2 claim them
+    // all — so say what the switch costs before it is thrown.
+    settings_row_info(parent, "Serial console / OTA",
+                      s->usbAudioEnabled ? "unavailable" : "available");
+
+    // Routing is live in both USB profiles — the codecs do not care which
+    // descriptor set is enumerated — so the rows stay usable while the device
+    // is still on CDC+MIDI and the choice is ready before the switch.
+    // audioRouteSupported() gates them for boards without it.
+    if (getGuiPlatform().audioRouteSupported()) {
+        build_audio_route_rows(parent, group);
     }
 }
 
