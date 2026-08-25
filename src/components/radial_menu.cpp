@@ -27,10 +27,6 @@ static lv_timer_t * anim_timer = nullptr;
 // Store config for callbacks
 static RadialMenuConfig s_config = {};
 
-static float lerp(float start, float end, float t) {
-    return start + (end - start) * t;
-}
-
 // Smooth rotation animation
 static void radial_anim_cb(lv_timer_t * timer) {
     (void)timer;

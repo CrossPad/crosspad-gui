@@ -529,7 +529,8 @@ lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
         lv_obj_set_style_text_font(list, &lv_font_montserrat_14, 0);
         lv_obj_set_style_bg_color(list, lv_color_make(40, 40, 40), 0);
         lv_obj_set_style_text_color(list, lv_color_white(), 0);
-        lv_obj_set_style_bg_color(list, CROSSPAD_THEME_PRIMARY, LV_PART_SELECTED | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(list, CROSSPAD_THEME_PRIMARY,
+                                  (lv_style_selector_t)LV_PART_SELECTED | LV_STATE_CHECKED);
     }
 
     DropdownRowCtx * ctx = new DropdownRowCtx{setting, extra_cb};
