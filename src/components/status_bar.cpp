@@ -45,6 +45,9 @@ static lv_obj_t * openButton = NULL;
 static lv_obj_t * closeButton = NULL;
 static lv_obj_t * statusBarPanel = NULL;
 static lv_obj_t * s_drawer_overlay = NULL; // floating quick settings overlay
+static lv_obj_t * s_drawer_backdrop = NULL; // click catcher behind the overlay
+static lv_group_t * s_drawer_group = NULL;       // encoder group owned by the drawer
+static lv_group_t * s_drawer_saved_group = NULL; // group to hand back when it closes
 
 // status icons
 static lv_obj_t * status_logo;
@@ -106,6 +109,7 @@ static void anim_y_cb(void * var, int32_t v) {
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
 static void drawer_open_end_cb(lv_anim_t * a);
+static void drawer_release_encoder();
 static void drawer_close_end_cb(lv_anim_t * a);
 
 static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * parent);
@@ -413,13 +417,33 @@ static void check_status_timer_cb(lv_timer_t * timer) {
 
 // ── Drawer open/close ───────────────────────────────────────────────────────
 
+/* Both handlers fire on LV_EVENT_CLICKED — on release, not on press. With the
+ * encoder that is not cosmetic: acting on press swaps the focus group in the
+ * middle of a click, and the release half then lands on whatever the other
+ * group had focused. Closing the drawer that way launched an app on the way
+ * out; opening it that way dropped the first slider straight into edit mode. */
+
 static void drawer_open_event_cb(lv_event_t * e) {
     if (quickSettingsPanelVisible) return;
     if (s_drawer_overlay) return;
     lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_PRESSED) return;
+    if (code != LV_EVENT_CLICKED) return;
 
     lv_obj_t * parent = lv_obj_get_parent(status_c);
+
+    /* Click catcher underneath the drawer: a tap that misses the panel closes
+     * it instead of reaching whatever is drawn below. The close arrow sits in
+     * the drawer's bottom-right corner, so half of a fingertip that aims at it
+     * lands outside the panel — without this it launched an app. */
+    s_drawer_backdrop = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_drawer_backdrop);
+    lv_obj_add_flag(s_drawer_backdrop, LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_flag(s_drawer_backdrop, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_add_flag(s_drawer_backdrop, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(s_drawer_backdrop, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_drawer_backdrop, lv_obj_get_width(parent), lv_obj_get_height(parent));
+    lv_obj_set_pos(s_drawer_backdrop, 0, 0);
+    lv_obj_add_event_cb(s_drawer_backdrop, drawer_close_event_cb, LV_EVENT_CLICKED, NULL);
 
     // Create floating overlay on the parent screen
     s_drawer_overlay = lv_obj_create(parent);
@@ -479,11 +503,13 @@ static void drawer_open_end_cb(lv_anim_t * a) {
 static void drawer_close_event_cb(lv_event_t * e) {
     if (!quickSettingsPanelVisible) return;
     lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_PRESSED) return;
+    if (code != LV_EVENT_CLICKED) return;
 
     if (closeButton) {
         lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
     }
+    // One close per drawer: a second tap during the animation must not restart it.
+    if (s_drawer_backdrop) lv_obj_remove_flag(s_drawer_backdrop, LV_OBJ_FLAG_CLICKABLE);
 
     int32_t current_h = s_drawer_overlay ? lv_obj_get_height(s_drawer_overlay) : 0;
 
@@ -507,6 +533,14 @@ static void drawer_close_end_cb(lv_anim_t * a) {
         lv_obj_delete(s_drawer_overlay);
         s_drawer_overlay = NULL;
     }
+    if (s_drawer_backdrop) {
+        lv_obj_delete(s_drawer_backdrop);
+        s_drawer_backdrop = NULL;
+    }
+    /* Only now, once the panel is gone: hand the encoder back any earlier and
+     * the release half of the press that closed the drawer lands on whatever
+     * the launcher had focused — which pressed it. */
+    drawer_release_encoder();
     closeButton = NULL;
     bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
 #if LV_HIDE_QUICK_SETTINGS
@@ -517,6 +551,23 @@ static void drawer_close_end_cb(lv_anim_t * a) {
     } else {
         delete_open_button();
     }
+}
+
+// ── Drawer encoder handover ─────────────────────────────────────────────────
+
+/* Give the navigation encoder back to whoever had it — once the panel is gone,
+ * and from the status-bar rebuild path in case the drawer died with its tree.
+ * The guard matters there: a rebuild binds the encoder to the new launcher
+ * group before this runs, and that binding must survive. */
+static void drawer_release_encoder() {
+    if (!s_drawer_group) return;
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (nav && lv_indev_get_group(nav) == s_drawer_group) {
+        lv_indev_set_group(nav, s_drawer_saved_group);
+    }
+    lv_group_delete(s_drawer_group);
+    s_drawer_group = NULL;
+    s_drawer_saved_group = NULL;
 }
 
 // ── Open button (drawer arrow) lifecycle ────────────────────────────────────
@@ -530,7 +581,7 @@ static void create_open_button() {
     lv_obj_center(img_open);
     lv_obj_set_size(openButton, QUICK_BUTTON_SIZE * 1.5, LV_STATUS_BAR_HEIGHT);
     lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_ext_click_area(openButton, 8);
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
     if (s_app_icon_zone_right) {
@@ -557,9 +608,11 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
      * bites: create_open_button() returns early on a non-NULL openButton, so
      * after the first launcher rebuild the arrow was never created again — and
      * the paths that only unhide it wrote through freed memory. */
+    drawer_release_encoder();
     openButton = NULL;
     closeButton = NULL;
     s_drawer_overlay = NULL;
+    s_drawer_backdrop = NULL;
     quickSettingsPanelVisible = false;
     if (t_ramUpdate) {
         lv_timer_delete(t_ramUpdate);
@@ -808,6 +861,7 @@ static lv_style_t style_main;
 static lv_style_t style_indicator;
 static lv_style_t style_knob;
 static lv_style_t style_pressed_color;
+static lv_style_t style_focused;   // encoder focus ring — the drawer has no other cue
 
 static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int min, int max,
                                         uint8_t * setting, lv_event_cb_t hw_apply_cb)
@@ -839,18 +893,31 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int m
         lv_slider_set_value(slider, 50, LV_ANIM_OFF);
         lv_obj_set_state(slider, LV_STATE_DISABLED, 0);
     }
+    /* ADV_HITTEST makes the knob the only grabbable part of a slider, and the
+     * knob is ~20 px on a 320 px screen. Grow the hit area, not the graphic. */
     lv_obj_add_flag(slider, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_set_ext_click_area(slider, 14);
 
     lv_obj_add_style(slider, &style_main, LV_PART_MAIN);
     lv_obj_add_style(slider, &style_indicator, LV_PART_INDICATOR);
-    lv_obj_add_style(slider, &style_pressed_color, LV_PART_INDICATOR | LV_STATE_PRESSED);
+    lv_obj_add_style(slider, &style_pressed_color,
+                     (lv_style_selector_t)LV_PART_INDICATOR | LV_STATE_PRESSED);
     lv_obj_add_style(slider, &style_knob, LV_PART_KNOB);
-    lv_obj_add_style(slider, &style_pressed_color, LV_PART_KNOB | LV_STATE_PRESSED);
+    lv_obj_add_style(slider, &style_pressed_color,
+                     (lv_style_selector_t)LV_PART_KNOB | LV_STATE_PRESSED);
+    lv_obj_add_style(slider, &style_focused,
+                     (lv_style_selector_t)LV_PART_KNOB | LV_STATE_FOCUSED);
+    lv_obj_add_style(slider, &style_pressed_color,
+                     (lv_style_selector_t)LV_PART_KNOB | LV_STATE_EDITED);
+
+    if (s_drawer_group && setting != NULL) lv_group_add_obj(s_drawer_group, slider);
 
     lv_obj_update_layout(cont);
+    /* +20, not +15: the vertical half of the slider's extended hit area is
+     * clipped by this container, and the grid row is 35 px tall anyway. */
     unsigned int h = lv_obj_get_height(slider) > lv_obj_get_height(label)
-                     ? (lv_obj_get_height(slider) + 15)
-                     : (lv_obj_get_height(label) + 15);
+                     ? (lv_obj_get_height(slider) + 20)
+                     : (lv_obj_get_height(label) + 20);
     unsigned int w = lv_obj_get_content_width(parent);
     lv_obj_set_size(cont, w, h);
     return cont;
@@ -885,6 +952,10 @@ static void initSliderStyle() {
     lv_style_init(&style_pressed_color);
     lv_style_set_bg_color(&style_pressed_color, lv_palette_darken(LV_PALETTE_CYAN, 2));
     lv_style_set_bg_opa(&style_indicator, LV_OPA_100);
+
+    lv_style_init(&style_focused);
+    lv_style_set_border_color(&style_focused, lv_color_white());
+    lv_style_set_border_width(&style_focused, 3);
 }
 
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
@@ -895,6 +966,16 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_grid_dsc_array(cont, column_dsc, row_dsc);
 
     initSliderStyle();
+
+    /* The drawer takes the navigation encoder while it is open: the sliders and
+     * the close arrow are all small targets, and the encoder is the way to hit
+     * them without aiming. Handed back by drawer_release_encoder(). */
+    s_drawer_group = lv_group_create();
+    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
+    if (nav) {
+        s_drawer_saved_group = lv_indev_get_group(nav);
+        lv_indev_set_group(nav, s_drawer_group);
+    }
 
     auto spk_apply = [](lv_event_t * e) {
         (void)e;
@@ -945,8 +1026,15 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_center(img_close);
     lv_obj_set_size(closeButton, QUICK_BUTTON_SIZE * 1.5, QUICK_BUTTON_SIZE);
     lv_obj_align(closeButton, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_add_event_cb(closeButton, drawer_close_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(closeButton, drawer_close_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_ext_click_area(closeButton, 30);
+    lv_obj_set_style_outline_color(closeButton, lv_color_white(), LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(closeButton, 2, LV_STATE_FOCUSED);
     lv_obj_set_grid_cell(closeButton, LV_GRID_ALIGN_END, 2, 1, LV_GRID_ALIGN_END, 3, 1);
+
+    if (s_drawer_group) {
+        lv_group_add_obj(s_drawer_group, closeButton);
+        lv_group_focus_obj(lv_group_get_obj_by_index(s_drawer_group, 0));
+    }
 }
