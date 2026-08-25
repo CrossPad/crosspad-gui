@@ -10,7 +10,10 @@ namespace crosspad_gui {
 struct LauncherAppInfo {
     const char* name;
     const char* icon;
-    void* app_ptr;  // Opaque pointer to platform's App object
+    void* app_ptr;        // Opaque pointer to platform's App object
+    const char* desc = nullptr;  // Optional one-line subtitle, shown only on the
+                                 // expanded row. Left null by apps that have none —
+                                 // the row then shows just the name.
 };
 
 // Called when the user clicks an app button in the launcher grid.
@@ -36,9 +39,10 @@ struct LauncherConfig {
 // Uses getGuiPlatform().assetPathPrefix() to build the icon path.
 void launcher_register_power_off();
 
-// Create the app button grid inside a parent container.
-// Builds a flex-wrap row of icon buttons from the given app list.
-// Returns the button wrapper object.
+// Create the launcher inside a parent container.
+// Builds the accordion list (layout 18D): every app is one row, the selected
+// one expands to show its icon in a chip plus name and optional subtitle.
+// Returns the list object.
 lv_obj_t* launcher_create_button_grid(
     lv_obj_t* parent,
     const LauncherAppInfo* apps,

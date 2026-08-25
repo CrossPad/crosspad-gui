@@ -159,13 +159,118 @@ static void button_click_cb(lv_event_t* e) {
     void* app_ptr = lv_event_get_user_data(e);
     if (!app_ptr || !s_config.on_select) return;
 
-    // Walk up to find the app container (btn_wrap's parent)
-    lv_obj_t* btn = (lv_obj_t*)lv_event_get_current_target(e);
-    lv_obj_t* btn_wrap = lv_obj_get_parent(btn);
-    lv_obj_t* app_container = lv_obj_get_parent(btn_wrap);
+    /* row -> list -> body -> app container: the launcher root is the two-column
+     * body, so the row sits three levels below the container the app must
+     * build into. */
+    lv_obj_t* row  = (lv_obj_t*)lv_event_get_current_target(e);
+    lv_obj_t* list = lv_obj_get_parent(row);
+    lv_obj_t* body = lv_obj_get_parent(list);
+    lv_obj_t* app_container = lv_obj_get_parent(body);
 
     s_config.on_select(app_ptr, app_container);
 }
+
+/* The launcher borrows the kit browser's layout wholesale: a preview panel on
+ * the left, a scrollable list on the right, same palette and same row geometry.
+ * Two screens that do the same job — pick one of many things — now look like
+ * one device rather than two designs.
+ *
+ * The palette is the browser's, not CROSSPAD_THEME_*, for exactly that reason.
+ */
+namespace {
+
+constexpr int LR_COVER     = 122;  ///< Preview panel, square, as in the browser
+constexpr int LR_PREV_ICON = 76;   ///< Icon inside it — app icons are line art,
+                                   ///< so filling the panel would look coarse
+constexpr int LR_THUMB     = 20;
+constexpr int LR_ROW_H     = 30;
+constexpr int LR_MAX_ROWS  = 24;
+
+#define LR_PRIMARY    lv_color_hex(0x00FF88)
+#define LR_BG_DARK    lv_color_hex(0x0B0B18)
+#define LR_CARD_BG    lv_color_hex(0x16162E)
+#define LR_TEXT       lv_color_hex(0xE6E4F0)
+#define LR_ON_PRIMARY lv_color_hex(0x001A0E)
+
+lv_obj_t* s_rows[LR_MAX_ROWS];
+lv_obj_t* s_rowIcon[LR_MAX_ROWS];
+lv_obj_t* s_rowName[LR_MAX_ROWS];
+/* Hidden carrier for the optional subtitle: LVGL owns the string, so nothing
+ * from the caller's descriptor array has to stay alive. Null when the app has
+ * no subtitle. Hidden children are skipped by the flex layout. */
+lv_obj_t* s_rowDesc[LR_MAX_ROWS];
+size_t    s_row_count = 0;
+uint16_t  s_sel       = 0;
+
+/* lv_group_add_obj() fires LV_EVENT_FOCUSED synchronously for the first object
+ * it receives, which lands here while the row is still half-built. Selection is
+ * applied explicitly once the list is complete. */
+bool s_building = false;
+
+lv_obj_t* s_prevIcon = nullptr;
+lv_obj_t* s_prevName = nullptr;
+lv_obj_t* s_prevDesc = nullptr;
+
+lv_style_t st_row, st_row_sel, st_cover;
+bool s_styles_ready = false;
+
+void lr_styles_init() {
+    if (s_styles_ready) return;
+    s_styles_ready = true;
+
+    lv_style_init(&st_row);
+    lv_style_set_bg_color(&st_row, LR_CARD_BG);
+    lv_style_set_bg_opa(&st_row, LV_OPA_COVER);
+    lv_style_set_radius(&st_row, 9);
+    lv_style_set_border_width(&st_row, 0);
+    lv_style_set_pad_hor(&st_row, 7);
+    lv_style_set_pad_ver(&st_row, 0);
+    lv_style_set_pad_column(&st_row, 7);
+
+    lv_style_init(&st_row_sel);
+    lv_style_set_bg_color(&st_row_sel, LR_PRIMARY);
+
+    lv_style_init(&st_cover);
+    lv_style_set_radius(&st_cover, 14);
+    lv_style_set_clip_corner(&st_cover, true);
+    lv_style_set_bg_color(&st_cover, LR_CARD_BG);
+    lv_style_set_bg_opa(&st_cover, LV_OPA_COVER);
+}
+
+void lr_select(size_t i) {
+    if (s_building || i >= s_row_count || !s_rows[i]) return;
+
+    if (s_sel < s_row_count && s_rows[s_sel]) {
+        lv_obj_remove_style(s_rows[s_sel], &st_row_sel, 0);
+        lv_obj_set_style_text_color(s_rowName[s_sel], LR_TEXT, 0);
+        lv_obj_set_style_image_recolor(s_rowIcon[s_sel], LR_TEXT, 0);
+    }
+
+    s_sel = (uint16_t)i;
+
+    lv_obj_add_style(s_rows[s_sel], &st_row_sel, 0);
+    lv_obj_set_style_text_color(s_rowName[s_sel], LR_ON_PRIMARY, 0);
+    lv_obj_set_style_image_recolor(s_rowIcon[s_sel], LR_ON_PRIMARY, 0);
+
+    /* The row's own image owns a copy of the path (lv_image_set_src strdups),
+     * so the preview can reuse it without the caller's string staying alive. */
+    const void* src = lv_image_get_src(s_rowIcon[s_sel]);
+    if (src && s_prevIcon) lv_image_set_src(s_prevIcon, src);
+
+    if (s_prevName) lv_label_set_text(s_prevName, lv_label_get_text(s_rowName[s_sel]));
+    if (s_prevDesc) {
+        lv_label_set_text(s_prevDesc,
+            s_rowDesc[s_sel] ? lv_label_get_text(s_rowDesc[s_sel]) : "");
+    }
+
+    lv_obj_scroll_to_view(s_rows[s_sel], LV_ANIM_OFF);
+}
+
+void lr_focus_cb(lv_event_t* e) {
+    lr_select((size_t)(uintptr_t)lv_event_get_user_data(e));
+}
+
+} // namespace
 
 lv_obj_t* launcher_create_button_grid(
     lv_obj_t* parent,
@@ -174,59 +279,136 @@ lv_obj_t* launcher_create_button_grid(
     const LauncherConfig* config)
 {
     s_config = *config;  // copy by value — safe even if caller passes a stack-local config
+    lr_styles_init();
 
-    // Create button wrapper container
-    lv_obj_t* btn_wrap = lv_obj_create(parent);
-    lv_obj_set_size(btn_wrap, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(btn_wrap, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(btn_wrap, 0, 0);
-    lv_obj_set_style_pad_all(btn_wrap, 0, 0);
-    // All tiles fit on one screen (small button_size from the platform) —
-    // scrolling off keeps encoder focus from dragging the grid around.
-    lv_obj_set_scrollbar_mode(btn_wrap, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(btn_wrap, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(btn_wrap, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(btn_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(btn_wrap, s_config.button_spacing, 0);
-    lv_obj_set_style_pad_column(btn_wrap, s_config.button_spacing, 0);
+    lv_obj_t* body = lv_obj_create(parent);
+    lv_obj_remove_style_all(body);
+    lv_obj_set_size(body, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(body, LR_BG_DARK, 0);
+    lv_obj_set_style_bg_opa(body, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(body, 10, 0);
+    lv_obj_set_style_pad_column(body, 10, 0);
 
-    for (size_t i = 0; i < app_count; i++) {
+    // ── Left: preview panel ─────────────────────────────────────────────
+    lv_obj_t* left = lv_obj_create(body);
+    lv_obj_remove_style_all(left);
+    lv_obj_set_size(left, LR_COVER, LV_PCT(100));
+    lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
+    /* Panel plus its labels are shorter than the body: centre the stack on the
+     * main axis, keep the cross axis at START so the captions line up with the
+     * panel's left edge. */
+    lv_obj_set_flex_align(left, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(left, 7, 0);
+    lv_obj_remove_flag(left, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* coverBox = lv_obj_create(left);
+    lv_obj_remove_style_all(coverBox);
+    lv_obj_add_style(coverBox, &st_cover, 0);
+    lv_obj_set_size(coverBox, LR_COVER, LR_COVER);
+    lv_obj_remove_flag(coverBox, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_prevIcon = lv_image_create(coverBox);
+    lv_image_set_inner_align(s_prevIcon, LV_IMAGE_ALIGN_CONTAIN);
+    lv_obj_set_size(s_prevIcon, LR_PREV_ICON, LR_PREV_ICON);
+    lv_obj_set_style_image_recolor_opa(s_prevIcon, LV_OPA_COVER, 0);
+    lv_obj_set_style_image_recolor(s_prevIcon, LR_PRIMARY, 0);
+    lv_obj_center(s_prevIcon);
+
+    s_prevName = lv_label_create(left);
+    lv_obj_set_style_text_font(s_prevName, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_prevName, lv_color_white(), 0);
+    lv_label_set_long_mode(s_prevName, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_prevName, LR_COVER);
+    lv_label_set_text(s_prevName, "");
+
+    s_prevDesc = lv_label_create(left);
+    lv_obj_set_style_text_font(s_prevDesc, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(s_prevDesc, LR_PRIMARY, 0);
+    lv_label_set_long_mode(s_prevDesc, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_prevDesc, LR_COVER);
+    lv_label_set_text(s_prevDesc, "");
+
+    // ── Right: scrollable app list ──────────────────────────────────────
+    lv_obj_t* list = lv_obj_create(body);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_flex_grow(list, 1);
+    lv_obj_set_height(list, LV_PCT(100));
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(list, 5, 0);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    s_row_count = 0;
+    s_sel       = 0;
+    s_building  = true;
+
+    for (size_t i = 0; i < app_count && s_row_count < LR_MAX_ROWS; i++) {
         const auto& info = apps[i];
         if (!info.app_ptr) continue;
 
-        lv_obj_t* btn = lv_button_create(btn_wrap);
-        if (!btn) continue;
+        const size_t idx = s_row_count;
+        void* tag = (void*)(uintptr_t)idx;
 
-        if (s_config.encoder_group) {
-            lv_group_add_obj(s_config.encoder_group, btn);
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_remove_style_all(row);
+        lv_obj_add_style(row, &st_row, 0);
+        lv_obj_set_size(row, LV_PCT(100), LR_ROW_H);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START,
+                                   LV_FLEX_ALIGN_CENTER,
+                                   LV_FLEX_ALIGN_CENTER);
+        lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row, button_click_cb, LV_EVENT_CLICKED, info.app_ptr);
+        lv_obj_add_event_cb(row, lr_focus_cb, LV_EVENT_FOCUSED, tag);
+        if (s_config.encoder_group) lv_group_add_obj(s_config.encoder_group, row);
+        s_rows[idx] = row;
+
+        lv_obj_t* img = lv_image_create(row);
+        lv_image_set_src(img, info.icon);
+        lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
+        lv_obj_set_size(img, LR_THUMB, LR_THUMB);
+        lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+        lv_obj_set_style_image_recolor(img, LR_TEXT, 0);
+        s_rowIcon[idx] = img;
+
+        lv_obj_t* name = lv_label_create(row);
+        lv_obj_set_flex_grow(name, 1);
+        lv_obj_set_style_text_font(name, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(name, LR_TEXT, 0);
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        lv_label_set_text(name, info.name ? info.name : "");
+        s_rowName[idx] = name;
+
+        /* Subtitle only when the app supplies one — inventing text here would
+         * put made-up status on the screen. */
+        if (info.desc && info.desc[0]) {
+            lv_obj_t* desc = lv_label_create(row);
+            lv_label_set_text(desc, info.desc);
+            lv_obj_add_flag(desc, LV_OBJ_FLAG_HIDDEN);
+            s_rowDesc[idx] = desc;
+        } else {
+            s_rowDesc[idx] = nullptr;
         }
-        lv_obj_add_style(btn, &styleAppPicker, 0);
-        lv_obj_add_style(btn, &styleAppPickerPressed, LV_STATE_PRESSED);
-        lv_obj_add_style(btn, &styleAppPickerInactive, LV_STATE_DISABLED);
 
-        lv_obj_t* img = lv_image_create(btn);
-        if (img) {
-            lv_image_set_src(img, info.icon);
-            lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
-            lv_obj_set_size(img, s_config.icon_size, s_config.icon_size);
-            lv_obj_set_style_image_recolor(img, lv_color_bw_from_color(CROSSPAD_THEME_CARD_BG), 0);
-            lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
-            lv_obj_center(img);
-        }
-
-        lv_obj_set_size(btn, s_config.button_size, s_config.button_size);
-        lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_obj_add_event_cb(btn, button_click_cb, LV_EVENT_CLICKED, info.app_ptr);
-
-        if (s_config.show_names) {
-            lv_obj_t* label = lv_label_create(btn);
-            lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
-            lv_label_set_text(label, info.name);
-            lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, 5);
-        }
+        s_row_count++;
     }
 
-    return btn_wrap;
+    s_building = false;
+
+    if (s_row_count > 0) {
+        if (s_config.encoder_group) lv_group_focus_obj(s_rows[0]);
+        /* s_sel already points at row 0, and lr_select() early-outs on a
+         * no-op move, so drive the first paint through the same path with the
+         * selection parked one past the end. */
+        s_sel = (uint16_t)s_row_count;
+        lr_select(0);
+    }
+
+    return body;
 }
 
 } // namespace crosspad_gui
