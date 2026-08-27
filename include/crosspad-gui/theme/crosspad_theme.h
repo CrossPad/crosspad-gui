@@ -66,6 +66,20 @@ const char* getThemeColorName(int idx);
 #define CROSSPAD_THEME_CARD_BG     lv_color_make(42, 42, 42)       // Card bg
 #endif
 
+// Deeper pair for screens that show artwork (the kit browser): darker than the
+// launcher's card bg on purpose, so the cover carries the screen.
+#ifndef CROSSPAD_THEME_BG_DEEP
+#define CROSSPAD_THEME_BG_DEEP     lv_color_make(11, 11, 24)
+#endif
+
+#ifndef CROSSPAD_THEME_CARD_DEEP
+#define CROSSPAD_THEME_CARD_DEEP   lv_color_make(22, 22, 46)
+#endif
+
+#ifndef CROSSPAD_THEME_TEXT
+#define CROSSPAD_THEME_TEXT        lv_color_make(230, 228, 240)
+#endif
+
 // ── LCD resolution (for GUI layout, may differ from physical display) ────────
 #ifndef CP_LCD_HOR_RES
 #define CP_LCD_HOR_RES LV_HOR_RES

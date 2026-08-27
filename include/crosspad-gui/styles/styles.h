@@ -16,11 +16,13 @@ extern lv_style_t styleTitle;
 extern lv_style_t styleBackButton;
 extern lv_style_t stylePrimaryImgRecolor;
 extern lv_style_t styleWaveformBox;
-extern lv_style_t styleKitListBox;
-extern lv_style_t styleKitListScroll;
-extern lv_style_t styleKitListItem;
-extern lv_style_t styleKitListItemFocused;
-extern lv_style_t styleKitListItemSelected;
+// Kit browser: cover panel on the left, one row per kit on the right
+extern lv_style_t styleKitBrowserScreen;
+extern lv_style_t styleKitBrowserStatus;
+extern lv_style_t styleKitBrowserRow;
+extern lv_style_t styleKitBrowserRowSelected;
+extern lv_style_t styleKitBrowserCover;
+extern lv_style_t styleKitBrowserThumb;
 extern lv_style_t styleLoadingArc;
 extern lv_style_t styleSpinbox;
 

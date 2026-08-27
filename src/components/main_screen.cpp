@@ -7,6 +7,12 @@
 
 namespace crosspad_gui {
 
+/* The launcher's encoder group from the previous build. lv_obj_clean() takes
+ * the widgets with it, but a group is not a widget: every return to the
+ * launcher used to leave one lv_group_t behind, ~70 B of internal RAM per app
+ * visit, which app_churn measured as a steady downward slope on every app. */
+static lv_group_t* s_encoder_group = nullptr;
+
 MainScreenResult build_main_screen(
     lv_obj_t* parent,
     const LauncherAppInfo* apps,
@@ -30,6 +36,11 @@ MainScreenResult build_main_screen(
     if (config.encoder) {
         lv_indev_set_group(config.encoder, result.encoder_group);
     }
+    /* Only once the encoder points at the new group: nothing else holds the
+     * old one — its objects went with lv_obj_clean() above, and the platform
+     * replaces its own handle from the result. */
+    if (s_encoder_group) lv_group_delete(s_encoder_group);
+    s_encoder_group = result.encoder_group;
 
     // ── Status bar ──────────────────────────────────────────────────────
     result.status_bar = lv_CreateStatusBar(parent);

@@ -18,11 +18,12 @@ lv_style_t styleTitle;
 lv_style_t styleBackButton;
 lv_style_t stylePrimaryImgRecolor;
 lv_style_t styleWaveformBox;
-lv_style_t styleKitListBox;
-lv_style_t styleKitListScroll;
-lv_style_t styleKitListItem;
-lv_style_t styleKitListItemFocused;
-lv_style_t styleKitListItemSelected;
+lv_style_t styleKitBrowserScreen;
+lv_style_t styleKitBrowserStatus;
+lv_style_t styleKitBrowserRow;
+lv_style_t styleKitBrowserRowSelected;
+lv_style_t styleKitBrowserCover;
+lv_style_t styleKitBrowserThumb;
 lv_style_t styleLoadingArc;
 lv_style_t styleSpinbox;
 
@@ -157,47 +158,63 @@ void initStyles() {
     lv_style_set_text_font(&styleWaveformBox, &lv_font_montserrat_14);
     lv_style_set_text_opa(&styleWaveformBox, LV_OPA_100);
 
-    // kit list box style
-    lv_style_init(&styleKitListBox);
-    lv_style_set_bg_color(&styleKitListBox, lv_color_black());
-    lv_style_set_pad_all(&styleKitListBox, 3);
-    lv_style_set_radius(&styleKitListBox, 0);
-    lv_style_set_outline_width(&styleKitListBox, 0);
-    lv_style_set_border_width(&styleKitListBox, 3);
-    lv_style_set_border_color(&styleKitListBox, CROSSPAD_THEME_PRIMARY);
-    lv_style_set_border_opa(&styleKitListBox, LV_OPA_COVER);
+    // kit browser: the whole screen
+    lv_style_init(&styleKitBrowserScreen);
+    lv_style_set_bg_color(&styleKitBrowserScreen, CROSSPAD_THEME_BG_DEEP);
+    lv_style_set_bg_opa(&styleKitBrowserScreen, LV_OPA_COVER);
+    lv_style_set_pad_all(&styleKitBrowserScreen, 0);
+    lv_style_set_border_width(&styleKitBrowserScreen, 0);
+    lv_style_set_radius(&styleKitBrowserScreen, 0);
 
-    // kit list item style
-    lv_style_init(&styleKitListItem);
-    lv_style_set_bg_color(&styleKitListItem, CROSSPAD_THEME_PRIMARY);
-    lv_style_set_text_color(&styleKitListItem, TEXT_COLOR_ON_PRIMARY);
-    lv_style_set_text_font(&styleKitListItem, &lv_font_montserrat_18);
-    lv_style_set_radius(&styleKitListItem, 8);
-    lv_style_set_pad_all(&styleKitListItem, 4);
-    lv_style_set_outline_width(&styleKitListItem, 0);
+    // kit browser: status bar. A dark bar with the accent spent on a hairline
+    // — a full primary slab reads as a neon stripe and pulls the eye off the
+    // artwork, which is what the screen is for.
+    lv_style_init(&styleKitBrowserStatus);
+    lv_style_set_bg_color(&styleKitBrowserStatus, CROSSPAD_THEME_CARD_DEEP);
+    lv_style_set_bg_opa(&styleKitBrowserStatus, LV_OPA_COVER);
+    lv_style_set_text_color(&styleKitBrowserStatus, CROSSPAD_THEME_TEXT);
+    lv_style_set_text_font(&styleKitBrowserStatus, &lv_font_montserrat_14);
+    lv_style_set_radius(&styleKitBrowserStatus, 0);
+    lv_style_set_border_width(&styleKitBrowserStatus, 1);
+    lv_style_set_border_side(&styleKitBrowserStatus, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_border_color(&styleKitBrowserStatus, CROSSPAD_THEME_PRIMARY);
+    lv_style_set_border_opa(&styleKitBrowserStatus, LV_OPA_40);
+    lv_style_set_pad_hor(&styleKitBrowserStatus, 9);
+    lv_style_set_pad_ver(&styleKitBrowserStatus, 0);
 
-    // kit list item focused style
-    lv_style_init(&styleKitListItemFocused);
-    lv_style_set_bg_color(&styleKitListItemFocused, CROSSPAD_THEME_PRIMARY);
-    lv_style_set_outline_width(&styleKitListItemFocused, 2);
-    lv_style_set_outline_color(&styleKitListItemFocused, CROSSPAD_THEME_ACCENT);
-    lv_style_set_pad_all(&styleKitListItemFocused, 2);
+    // kit browser: one row per kit
+    lv_style_init(&styleKitBrowserRow);
+    lv_style_set_bg_color(&styleKitBrowserRow, CROSSPAD_THEME_CARD_DEEP);
+    lv_style_set_bg_opa(&styleKitBrowserRow, LV_OPA_COVER);
+    lv_style_set_text_color(&styleKitBrowserRow, CROSSPAD_THEME_TEXT);
+    lv_style_set_radius(&styleKitBrowserRow, 9);
+    lv_style_set_border_width(&styleKitBrowserRow, 0);
+    lv_style_set_pad_hor(&styleKitBrowserRow, 7);
+    lv_style_set_pad_ver(&styleKitBrowserRow, 0);
+    lv_style_set_pad_column(&styleKitBrowserRow, 7);
 
-    // kit list item selected style
-    lv_style_init(&styleKitListItemSelected);
-    lv_style_set_bg_color(&styleKitListItemSelected, CROSSPAD_THEME_SECONDARY);
-    lv_style_set_text_color(&styleKitListItemSelected, TEXT_COLOR_ON_SECONDARY);
+    // kit browser: the selected row
+    lv_style_init(&styleKitBrowserRowSelected);
+    lv_style_set_bg_color(&styleKitBrowserRowSelected, CROSSPAD_THEME_PRIMARY);
+    lv_style_set_text_color(&styleKitBrowserRowSelected, TEXT_COLOR_ON_PRIMARY);
 
-    // kit list scroll style
-    lv_style_init(&styleKitListScroll);
-    lv_style_set_bg_color(&styleKitListScroll, lv_color_black());
-    lv_style_set_radius(&styleKitListScroll, 0);
-    lv_style_set_border_width(&styleKitListScroll, 2);
-    lv_style_set_border_color(&styleKitListScroll, CROSSPAD_THEME_PRIMARY);
-    lv_style_set_pad_all(&styleKitListScroll, 5);
-    lv_style_set_pad_right(&styleKitListScroll, 0);
-    lv_style_set_pad_gap(&styleKitListScroll, 0);
-    lv_style_set_outline_width(&styleKitListScroll, 0);
+    // kit browser: cover panel (clips the artwork to rounded corners)
+    lv_style_init(&styleKitBrowserCover);
+    lv_style_set_radius(&styleKitBrowserCover, 14);
+    lv_style_set_clip_corner(&styleKitBrowserCover, true);
+    lv_style_set_bg_color(&styleKitBrowserCover, CROSSPAD_THEME_CARD_DEEP);
+    lv_style_set_bg_opa(&styleKitBrowserCover, LV_OPA_COVER);
+    lv_style_set_text_color(&styleKitBrowserCover, CROSSPAD_THEME_PRIMARY);
+    lv_style_set_text_font(&styleKitBrowserCover, &lv_font_montserrat_18);
+
+    // kit browser: row thumbnail
+    lv_style_init(&styleKitBrowserThumb);
+    lv_style_set_radius(&styleKitBrowserThumb, 5);
+    lv_style_set_clip_corner(&styleKitBrowserThumb, true);
+    lv_style_set_bg_color(&styleKitBrowserThumb, CROSSPAD_THEME_BG_DEEP);
+    lv_style_set_bg_opa(&styleKitBrowserThumb, LV_OPA_COVER);
+    lv_style_set_text_color(&styleKitBrowserThumb, CROSSPAD_THEME_PRIMARY);
+    lv_style_set_text_font(&styleKitBrowserThumb, &lv_font_montserrat_10);
 
     // loading arc style
     lv_style_init(&styleLoadingArc);
@@ -332,11 +349,12 @@ void deinitStyles() {
     lv_style_reset(&styleBackButton);
     lv_style_reset(&stylePrimaryImgRecolor);
     lv_style_reset(&styleWaveformBox);
-    lv_style_reset(&styleKitListBox);
-    lv_style_reset(&styleKitListScroll);
-    lv_style_reset(&styleKitListItem);
-    lv_style_reset(&styleKitListItemFocused);
-    lv_style_reset(&styleKitListItemSelected);
+    lv_style_reset(&styleKitBrowserScreen);
+    lv_style_reset(&styleKitBrowserStatus);
+    lv_style_reset(&styleKitBrowserRow);
+    lv_style_reset(&styleKitBrowserRowSelected);
+    lv_style_reset(&styleKitBrowserCover);
+    lv_style_reset(&styleKitBrowserThumb);
     lv_style_reset(&styleLoadingArc);
     lv_style_reset(&styleSpinbox);
     lv_style_reset(&styleFileExplorerList);
