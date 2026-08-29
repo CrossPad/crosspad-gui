@@ -1609,8 +1609,30 @@ static void cat_build_backup(lv_obj_t * parent, lv_group_t * group) {
 
 static void stm32_dfu_cb(lv_event_t * e);
 
+static void coproc_update_cb(lv_event_t * e) {
+    (void)e;
+    auto* ui = getSettingsUI();
+    if (ui) ui->requestCoprocFwUpdate();
+}
+
 static void cat_build_programming(lv_obj_t * parent, lv_group_t * group) {
+    auto* ui = getSettingsUI();
     settings_section_header(parent, "Co-processor");
+
+    // The platform may carry an STM32 image and flash it itself; then the
+    // running and bundled versions sit side by side with the button that
+    // starts the platform's own update flow. Same version = "Reflash", the
+    // recovery for a co-processor that misbehaves.
+    crosspad::CoprocFwInfo fw{};
+    if (ui && ui->getCoprocFwInfo(fw)) {
+        settings_row_info(parent, "STM32 running", fw.running[0] ? fw.running : "no link");
+        if (fw.canUpdate) {
+            settings_row_action(parent, group, fw.bundled, fw.due ? "Update" : "Reflash",
+                                coproc_update_cb, nullptr);
+        } else {
+            settings_row_info(parent, "STM32 bundled", fw.bundled);
+        }
+    }
     settings_row_action(parent, group, "STM32 firmware", "DFU Mode",
                         stm32_dfu_cb, nullptr);
     settings_row_info(parent, "ESP32 firmware", "OTA over USB CDC");
