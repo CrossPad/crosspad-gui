@@ -17,22 +17,14 @@ void vu_set_levels(int16_t left, int16_t right) {
 
 static const int REFRESH_MS = 16; // 60 Hz
 
-// Convert int16 audio level (0-32767) to dB-like logarithmic scale.
+// int16 level (0-32767) to a dB-like logarithmic scale.
 //
 // The gate is the meter's zero point and the bottom of the dB range at once.
-// It used to be neither: NOISE_GATE was 800 while the curve carried a second,
-// independent floor of its own (values below normalized 0.018 were forced to
-// zero, i.e. val < ~166). Two floors that disagree meant the lower one was
-// dead code, and the higher one did not line up with the start of the curve —
-// 800 already maps to 39% of the bar, so the display jumped from empty to
-// two-fifths full with nothing in between. The whole bottom of the meter was
-// unreachable.
-//
-// 800 was set that high to hide a constant the sample player used to leave on
-// the bus after a one-shot voice ended (a DC offset measured at exactly 1118,
-// now removed by the DC blocker in MarcelSampleNode). With that gone the idle
-// residue settles around 29, so the gate can sit just above it and the meter
-// gets its low end back.
+// With two disagreeing floors it was neither, and the display jumped from
+// empty to two-fifths full with nothing in between. The old gate of 800 hid a
+// DC offset the sample player left on the bus, since removed by the DC blocker
+// in MarcelSampleNode; the idle residue is now ~29, so the gate sits just
+// above it and the meter gets its low end back.
 static const int16_t NOISE_GATE = 50;
 static const float   GAIN_MULTIPLIER = 3.5f;
 
@@ -42,9 +34,8 @@ uint16_t int16toLogScale(int16_t val, int base) {
     float normalized = ((float)val / 32767.0f) * GAIN_MULTIPLIER;
     if (normalized > 1.0f) normalized = 1.0f;
 
-    // Derived from the gate rather than hardcoded, so the two cannot drift
-    // apart again: the range is exactly "gate → full scale", which for a gate
-    // of 50 is about 45 dB.
+    // Derived from the gate, so the two cannot drift apart: the range is
+    // exactly gate → full scale.
     static const float kRangeDb =
         -20.0f * log10f(((float)NOISE_GATE / 32767.0f) * GAIN_MULTIPLIER);
 
@@ -75,7 +66,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
     lv_obj_set_style_pad_all(cont, 0, 0);
     lv_obj_set_style_pad_column(cont, 2, 0);
 
-    // Left channel bar
     lv_obj_t * barL = lv_bar_create(cont);
     lv_obj_set_style_radius(barL, 0, 0);
     lv_obj_set_size(barL, width, height);
@@ -85,7 +75,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
     lv_obj_set_style_border_width(barL, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(barL, lv_color_hex(0x404040), LV_PART_MAIN);
 
-    // Right channel bar
     lv_obj_t * barR = lv_bar_create(cont);
     lv_obj_set_style_radius(barR, 0, 0);
     lv_obj_set_size(barR, width, height);
@@ -95,7 +84,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
     lv_obj_set_style_border_width(barR, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(barR, lv_color_hex(0x404040), LV_PART_MAIN);
 
-    // Left peak hold indicator
     lv_obj_t * peakL = lv_obj_create(barL);
     lv_obj_set_size(peakL, width - 2, 2);
     lv_obj_set_style_bg_color(peakL, lv_color_hex(0xFF0000), 0);
@@ -103,7 +91,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
     lv_obj_set_style_radius(peakL, 0, 0);
     lv_obj_add_flag(peakL, LV_OBJ_FLAG_HIDDEN);
 
-    // Right peak hold indicator
     lv_obj_t * peakR = lv_obj_create(barR);
     lv_obj_set_size(peakR, width - 2, 2);
     lv_obj_set_style_bg_color(peakR, lv_color_hex(0xFF0000), 0);
@@ -150,7 +137,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
         uint32_t now = crosspad_gui::getGuiPlatform().millis();
         const uint32_t PEAK_HOLD_MS = 1500;
 
-        // Left peak
         lv_obj_t * peakIndicatorL = lv_obj_get_child(barL, 0);
         if (levelL > vuState.peakL) {
             vuState.peakL = levelL;
@@ -167,7 +153,6 @@ lv_obj_t * create_vu_meter(lv_obj_t * parent, int width, int height) {
             lv_obj_add_flag(peakIndicatorL, LV_OBJ_FLAG_HIDDEN);
         }
 
-        // Right peak
         lv_obj_t * peakIndicatorR = lv_obj_get_child(barR, 0);
         if (levelR > vuState.peakR) {
             vuState.peakR = levelR;

@@ -417,11 +417,9 @@ static void check_status_timer_cb(lv_timer_t * timer) {
 
 // ── Drawer open/close ───────────────────────────────────────────────────────
 
-/* Both handlers fire on LV_EVENT_CLICKED — on release, not on press. With the
- * encoder that is not cosmetic: acting on press swaps the focus group in the
- * middle of a click, and the release half then lands on whatever the other
- * group had focused. Closing the drawer that way launched an app on the way
- * out; opening it that way dropped the first slider straight into edit mode. */
+/* Both handlers fire on LV_EVENT_CLICKED, i.e. on release. Acting on press
+ * swaps the focus group mid-click, and the release half lands on whatever the
+ * other group had focused — closing the drawer launched an app that way. */
 
 static void drawer_open_event_cb(lv_event_t * e) {
     if (quickSettingsPanelVisible) return;
@@ -431,10 +429,9 @@ static void drawer_open_event_cb(lv_event_t * e) {
 
     lv_obj_t * parent = lv_obj_get_parent(status_c);
 
-    /* Click catcher underneath the drawer: a tap that misses the panel closes
-     * it instead of reaching whatever is drawn below. The close arrow sits in
-     * the drawer's bottom-right corner, so half of a fingertip that aims at it
-     * lands outside the panel — without this it launched an app. */
+    /* Click catcher under the drawer, so a tap that misses the panel closes it
+     * instead of reaching what is below. The close arrow sits in the corner,
+     * where half a fingertip lands outside the panel. */
     s_drawer_backdrop = lv_obj_create(parent);
     lv_obj_remove_style_all(s_drawer_backdrop);
     lv_obj_add_flag(s_drawer_backdrop, LV_OBJ_FLAG_FLOATING);
@@ -555,10 +552,9 @@ static void drawer_close_end_cb(lv_anim_t * a) {
 
 // ── Drawer encoder handover ─────────────────────────────────────────────────
 
-/* Give the navigation encoder back to whoever had it — once the panel is gone,
- * and from the status-bar rebuild path in case the drawer died with its tree.
- * The guard matters there: a rebuild binds the encoder to the new launcher
- * group before this runs, and that binding must survive. */
+/* Give the navigation encoder back to whoever had it, also from the rebuild
+ * path in case the drawer died with its tree. The guard matters there: the
+ * rebuild's own binding to the new launcher group must survive. */
 static void drawer_release_encoder() {
     if (!s_drawer_group) return;
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
@@ -603,11 +599,10 @@ static void delete_open_button() {
 lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     build_asset_paths();
 
-    /* Everything the previous status bar owned died with its tree, but the
-     * file-static handles still point at it. The drawer arrow is the one that
-     * bites: create_open_button() returns early on a non-NULL openButton, so
-     * after the first launcher rebuild the arrow was never created again — and
-     * the paths that only unhide it wrote through freed memory. */
+    /* The previous bar's widgets died with its tree, but the file-static
+     * handles still point at them. create_open_button() returns early on a
+     * non-NULL openButton, so the drawer arrow was never re-created after the
+     * first rebuild, and unhiding it wrote through freed memory. */
     drawer_release_encoder();
     openButton = NULL;
     closeButton = NULL;
@@ -739,12 +734,9 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
     lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);
 
-    // Icons registered before this status bar existed belong to the tree that
-    // was just destroyed: their labels are gone but their slots still describe
-    // what should be shown. Re-create them here, so a caller that registers a
-    // long-lived icon (a radio's state, say) does not have to re-register it
-    // every time the launcher is rebuilt — and, more importantly, so nothing
-    // writes through a dangling label pointer.
+    // Icons registered against the destroyed tree lost their labels, but their
+    // slots still say what to show. Re-create them, so a long-lived icon needs
+    // no re-registration and nothing writes through a dangling label.
     for (int i = 0; i < STATUSBAR_MAX_APP_ICONS; i++) {
         StatusBarAppIcon * slot = &s_app_icons[i];
         if (!slot->active || !slot->content) continue;
