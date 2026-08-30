@@ -30,7 +30,9 @@ lv_obj_t * createButtons(lv_obj_t * parent, lv_event_cb_t callback, void * userD
             lv_obj_set_style_border_color(button, lv_color_hex(0xFF0000), LV_STATE_FOCUSED);
             lv_obj_set_style_border_opa(button, LV_OPA_100, LV_STATE_FOCUSED);
 
-            crosspad::RgbColor padColor = crosspad::getPadManager().getPadColor(i);
+            // This button shows pad notes[i]-1 (the label is the pad number), so
+            // paint that pad's colour — not pad i, which is the row-mirrored one.
+            crosspad::RgbColor padColor = crosspad::getPadManager().getPadColor(notes[i] - 1);
             lv_obj_set_style_bg_color(button, lv_color_make(padColor.R, padColor.G, padColor.B), 0);
 
             lv_obj_t * label_btn = lv_label_create(button);

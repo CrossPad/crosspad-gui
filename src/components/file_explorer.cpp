@@ -19,10 +19,9 @@ static lv_obj_t * loadButton = NULL;
 #define MAX_PATH_LEN 128
 
 static crosspad_gui::FileItem currentFile;
-// Set once the user explicitly clicks a file. Reaching the Load button with the
-// encoder walks the focus back over the other entries, and a plain
-// focus-follows-selection would quietly swap the pick for whatever the focus
-// passed last — the user loaded 05.wav and got the first file in the folder.
+// Set only on an explicit click. Reaching Load with the encoder walks focus
+// back over the other entries, so focus-follows-selection would swap the pick
+// for whatever it passed last.
 static bool currentFilePinned = false;
 static crosspad_gui::FileItem currentFolder;
 static lv_subject_t Folder;
@@ -38,9 +37,8 @@ static file_preview_cb_t s_previewCb = nullptr;
 static file_scan_lifecycle_cb_t s_beforeScanCb = nullptr;
 static file_scan_lifecycle_cb_t s_afterScanCb = nullptr;
 
-// Debounced preview: encoder scroll fires FOCUSED per detent — previewing
-// each one floods the SD/audio path. A one-shot timer fires only after the
-// selection rests for the debounce window.
+// Debounced preview: FOCUSED fires per detent, and previewing each one floods
+// the SD/audio path. The timer fires once the selection rests.
 static lv_timer_t * s_previewTimer = nullptr;
 static char         s_previewPath[MAX_PATH_LEN] = {0};
 
@@ -77,12 +75,10 @@ static bool IndexDirectory(const std::string & path);
 static void UpdateEntriesList();
 static void ItemSelected_cb(lv_event_t * e);
 
-// Check file extension against filter
 static bool MatchesFilter(const std::string & filename) {
     if (_fileFilter == FILTER_NONE) return false;
     if (_fileFilter == FILTER_ALL) return true;
 
-    // Convert to lowercase for comparison
     std::string lower = filename;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
@@ -103,7 +99,6 @@ static bool MatchesFilter(const std::string & filename) {
     }
 }
 
-// Set the folder title (cropped if too long)
 static void SetFolderTitle(const std::string & path) {
     std::string cropped;
     if (path.length() > 30) cropped = path.substr(path.length() - 30);
@@ -144,7 +139,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     currentFilePinned = false;
     currentFolder = {startPath, "", true};
 
-    // Encoder group — remember previous binding so we can restore on close
+    // Remember the previous binding, to restore it on close.
     static lv_group_t * fe_group = lv_group_create();
     file_explorer_group = fe_group;
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
@@ -154,9 +149,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
         lv_indev_set_group(nav, fe_group);
     }
 
-    // Container — fills parent exactly. PCT(100) ties to parent's actual
-    // post-layout box, avoiding stale content_height from caller. SCROLLABLE
-    // off so children can't push the explorer beyond its visible bounds.
+    // PCT(100) ties to the parent's post-layout box rather than a stale
+    // content_height; SCROLLABLE off so children cannot push past the bounds.
     lv_obj_t * cont = lv_obj_create(parent);
     lv_obj_set_size(cont, LV_PCT(100), LV_PCT(100));
     lv_obj_set_pos(cont, 0, 0);
@@ -165,8 +159,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_update_layout(cont);
 
-    // Reset open flag + restore encoder group on any deletion path
-    // (Load button, Close button, app exit, async wipe)
+    // Every deletion path: Load, Close, app exit, async wipe.
     lv_obj_add_event_cb(cont, [](lv_event_t *) {
         alreadyOpened = false;
         itemList = NULL;
@@ -188,8 +181,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     static char buf2[MAX_PATH_LEN];
     lv_subject_init_string(&Folder, buf1, buf2, MAX_PATH_LEN, startPath.c_str());
 
-    // Hardcoded for 320x240 device — explicit Y positions. List capped well
-    // above the footer band so a long file list cannot displace the buttons.
+    // Explicit Y positions for 320x240. The list stops above the footer, so a
+    // long listing cannot displace the buttons.
     const int titleY    = 4;
     const int listY     = 30;
     const int listH     = 140;       
@@ -199,7 +192,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     const int btnGap    = 12;
     const int btnXOff   = (btnW + btnGap) / 2;
 
-    // Force absolute layout — prevents any flex from re-flowing children
+    // Absolute layout: no flex re-flow.
     lv_obj_set_layout(cont, LV_LAYOUT_NONE);
     const int titleW = contW - 2 * listLR;
     const int listW  = contW - 2 * listLR;
@@ -214,7 +207,6 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(title, titleX, titleY);
 
-    // Item list — fixed size + position, no align
     itemList = lv_list_create(cont);
     lv_group_add_obj(fe_group, itemList);
     lv_obj_add_style(itemList, &styleFileExplorerList, 0);
@@ -222,7 +214,6 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_obj_set_size(itemList, listW, listH);
     lv_obj_set_pos(itemList, listX, listY);
 
-    // Close + Load buttons — footer helper anchors them to BOTTOM_MID
     lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t * event) {
         alreadyOpened = false;
         currentFile = {"", "", false};
@@ -300,12 +291,10 @@ static void UpdateEntriesList() {
     }
 }
 
-// Descend into a folder. The path MUST be taken by value: `item` lives inside
-// `entries`, and IndexDirectory() clears that vector before refilling it — so
-// passing item.path by reference left listDirectory() building every entry's
-// path from a destroyed string. Names (short, SSO) survived, paths (heap) came
-// back empty, and the sample the user picked was stored as "" — a pad that
-// loads without error and then plays nothing.
+// The path MUST be taken by value: `item` lives in `entries`, which
+// IndexDirectory() clears before refilling. By reference, every entry's path
+// was built from a destroyed string — names survived through SSO, heap paths
+// came back empty, and the picked sample was stored as "".
 static void EnterFolder(const crosspad_gui::FileItem & item)
 {
     const std::string folderPath = item.path;
@@ -325,7 +314,6 @@ static void ItemSelected_cb(lv_event_t * e) {
 
     if (code >= LV_EVENT_COVER_CHECK) return;
 
-    // Find item in entries
     crosspad_gui::FileItem * foundItem = nullptr;
     for (auto & item : entries) {
         if (item.name == name) {
@@ -350,22 +338,19 @@ static void ItemSelected_cb(lv_event_t * e) {
 
     case LV_EVENT_CLICKED:
         if (!foundItem->isFolder) {
-            // Preview on click
             if (s_previewCb) {
                 s_previewCb(foundItem->path.c_str());
             }
             currentFile = *foundItem;
             currentFilePinned = true;
         } else if (lv_indev_get_type(lv_indev_active()) == LV_INDEV_TYPE_ENCODER) {
-            // Encoder click on folder = enter
             EnterFolder(*foundItem);
         }
         break;
 
     case LV_EVENT_FOCUSED:
-        // Folders never become the selection: focusing one on the way to Load
-        // would otherwise leave the explorer with a folder "selected" and the
-        // Load button silently doing nothing.
+        // Folders never become the selection, or focusing one on the way to
+        // Load leaves the button silently doing nothing.
         if (!foundItem->isFolder && !currentFilePinned) {
             currentFile = *foundItem;
         }

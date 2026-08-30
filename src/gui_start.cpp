@@ -16,7 +16,6 @@ GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
         return result;
     }
 
-    // Helper lambdas for optional LVGL mutex
     auto lock = [&]() {
         if (config.lvgl_mutex.lock) config.lvgl_mutex.lock(3000);
     };
@@ -24,26 +23,23 @@ GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
         if (config.lvgl_mutex.unlock) config.lvgl_mutex.unlock();
     };
 
-    // 1. Bootstrap platform adapters (no LVGL calls — safe outside lock)
+    // Platform adapters first: no LVGL calls, so this is safe outside the lock.
     bootstrap(config.platform, config.filesystem);
 
-    // 2-7: All LVGL operations wrapped in optional mutex
     lock();
 
-    // 2. Initialize LVGL styles
     initStyles();
 
-    // 3. Register built-in apps (power off dialog)
+    // Built-in apps (the power-off dialog).
     launcher_register_power_off();
 
-    // 4. Configure and init orchestrator
     auto& orch = AppOrchestrator::getInstance();
     orch.init(config.orchestrator);
 
-    // 5. Populate apps from registry (container is set later in start())
+    // From the registry; the container is set later, in start().
     orch.populateApps(nullptr);
 
-    // 6. Build main screen config — fill in encoder from platform if not set
+    // Fill the encoder in from the platform if the caller left it unset.
     auto msConfig = config.main_screen;
     if (!msConfig.encoder) {
         msConfig.encoder = config.platform->getNavigationEncoder();
@@ -51,7 +47,6 @@ GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
     msConfig.on_select = AppOrchestrator::onAppSelected;
     msConfig.on_close  = AppOrchestrator::onPopupClose;
 
-    // 7. Load main screen (creates status bar, app container, launcher grid)
     auto msResult = orch.loadMainScreen(screen, msConfig);
 
     unlock();

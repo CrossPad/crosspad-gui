@@ -2,21 +2,18 @@
 //
 // Interactive per-pad STM analog tuning screen.
 //
-// Open from Settings -> Analog/Velocity -> "Per-Pad Tuning". The user presses a
-// physical pad to select it (StmPadEditorLogic highlights it on the RGB LEDs),
-// edits that pad's analog config with the hand-rolled field widgets below, and
-// every edit is written live to the STM via getGuiPlatform().writeStmConfigPad().
-// Closing persists the edited per-pad arrays to NVS.
+// Settings -> Analog/Velocity -> "Per-Pad Tuning": press a pad to select it,
+// edit its analog config, and every edit goes live to the STM. Closing
+// persists the per-pad arrays to NVS.
 //
-// IMPORTANT design notes (see task-3-override.md):
-//  * STM writes go ONLY through crosspad_gui::getGuiPlatform().writeStmConfigPad()
-//    -- never getStm32Manager(), which does not link from crosspad-gui.
-//  * Field widgets are HAND-ROLLED (not settings_row_* helpers) because the edit
-//    target pad (s_sel) changes at runtime; a fixed pointer would write the wrong
-//    pad. load_pad_fields(pad) reloads the displayed values; callbacks write into
-//    &stm.*[s_sel].
-//  * The select callback fires from the pad-event task, NOT the LVGL task, so it
-//    only sets a pending flag; an LVGL timer applies it (mirrors midi_ble_panel).
+// Three constraints shape the code:
+//  * STM writes go through getGuiPlatform().writeStmConfigPad() only —
+//    getStm32Manager() does not link from crosspad-gui.
+//  * Field widgets are hand-rolled rather than settings_row_* helpers: the
+//    target pad changes at runtime, and a fixed pointer would write the wrong
+//    one. load_pad_fields() reloads them; callbacks write into &stm.*[s_sel].
+//  * The select callback fires from the pad-event task, so it only sets a
+//    pending flag that an LVGL timer applies.
 
 #include "crosspad-gui/components/stm_pad_editor_screen.h"
 
@@ -52,7 +49,7 @@ static lv_obj_t* s_curveDrop   = nullptr;  // padVelCurve (0xFF/0/1/2)
 static lv_obj_t* s_floorSlider = nullptr;  // padVelFloor (0..127 or 0xFF inherit)
 static lv_obj_t* s_floorInherit = nullptr; // switch: floor == 0xFF (inherit)
 
-// Live-feedback widgets (RAW/VEL readout + velocity-curve chart with hit marker).
+// Live-feedback widgets: RAW/VEL readout and the curve chart.
 static lv_obj_t*          s_rawLabel = nullptr;
 static lv_obj_t*          s_velLabel = nullptr;
 static lv_obj_t*          s_chart    = nullptr;
@@ -60,12 +57,12 @@ static lv_chart_series_t* s_curveSer = nullptr; // cyan: velocity curve, 128 pts
 static lv_chart_series_t* s_markSer  = nullptr; // red: single-point last-hit marker
 static uint8_t            s_lastRaw  = 0xFF;
 
-// Realtime live-feedback widgets (Task 3).
+// Realtime live-feedback widgets.
 static lv_obj_t*          s_rawAbLabel  = nullptr; // 12-bit A/B raw readout
 static lv_obj_t*          s_lrSliderRO  = nullptr; // read-only L/R balance slider
 static lv_chart_cursor_t* s_liveCursor  = nullptr; // amber "+" crosshair on the curve
 
-// Cross-task select marshaling (callback fires from the pad-event task).
+// Cross-task select marshaling; the callback fires from the pad-event task.
 static volatile uint8_t s_pendingSel      = 0;
 static volatile bool    s_pendingSelValid = false;
 
@@ -89,9 +86,8 @@ static void save_settings() {
     if (ui) ui->saveSettings();
 }
 
-// Curve value <-> dropdown index map.
-//   value 0xFF -> idx 0 (Inherit), 0 -> idx 1 (Linear),
-//   1 -> idx 2 (Exp Soft), 2 -> idx 3 (Exp Hard)
+// Curve value <-> dropdown index: 0xFF = Inherit, 0 = Linear,
+// 1 = Exp Soft, 2 = Exp Hard.
 static uint16_t curve_val_to_idx(uint8_t v) {
     switch (v) {
         case 0xFF: return 0;
@@ -112,8 +108,7 @@ static uint8_t curve_idx_to_val(uint16_t idx) {
 }
 
 // ── Velocity-curve chart helpers ────────────────────────────────────────────
-// Redraw the cyan velocity curve for the currently-selected pad's resolved
-// (curve, floor). Called from load_pad_fields() and every curve/floor edit.
+// Redraw the curve for the selected pad's resolved (curve, floor).
 static void redraw_curve(void) {
     auto* s = crosspad::CrosspadSettings::getInstance();
     if (!s || !s_chart || !s_curveSer) return;
@@ -136,8 +131,7 @@ static void update_marker(uint8_t raw, uint8_t vel) {
     lv_chart_refresh(s_chart);
 }
 
-// ── Load the currently-selected pad's values into the widgets ───────────────
-// Runs ON the LVGL task only.
+// ── Load the selected pad's values into the widgets (LVGL task only) ────────
 static void load_pad_fields(uint8_t pad) {
     auto* s = get_settings();
     if (!s || pad >= 16) return;
@@ -145,7 +139,7 @@ static void load_pad_fields(uint8_t pad) {
     s_loading = true;
 
     if (s_headerLabel) {
-        // 1-based label is friendlier for the user (physical pads are labelled 1..16).
+        // 1-based: the physical pads are labelled 1..16.
         lv_label_set_text_fmt(s_headerLabel, "Pad %u", (unsigned)(pad + 1));
     }
     if (s_sensSlider)  lv_slider_set_value(s_sensSlider, s->stm.padSensitivity[pad], LV_ANIM_OFF);
@@ -167,7 +161,7 @@ static void load_pad_fields(uint8_t pad) {
 
     s_loading = false;
 
-    // Repaint the curve for the new pad and force the next velraw read to repaint.
+    // Repaint for the new pad, and force the next velraw read to repaint too.
     s_lastRaw = 0xFF;
     redraw_curve();
 }
@@ -195,7 +189,7 @@ static void lr_cb(lv_event_t* e) {
 static void analog_cb(lv_event_t* e) {
     if (s_loading) return;
     auto* s = get_settings(); if (!s) return;
-    // analog dropdown index == value (0=Disable,1=CC,2=Aftertouch,3=Both).
+    // Dropdown index == value: 0 Disable, 1 CC, 2 Aftertouch, 3 Both.
     s->stm.padAnalogMode[s_sel] = (uint8_t)lv_dropdown_get_selected((lv_obj_t*)lv_event_get_target(e));
     push_pad();
 }
@@ -252,10 +246,10 @@ static void poll_cb(lv_timer_t*) {
         load_pad_fields(s_sel); // resets s_lastRaw, repaints curve
     }
 
-    // Combined live read: last-hit dot (static, velRaw) + live crosshair/raw/L-R.
+    // One read feeds the last-hit dot and the live crosshair/raw/L-R.
     crosspad::Stm32PadLive lv;
     if (crosspad_gui::getGuiPlatform().readStmPadLive(s_sel, lv)) {
-        // Last-hit dot (latched note-on) — unchanged behaviour.
+        // Last-hit dot, latched on note-on.
         auto* s = crosspad::CrosspadSettings::getInstance();
         if (s) {
             uint8_t curve = s->stm.padVelCurve[s_sel];
@@ -268,11 +262,10 @@ static void poll_cb(lv_timer_t*) {
             update_marker(lv.velRaw, hitVel); // static red dot at last hit
         }
 
-        // Live crosshair parked on the curve at current pressure (every tick).
+        // Crosshair parked on the curve at the current pressure.
         if (s_chart && s_liveCursor && s_curveSer)
             lv_chart_set_cursor_point(s_chart, s_liveCursor, s_curveSer, lv.sum);
 
-        // Raw 12-bit A/B + L/R balance slider.
         if (s_rawAbLabel) lv_label_set_text_fmt(s_rawAbLabel, "A:%4u  B:%4u",
                                                 (unsigned)lv.rawA, (unsigned)lv.rawB);
         if (s_lrSliderRO) lv_slider_set_value(s_lrSliderRO, lv.pan, LV_ANIM_OFF);
@@ -284,17 +277,14 @@ static void poll_cb(lv_timer_t*) {
 static void on_delete(lv_event_t*) {
     auto& pm = crosspad::getPadManager();
 
-    // Clear the custom-color override the editor set while painting selection.
-    // setPadColor() sets hasCustomColor=true, which hijacks the pressed-LED
-    // feedback (AFTERTOUCH mode renders defaultColor instead of pressedColor),
-    // so we must drop the flag — not just re-set a colour — on teardown.
+    // Drop the custom-colour override the selection painting set: the flag
+    // itself hijacks pressed-LED feedback, so re-setting a colour is not
+    // enough.
     for (int i = 0; i < 16; ++i) pm.clearPadColor((uint8_t)i);
 
-    // Reactivate whatever pad logic was running before the editor opened
-    // (paused apps get no onShow on our exit, so nobody else re-activates it);
-    // its onActivate() repaints the app palette the clear above just wiped.
-    // Must happen BEFORE unregisterPadLogic("StmPadEditor") below (documented
-    // push/pop caveat: pop while still registered).
+    // Reactivate the pad logic that was running before: a paused app gets no
+    // onShow on our exit, and its onActivate() repaints the palette the clear
+    // above wiped. Must precede unregisterPadLogic() — pop while registered.
     pm.popPadLogic();
     pm.unregisterPadLogic("StmPadEditor");
 
@@ -311,7 +301,7 @@ static void on_delete(lv_event_t*) {
     s_analogDrop = s_curveDrop = s_floorSlider = s_floorInherit = nullptr;
     s_rawLabel = s_velLabel = s_chart = nullptr;
     s_curveSer = s_markSer = nullptr;
-    // Cursor is owned by the chart and freed with it — just null the pointer.
+    // Owned by the chart and freed with it; just null the pointer.
     s_rawAbLabel = s_lrSliderRO = nullptr;
     s_liveCursor = nullptr;
     s_lastRaw = 0xFF;
@@ -320,7 +310,7 @@ static void on_delete(lv_event_t*) {
     save_settings();
 }
 
-// ── Small builder: labelled row holding one focusable widget ─────────────────
+// ── Labelled row holding one focusable widget ───────────────────────────────
 static lv_obj_t* make_row(lv_obj_t* parent, const char* label) {
     lv_obj_t* row = lv_obj_create(parent);
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
@@ -340,7 +330,6 @@ static lv_obj_t* make_row(lv_obj_t* parent, const char* label) {
 }
 
 lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
-    // 1. Full-size root container.
     lv_obj_t* root = lv_obj_create(parent);
     lv_obj_set_size(root, lv_obj_get_content_width(parent), lv_obj_get_content_height(parent));
     lv_obj_center(root);
@@ -349,18 +338,14 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
     lv_obj_add_event_cb(root, on_delete, LV_EVENT_DELETE, nullptr);
     s_root = root;
 
-    // 2. Pad manager — selection painting + handler registration below.
-    //    (No colour snapshot needed: on_delete clears the custom-colour override
-    //    so pads return to default-managed state.)
+    // No colour snapshot needed: on_delete clears the custom-colour override.
     auto& pm = crosspad::getPadManager();
 
-    // 3. Header + the 5 hand-rolled field widgets + a Close button.
     s_headerLabel = lv_label_create(root);
     lv_label_set_text(s_headerLabel, "Press a pad to select");
     lv_obj_set_style_text_color(s_headerLabel, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_headerLabel, &lv_font_montserrat_14, 0);
 
-    // Sensitivity slider (1..4095).
     {
         lv_obj_t* row = make_row(root, "Sensitivity");
         s_sensSlider = lv_slider_create(row);
@@ -369,7 +354,6 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_add_event_cb(s_sensSlider, sens_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 
-    // L/R ratio slider (1..99).
     {
         lv_obj_t* row = make_row(root, "L/R Ratio");
         s_lrSlider = lv_slider_create(row);
@@ -378,7 +362,6 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_add_event_cb(s_lrSlider, lr_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 
-    // Analog mode dropdown.
     {
         lv_obj_t* row = make_row(root, "Analog Mode");
         s_analogDrop = lv_dropdown_create(row);
@@ -387,7 +370,6 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_add_event_cb(s_analogDrop, analog_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 
-    // Velocity curve dropdown.
     {
         lv_obj_t* row = make_row(root, "Velocity Curve");
         s_curveDrop = lv_dropdown_create(row);
@@ -396,7 +378,7 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_add_event_cb(s_curveDrop, curve_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 
-    // Velocity floor: inherit switch + slider (0..127).
+    // Velocity floor: inherit switch plus a 0..127 slider.
     {
         lv_obj_t* row = make_row(root, "Floor Inherit");
         s_floorInherit = lv_switch_create(row);
@@ -410,7 +392,6 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_add_event_cb(s_floorSlider, floor_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 
-    // Live RAW + computed VELOCITY readout (one row, side by side).
     {
         lv_obj_t* row = make_row(root, "Last Hit");
         s_rawLabel = lv_label_create(row);
@@ -423,8 +404,8 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_set_style_text_font(s_velLabel, &lv_font_montserrat_14, 0);
     }
 
-    // Velocity-curve chart: input 0..127 on X (point index), velocity 0..127 on Y.
-    // Cyan series = the curve; red series = a single-point marker at the last hit.
+    // Curve chart: input on X, velocity on Y. Cyan = the curve, red = a
+    // one-point marker at the last hit.
     s_chart = lv_chart_create(root);
     lv_obj_set_size(s_chart, LV_PCT(90), 120);
     lv_obj_set_style_pad_all(s_chart, 2, 0);
@@ -433,14 +414,12 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
     lv_chart_set_axis_range(s_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 127);
     s_curveSer = lv_chart_add_series(s_chart, lv_palette_main(LV_PALETTE_CYAN), LV_CHART_AXIS_PRIMARY_Y);
     s_markSer  = lv_chart_add_series(s_chart, lv_palette_main(LV_PALETTE_RED),  LV_CHART_AXIS_PRIMARY_Y);
-    // Marker: fat dot, no connecting line (single visible point).
     lv_obj_set_style_size(s_chart, 6, 6, LV_PART_INDICATOR);
 
-    // Live amber "+" crosshair cursor that tracks current pressure on the curve.
+    // Crosshair tracking current pressure on the curve.
     s_liveCursor = lv_chart_add_cursor(s_chart, lv_palette_main(LV_PALETTE_AMBER),
                                        (lv_dir_t)(LV_DIR_HOR | LV_DIR_VER));
 
-    // Raw 12-bit A/B readout.
     {
         lv_obj_t* row = make_row(root, "Raw A/B");
         s_rawAbLabel = lv_label_create(row);
@@ -449,7 +428,7 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_set_style_text_font(s_rawAbLabel, &lv_font_montserrat_14, 0);
     }
 
-    // Read-only L/R balance slider (live pan; not user-adjustable).
+    // Read-only: live pan, not user-adjustable.
     {
         lv_obj_t* row = make_row(root, "L/R Balance");
         s_lrSliderRO = lv_slider_create(row);
@@ -460,7 +439,6 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_remove_flag(s_lrSliderRO, LV_OBJ_FLAG_CLICKABLE);
     }
 
-    // Close button.
     lv_obj_t* closeBtn = lv_button_create(root);
     lv_obj_set_size(closeBtn, LV_SIZE_CONTENT, 32);
     lv_obj_add_event_cb(closeBtn, [](lv_event_t*) {
@@ -472,22 +450,19 @@ lv_obj_t* stm_pad_editor_create(lv_obj_t* parent) {
         lv_obj_center(lbl);
     }
 
-    // 4. Register the pad logic handler with a no-op deleter (s_logic is static).
+    // No-op deleter: s_logic is static.
     static auto s_logicSp = std::shared_ptr<StmPadEditorLogic>(&s_logic, [](StmPadEditorLogic*){});
     pm.registerPadLogic("StmPadEditor", s_logicSp);
     s_logic.setSelectCallback(on_pad_selected, nullptr);
     pm.pushPadLogic("StmPadEditor");
 
-    // 5. Initialize selection.
     s_sel = 0;
     load_pad_fields(0);
 
-    // 6. Cross-task poll timer.
     s_pendingSelValid = false;
     s_pollTimer = lv_timer_create(poll_cb, 50, nullptr);
 
-    // 7. Encoder focus: save the caller's group, build ours, bind the encoder.
-    //    Mirrors midi_ble_panel.cpp (crosspad-gui native, no platform-idf dep).
+    // Encoder focus: save the caller's group, build ours, bind the encoder.
     s_group = lv_group_create();
     lv_group_add_obj(s_group, s_sensSlider);
     lv_group_add_obj(s_group, s_lrSlider);

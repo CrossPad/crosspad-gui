@@ -7,10 +7,9 @@
 
 namespace crosspad_gui {
 
-/* The launcher's encoder group from the previous build. lv_obj_clean() takes
- * the widgets with it, but a group is not a widget: every return to the
- * launcher used to leave one lv_group_t behind, ~70 B of internal RAM per app
- * visit, which app_churn measured as a steady downward slope on every app. */
+/* The previous build's launcher group. lv_obj_clean() takes the widgets but
+ * not the group, so every return to the launcher leaked one lv_group_t —
+ * ~70 B of internal RAM per app visit, visible as a slope in app_churn. */
 static lv_group_t* s_encoder_group = nullptr;
 
 MainScreenResult build_main_screen(
@@ -21,7 +20,6 @@ MainScreenResult build_main_screen(
 {
     MainScreenResult result;
 
-    // ── Parent setup ────────────────────────────────────────────────────
     lv_obj_clean(parent);
     lv_obj_set_size(parent, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -31,21 +29,17 @@ MainScreenResult build_main_screen(
     lv_obj_set_style_pad_column(parent, 0, 0);
     lv_obj_set_style_bg_color(parent, config.bg_color, 0);
 
-    // ── Encoder group ───────────────────────────────────────────────────
     result.encoder_group = lv_group_create();
     if (config.encoder) {
         lv_indev_set_group(config.encoder, result.encoder_group);
     }
-    /* Only once the encoder points at the new group: nothing else holds the
-     * old one — its objects went with lv_obj_clean() above, and the platform
-     * replaces its own handle from the result. */
+    /* Only once the encoder points at the new group; nothing else holds the
+     * old one by then. */
     if (s_encoder_group) lv_group_delete(s_encoder_group);
     s_encoder_group = result.encoder_group;
 
-    // ── Status bar ──────────────────────────────────────────────────────
     result.status_bar = lv_CreateStatusBar(parent);
 
-    // ── App container ───────────────────────────────────────────────────
     lv_obj_t* app_c = lv_obj_create(parent);
     lv_obj_add_style(app_c, &styleAppContainer, 0);
     lv_obj_set_flex_grow(app_c, 1);
@@ -59,7 +53,6 @@ MainScreenResult build_main_screen(
     lv_obj_update_layout(app_c);
     result.app_container = app_c;
 
-    // ── Launcher grid ───────────────────────────────────────────────────
     LauncherConfig lc = {};
     lc.encoder_group  = result.encoder_group;
     lc.on_select      = config.on_select;
