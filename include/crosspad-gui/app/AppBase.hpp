@@ -73,7 +73,12 @@ public:
         type_ = crosspad::APP_FLAG_AUTO_REGISTERED;
     }
 
-    virtual ~AppBase() = default;
+    virtual ~AppBase() {
+        // The root outlives this object in one case only (the owner is
+        // released while the tree is still up); leaving the hook behind would
+        // let a later delete write through a freed AppBase.
+        if (app) lv_obj_remove_event_cb_with_user_data(app, rootDeletedCb, this);
+    }
 
     // ── IApp interface ──────────────────────────────────────────────────
 
@@ -108,6 +113,17 @@ public:
         app = create_(parent, static_cast<Derived*>(this));
         this->app_c = parent;
         LV_LOG_TRACE("App created");
+
+        // The root can be deleted by someone other than destroyApp():
+        // build_main_screen() calls lv_obj_clean() on the whole screen, which
+        // takes with it any app the orchestrator is not tracking as running --
+        // the kit-selector gate overlay above all, since it is started from
+        // the pre-launch hook and never becomes runningApp_. Without this hook
+        // started_ outlives the tree it describes, and every later start() is
+        // refused with "App already started" against a dangling root.
+        if (app) {
+            lv_obj_add_event_cb(app, rootDeletedCb, LV_EVENT_DELETE, this);
+        }
 
         started_ = true;
         if (show_) {
@@ -206,6 +222,12 @@ public:
         lv_obj_t* app_to_destroy = app;
         app = nullptr;
 
+        // destroy_ deletes the root asynchronously. If this app is restarted
+        // before that delete runs, the old root's DELETE event would roll the
+        // fresh instance back through onRootDeleted() (and pop its pad logic).
+        // This teardown is ours; take the hook off first.
+        lv_obj_remove_event_cb_with_user_data(app_to_destroy, rootDeletedCb, this);
+
         if (padLogicName_ && padLogicName_[0] != '\0') {
             crosspad::getPadManager().popPadLogic();
         }
@@ -238,6 +260,36 @@ public:
     bool isPaused()                     { return !visible_; }
 
 private:
+    /// The root was deleted by someone other than destroyApp(). Roll the app
+    /// back to the not-started state so the next start() rebuilds it. The LVGL
+    /// teardown has already happened, so destroy_ must not run.
+    void onRootDeleted() {
+        if (!started_ && !visible_) return;   // destroyApp() is doing this
+
+        if (HasFlag(crosspad::APP_FLAG_AUTO_REGISTERED)) {
+            this->onAppDeinit();
+        }
+        visible_ = false;
+        started_ = false;
+        app = nullptr;
+
+        auto& orch = AppOrchestrator::getInstance();
+        if (orch.getRunningApp() == this) {
+            orch.setRunningApp(nullptr);
+        }
+        if (padLogicName_ && padLogicName_[0] != '\0') {
+            crosspad::getPadManager().popPadLogic();
+        }
+        // Deliberately no restoreEncoderGroup(): whoever wiped the tree is
+        // rebuilding the screen and installs its own group, and the group we
+        // remembered is usually part of that same teardown.
+        priorEncoderGroup_ = nullptr;
+    }
+
+    static void rootDeletedCb(lv_event_t* e) {
+        static_cast<AppBase*>(lv_event_get_user_data(e))->onRootDeleted();
+    }
+
     /// Hand encoder navigation back to whoever held it when this app started.
     /// No-op when the app never took it over, so apps that manage the encoder
     /// themselves (modal overlays restoring their own prior group) are not
