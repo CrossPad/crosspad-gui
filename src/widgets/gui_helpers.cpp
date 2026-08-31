@@ -21,6 +21,24 @@ void lv_list_cleanup(lv_obj_t * list) {
     LV_LOG_INFO("List cleaned up");
 }
 
+bool lv_group_is_alive(const lv_group_t * group) {
+    if (group == NULL) return false;
+    const uint32_t count = lv_group_get_count();
+    for (uint32_t i = 0; i < count; i++) {
+        if (lv_group_by_index(i) == group) return true;
+    }
+    return false;
+}
+
+void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group) {
+    if (indev == NULL) return;
+    if (group != NULL && !lv_group_is_alive(group)) {
+        LV_LOG_WARN("Saved encoder group is gone; leaving the current one alone");
+        return;
+    }
+    lv_indev_set_group(indev, group);
+}
+
 int CalcDigits(int value) {
     if (value == 0) return 1;
     int digits = 0;

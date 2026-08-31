@@ -5,6 +5,7 @@
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/widgets/footer_button.h"
 #include "crosspad-gui/platform/IFileSystem.h"
+#include "crosspad-gui/components/power_gesture.h"
 
 #include <vector>
 #include <algorithm>
@@ -28,6 +29,10 @@ static lv_subject_t Folder;
 static std::vector<crosspad_gui::FileItem> entries;
 
 static bool alreadyOpened = false;
+// The folder the explorer was opened on: the back gesture climbs out of
+// subfolders down to it, and closes the explorer once there.
+static std::string s_rootPath;
+static uint32_t s_backToken = 0;
 static FileFilter _fileFilter;
 static lv_group_t * s_prevEncoderGroup = nullptr;
 static lv_indev_t * s_prevEncoderIndev = nullptr;
@@ -106,6 +111,45 @@ static void SetFolderTitle(const std::string & path) {
     lv_subject_copy_string(&Folder, cropped.c_str());
 }
 
+// One level up. Above the start folder there is still /crosspad, which the
+// in-list "Go back..." entry keeps reaching; the power gesture stops at the
+// start folder and closes the explorer instead (see explorerBack_cb).
+static void GoUpOneLevel() {
+    size_t pos = currentFolder.path.find_last_of('/');
+    std::string newPath = (pos != std::string::npos) ? currentFolder.path.substr(0, pos) : "";
+    currentFolder.path = newPath.empty() ? "/crosspad" : newPath;
+    pos = currentFolder.path.find_last_of('/');
+    currentFolder.name = (pos != std::string::npos) ? currentFolder.path.substr(pos + 1) : currentFolder.path;
+    currentFilePinned = false;   // new listing, old pick is gone
+    if (IndexDirectory(currentFolder.path)) {
+        SetFolderTitle(currentFolder.path);
+        UpdateEntriesList();
+    }
+}
+
+// Close with nothing picked. Routed through the Load button because the owner
+// hung its teardown (delete the explorer, take the encoder back, resume its
+// timers) on that callback; a bare delete here would skip all of it.
+static void CloseExplorer() {
+    alreadyOpened = false;
+    currentFile = {"", "", false};
+    currentFilePinned = false;
+    if (loadButton) lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
+}
+
+/* The power button's short click, while the explorer is up: one folder level
+ * per click, then out of the explorer — never straight out of the app, which
+ * is what the framework fallback would have done from three levels deep. */
+static bool explorerBack_cb(void *) {
+    if (!alreadyOpened) return false;
+    if (!currentFolder.path.empty() && currentFolder.path != s_rootPath) {
+        GoUpOneLevel();
+        return true;
+    }
+    CloseExplorer();
+    return true;
+}
+
 // Back button
 static void addBackButton(lv_obj_t * list) {
     lv_obj_t * btn = lv_list_add_button(list, LV_SYMBOL_LEFT, "Go back...");
@@ -113,17 +157,7 @@ static void addBackButton(lv_obj_t * list) {
     lv_obj_add_style(btn, &styleFileExplorerEntrySelected, LV_STATE_FOCUS_KEY);
     lv_obj_add_style(btn, &styleFileExplorerEntrySelected, LV_STATE_FOCUSED);
     lv_group_add_obj(file_explorer_group, btn);
-    lv_obj_add_event_cb(btn, [](lv_event_t * e) {
-        size_t pos = currentFolder.path.find_last_of('/');
-        std::string newPath = (pos != std::string::npos) ? currentFolder.path.substr(0, pos) : "";
-        currentFolder.path = newPath.empty() ? "/crosspad" : newPath;
-        pos = currentFolder.path.find_last_of('/');
-        currentFolder.name = (pos != std::string::npos) ? currentFolder.path.substr(pos + 1) : currentFolder.path;
-        if (IndexDirectory(currentFolder.path)) {
-            SetFolderTitle(currentFolder.path);
-            UpdateEntriesList();
-        }
-    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn, [](lv_event_t *) { GoUpOneLevel(); }, LV_EVENT_CLICKED, NULL);
 }
 
 // ── Main creation ───────────────────────────────────────────────────────────
@@ -138,6 +172,7 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     currentFile = {"", "", false};
     currentFilePinned = false;
     currentFolder = {startPath, "", true};
+    s_rootPath = startPath;
 
     // Remember the previous binding, to restore it on close.
     static lv_group_t * fe_group = lv_group_create();
@@ -169,8 +204,12 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
             lv_timer_delete(s_previewTimer);
             s_previewTimer = nullptr;
         }
+        crosspad_gui::ui_back_remove(s_backToken);
+        s_backToken = 0;
         if (s_prevEncoderIndev) {
-            lv_indev_set_group(s_prevEncoderIndev, s_prevEncoderGroup);
+            // Guarded: by the time an app teardown reaches this DELETE, the
+            // group the explorer was opened over is usually already freed.
+            lv_indev_restore_group(s_prevEncoderIndev, s_prevEncoderGroup);
             s_prevEncoderIndev = nullptr;
             s_prevEncoderGroup = nullptr;
         }
@@ -214,11 +253,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_obj_set_size(itemList, listW, listH);
     lv_obj_set_pos(itemList, listX, listY);
 
-    lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t * event) {
-        alreadyOpened = false;
-        currentFile = {"", "", false};
-        currentFilePinned = false;
-        lv_obj_send_event(loadButton, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * closeBtn = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t *) {
+        CloseExplorer();
     });
     lv_obj_set_width(closeBtn, btnW);
 
@@ -227,6 +263,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
 
     lv_group_add_obj(fe_group, closeBtn);
     lv_group_add_obj(fe_group, loadButton);
+
+    s_backToken = crosspad_gui::ui_back_push(explorerBack_cb, nullptr);
 
     IndexDirectory(startPath);
     lv_async_call([](void *) {

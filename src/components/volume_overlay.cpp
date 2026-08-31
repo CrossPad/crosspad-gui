@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/volume_overlay.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
@@ -174,7 +175,7 @@ void volume_overlay_dismiss() {
     if (s_group) {
         lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
         if (s_saved_group && nav) {
-            lv_indev_set_group(nav, s_saved_group);
+            lv_indev_restore_group(nav, s_saved_group);
         }
         lv_group_del(s_group);
         s_group       = nullptr;

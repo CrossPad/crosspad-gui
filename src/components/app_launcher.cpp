@@ -32,7 +32,7 @@ static lv_group_t* s_powerOffPrevGroup = nullptr;
 static void RestorePowerOffEncoder() {
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
     if (nav && s_powerOffPrevGroup) {
-        lv_indev_set_group(nav, s_powerOffPrevGroup);
+        lv_indev_restore_group(nav, s_powerOffPrevGroup);
     }
     if (s_powerOffGroup) {
         lv_group_delete(s_powerOffGroup);

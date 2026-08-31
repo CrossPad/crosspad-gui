@@ -7,6 +7,7 @@
 #include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/components/app_lifecycle.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/pad/PadManager.hpp"
 #include <memory>
 
@@ -291,7 +292,8 @@ private:
         lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
         if (!enc || !priorEncoderGroup_) return;
         if (lv_indev_get_group(enc) == priorEncoderGroup_) return;
-        lv_indev_set_group(enc, priorEncoderGroup_);
+        // Guarded: a launcher rebuild deletes the group this app started over.
+        lv_indev_restore_group(enc, priorEncoderGroup_);
         priorEncoderGroup_ = nullptr;
     }
 

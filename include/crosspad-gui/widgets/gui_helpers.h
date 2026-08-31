@@ -12,6 +12,20 @@ void lv_obj_set_hidden(lv_obj_t * obj, bool hidden);
 // Delete all children from an LVGL list/container
 void lv_list_cleanup(lv_obj_t * list);
 
+/* A group pointer saved to be restored later can be dead by the time the
+ * restore runs: an app's teardown deletes its groups synchronously, while the
+ * nested overlays that saved them are only reached by the *async* deletion of
+ * the app's tree afterwards. lv_group_delete() detaches the indev from a group
+ * it is deleting, but nothing stops a later write from putting the freed
+ * pointer back — and the next encoder read then dereferences it
+ * (lv_group_get_focused, LoadProhibited).
+ *
+ * lv_indev_restore_group() is that write, made safe: a group LVGL no longer
+ * knows about is not restored, and whatever the framework left on the indev
+ * stands. */
+bool lv_group_is_alive(const lv_group_t * group);
+void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group);
+
 // Calculate number of digits in an integer (for spinbox sizing)
 int CalcDigits(int value);
 

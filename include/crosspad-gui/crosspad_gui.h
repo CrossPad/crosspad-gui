@@ -32,6 +32,7 @@
 #include "crosspad-gui/components/app_launcher.h"
 #include "crosspad-gui/components/app_lifecycle.h"
 #include "crosspad-gui/components/app_orchestrator.h"
+#include "crosspad-gui/components/power_gesture.h"
 
 // Platform
 #include "crosspad-gui/platform/IGuiPlatform.h"

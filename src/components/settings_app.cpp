@@ -7,6 +7,7 @@
 #ifdef USE_LVGL
 
 #include <crosspad-gui/components/settings_app.h>
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include <crosspad-gui/components/settings_ui.h>
 #include <crosspad-gui/platform/IGuiPlatform.h>
 #include <crosspad-gui/app/App.hpp>
@@ -55,7 +56,7 @@ void settings_app_destroy(lv_obj_t*) {
 
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
     if (nav && s_saved_group) {
-        lv_indev_set_group(nav, s_saved_group);
+        lv_indev_restore_group(nav, s_saved_group);
         s_saved_group = nullptr;
     }
     if (s_settings_group) {

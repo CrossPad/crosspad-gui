@@ -6,6 +6,7 @@
 #ifdef USE_LVGL
 
 #include <crosspad-gui/components/midi_ble_panel.h>
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include <crosspad-gui/platform/IGuiPlatform.h>
 #include <crosspad-gui/app/App.hpp>
 #include <crosspad-gui/styles/styles.h>
@@ -369,7 +370,7 @@ void lv_MidiBLE_destroy(lv_obj_t * obj) {
     // Restore encoder group
     lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
     if (nav && g_saved_group) {
-        lv_indev_set_group(nav, g_saved_group);
+        lv_indev_restore_group(nav, g_saved_group);
         g_saved_group = nullptr;
     }
     if (g_midi_ble_group) { lv_group_del(g_midi_ble_group); g_midi_ble_group = nullptr; }

@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/ui_modal.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/components/power_gesture.h"
@@ -38,7 +39,7 @@ static void confirm_close(ConfirmCtx * ctx, bool confirmed) {
 
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     if (ctx->prev_group && nav) {
-        lv_indev_set_group(nav, ctx->prev_group);
+        lv_indev_restore_group(nav, ctx->prev_group);
     }
     if (ctx->modal_group) {
         lv_group_del(ctx->modal_group);
@@ -179,7 +180,7 @@ static void select_close(SelectCtx * ctx, int idx, bool cancelled) {
 
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     if (ctx->prev_group && nav) {
-        lv_indev_set_group(nav, ctx->prev_group);
+        lv_indev_restore_group(nav, ctx->prev_group);
     }
     if (ctx->modal_group) {
         lv_group_del(ctx->modal_group);

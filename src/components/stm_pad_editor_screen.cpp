@@ -16,6 +16,7 @@
 //    pending flag that an LVGL timer applies.
 
 #include "crosspad-gui/components/stm_pad_editor_screen.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 
 #if CROSSPAD_PAD_EDITOR_ENABLED
 
@@ -292,7 +293,7 @@ static void on_delete(lv_event_t*) {
 
     // Restore encoder group BEFORE deleting our group, else the indev dangles.
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
-    if (nav) lv_indev_set_group(nav, s_savedGroup);
+    if (nav) lv_indev_restore_group(nav, s_savedGroup);
     s_savedGroup = nullptr;
     if (s_group) { lv_group_delete(s_group); s_group = nullptr; }
 
