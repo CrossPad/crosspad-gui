@@ -81,6 +81,14 @@ static lv_obj_t * s_app_icon_zone_right = nullptr;
 
 // animation
 static lv_anim_t   anim_drawer_template;
+static lv_anim_t   anim_button_template;
+
+// Drawer-arrow slide: 300ms, half the drawer's own 400ms — a small icon
+// snapping back reads better fast than matched 1:1 to the panel it follows.
+#define DRAWER_ARROW_ANIM_MS 300
+// Power-button hold cancelled: fixed and short regardless of how far the
+// charge got, so letting go always reads as an immediate "snap back".
+#define DRAWER_ARROW_CANCEL_MS 150
 
 // Asset path buffers (built once at creation time)
 #ifdef PLATFORM_PC
@@ -105,12 +113,17 @@ static void anim_y_cb(void * var, int32_t v) {
     lv_obj_set_height((lv_obj_t *)var, v);
 }
 
+static void anim_translate_x_cb(void * var, int32_t v) {
+    lv_obj_set_style_translate_x((lv_obj_t *)var, v, 0);
+}
+
 // Forward declarations
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
 static void drawer_open();
 static void drawer_close();
 static void drawer_open_end_cb(lv_anim_t * a);
+static void drawer_open_button_anim_end_cb(lv_anim_t * a);
 static void drawer_release_encoder();
 static void drawer_close_end_cb(lv_anim_t * a);
 
@@ -344,8 +357,46 @@ bool statusbar_toggle_drawer() {
     if (quickSettingsPanelVisible) { drawer_close(); return true; }
     if (s_drawer_overlay) return false;   // opening right now
     if (!openButton) return false;        // drawer disabled
+    /* The arrow has already slid out (or is finishing doing so) via
+     * statusbar_arrow_hold_begin(), started back when the button was
+     * pressed — drawer_open() just needs to make sure it's hidden. */
     drawer_open();
     return true;
+}
+
+void statusbar_arrow_hold_begin(uint32_t duration_ms) {
+    if (!openButton) return;                                    // drawer disabled
+    if (quickSettingsPanelVisible || s_drawer_overlay) return;   // nothing to charge — already open/opening
+
+    int32_t slide = lv_obj_get_width(openButton);
+    lv_anim_init(&anim_button_template);
+    lv_anim_set_exec_cb(&anim_button_template, anim_translate_x_cb);
+    lv_anim_set_var(&anim_button_template, openButton);
+    lv_anim_set_values(&anim_button_template, 0, slide);
+    lv_anim_set_duration(&anim_button_template, duration_ms);
+    /* Ease-in: the charge builds momentum toward the commit, the mirror of
+     * the ease-out settle used everywhere the arrow returns to rest
+     * (statusbar_arrow_hold_cancel(), and the drawer-close re-entry). */
+    lv_anim_set_path_cb(&anim_button_template, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(&anim_button_template, drawer_open_button_anim_end_cb);
+    lv_anim_start(&anim_button_template);
+}
+
+void statusbar_arrow_hold_cancel() {
+    if (!openButton) return;
+    if (quickSettingsPanelVisible || s_drawer_overlay) return;   // not a charge in progress
+
+    lv_anim_delete(openButton, anim_translate_x_cb);
+    int32_t current = lv_obj_get_style_translate_x(openButton, LV_PART_MAIN);
+    if (current == 0) return;   // released before the charge ever moved it
+
+    lv_anim_init(&anim_button_template);
+    lv_anim_set_exec_cb(&anim_button_template, anim_translate_x_cb);
+    lv_anim_set_var(&anim_button_template, openButton);
+    lv_anim_set_values(&anim_button_template, current, 0);
+    lv_anim_set_duration(&anim_button_template, DRAWER_ARROW_CANCEL_MS);
+    lv_anim_set_path_cb(&anim_button_template, lv_anim_path_ease_out);
+    lv_anim_start(&anim_button_template);
 }
 
 void statusbar_set_drawer_enabled(bool enabled) {
@@ -443,11 +494,15 @@ static void check_status_timer_cb(lv_timer_t * timer) {
 
 static void drawer_open_event_cb(lv_event_t * e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    /* Tapping the arrow opens instantly — it never charged, so there is
+     * nothing for drawer_open() to find but an unhidden, unmoved button. */
     drawer_open();
 }
 
 /* Also reachable without a click: the power button's 0.5 s hold toggles the
- * drawer through crosspad_gui::powerToggleQuickSettings(). */
+ * drawer through crosspad_gui::powerToggleQuickSettings(). By the time that
+ * fires the arrow has already slid out via statusbar_arrow_hold_begin(),
+ * started on the button press — this just makes sure it's hidden. */
 static void drawer_open() {
     if (quickSettingsPanelVisible) return;
     if (s_drawer_overlay) return;
@@ -500,8 +555,11 @@ static void drawer_open() {
     // Ensure drawn on top of siblings
     lv_obj_move_to_index(s_drawer_overlay, -1);
 
-    // Hide open button
+    /* Hide open button. The power-button path already slid and hid it via
+     * statusbar_arrow_hold_begin()'s completion callback — this is a no-op
+     * there and the only thing that happens for a direct click. */
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_translate_x(openButton, 0, 0);
 
     // Animate height from 0 to content height
     lv_anim_init(&anim_drawer_template);
@@ -512,6 +570,12 @@ static void drawer_open() {
     lv_anim_set_path_cb(&anim_drawer_template, lv_anim_path_ease_in_out);
     lv_anim_set_completed_cb(&anim_drawer_template, drawer_open_end_cb);
     lv_anim_start(&anim_drawer_template);
+}
+
+static void drawer_open_button_anim_end_cb(lv_anim_t * a) {
+    lv_obj_t * btn = (lv_obj_t *)a->var;
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_translate_x(btn, 0, 0);
 }
 
 static void drawer_open_end_cb(lv_anim_t * a) {
@@ -575,7 +639,21 @@ static void drawer_close_end_cb(lv_anim_t * a) {
     drawer_enabled = false;
 #endif
     if (drawer_enabled) {
-        if (openButton) lv_obj_remove_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+        if (openButton) {
+            // Reappear off to the right, then slide in — both close paths
+            // (arrow tap and power-button hold) get the same re-entry.
+            int32_t slide = lv_obj_get_width(openButton);
+            lv_obj_set_style_translate_x(openButton, slide, 0);
+            lv_obj_remove_flag(openButton, LV_OBJ_FLAG_HIDDEN);
+
+            lv_anim_init(&anim_button_template);
+            lv_anim_set_exec_cb(&anim_button_template, anim_translate_x_cb);
+            lv_anim_set_var(&anim_button_template, openButton);
+            lv_anim_set_values(&anim_button_template, slide, 0);
+            lv_anim_set_duration(&anim_button_template, DRAWER_ARROW_ANIM_MS);
+            lv_anim_set_path_cb(&anim_button_template, lv_anim_path_ease_out);
+            lv_anim_start(&anim_button_template);
+        }
     } else {
         delete_open_button();
     }
@@ -590,7 +668,7 @@ static void drawer_release_encoder() {
     if (!s_drawer_group) return;
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     if (nav && lv_indev_get_group(nav) == s_drawer_group) {
-        lv_indev_set_group(nav, s_drawer_saved_group);
+        lv_indev_restore_group(nav, s_drawer_saved_group);
     }
     lv_group_delete(s_drawer_group);
     s_drawer_group = NULL;

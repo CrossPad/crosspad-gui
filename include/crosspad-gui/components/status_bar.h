@@ -106,6 +106,17 @@ void statusbar_close_drawer();
 // This is what the power button's 0.5 s hold calls.
 bool statusbar_toggle_drawer();
 
+// Power-button hold feedback: the open arrow slides right over `duration_ms`
+// as the button is held, so the gesture reads as "charging" toward the
+// commit — call with the same duration as the hold threshold. No-op if the
+// drawer is disabled, already open, or mid-open.
+void statusbar_arrow_hold_begin(uint32_t duration_ms);
+
+// Call on release before the hold threshold fires: eases the arrow back from
+// wherever the charge animation had reached, rather than snapping it. No-op
+// if nothing was charging.
+void statusbar_arrow_hold_cancel();
+
 } // namespace crosspad_gui
 
 // Create the status bar as a child of the given parent.

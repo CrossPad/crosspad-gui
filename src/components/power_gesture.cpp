@@ -100,12 +100,22 @@ void powerButtonPress()
     s_holdFired = false;
     s_holdTimer = lv_timer_create(hold_timer_cb, kPowerHoldMs, nullptr);
     lv_timer_set_repeat_count(s_holdTimer, 1);
+    /* Visual feedback for the same threshold the timer above is counting
+     * down — a no-op when the drawer is already open, since there is
+     * nothing to charge. */
+    statusbar_arrow_hold_begin(kPowerHoldMs);
 }
 
 void powerButtonRelease()
 {
     if (s_holdTimer) { lv_timer_delete(s_holdTimer); s_holdTimer = nullptr; }
-    if (!s_holdFired) powerBack();
+    if (!s_holdFired) {
+        /* Released before the threshold: the charge animation (if any)
+         * eases back rather than snapping, then the click is handled as
+         * the ordinary contextual back. */
+        statusbar_arrow_hold_cancel();
+        powerBack();
+    }
     s_holdFired = false;
 }
 
