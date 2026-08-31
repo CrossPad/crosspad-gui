@@ -142,7 +142,13 @@ static void CloseExplorer() {
  * is what the framework fallback would have done from three levels deep. */
 static bool explorerBack_cb(void *) {
     if (!alreadyOpened) return false;
-    if (!currentFolder.path.empty() && currentFolder.path != s_rootPath) {
+    /* Climb only while the listing is *below* the folder the explorer was
+     * opened on. The in-list "Go back..." can walk above it, all the way to
+     * /crosspad where it clamps — and a rule of "not the start folder, so go
+     * up" would then climb forever and never close the explorer. */
+    const bool below = currentFolder.path.size() > s_rootPath.size() &&
+                       currentFolder.path.compare(0, s_rootPath.size(), s_rootPath) == 0;
+    if (below) {
         GoUpOneLevel();
         return true;
     }
