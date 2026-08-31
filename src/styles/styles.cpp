@@ -4,6 +4,7 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
+#include "themes/lv_theme_private.h"
 
 /*      styles      */
 lv_style_t styleStatusBar;
@@ -38,6 +39,15 @@ lv_style_t styleSettingsRow;
 lv_style_t styleSettingsRowFocused;
 lv_style_t styleSettingsHeader;
 lv_style_t styleSettingsSection;
+
+// Native slider focus/edit contrast (see installSliderContrastTheme() below):
+// the stock LVGL theme rings both the encoder-focus and edit states in shades
+// of the same hue as the knob, so on this small screen "which slider has
+// focus" and "which one is armed for editing" read as the same blue smear.
+static lv_style_t styleSliderFocusRing;
+static lv_style_t styleSliderEditRing;
+static lv_style_t styleSliderEditKnob;
+static void installSliderContrastTheme();
 
 // Auto-computed text colors
 #define TEXT_COLOR_ON_PRIMARY   lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY)
@@ -299,6 +309,54 @@ void initStyles() {
     lv_style_set_pad_top(&styleSettingsSection, 8);
     lv_style_set_pad_bottom(&styleSettingsSection, 2);
     lv_style_set_pad_left(&styleSettingsSection, 4);
+
+    // slider focus ring: same accent used for focus everywhere else in the
+    // app, but wider and opaque instead of the stock theme's 50%-opacity
+    // sliver, so the ring is visible against the knob it surrounds.
+    lv_style_init(&styleSliderFocusRing);
+    lv_style_set_outline_color(&styleSliderFocusRing, CROSSPAD_THEME_PRIMARY);
+    lv_style_set_outline_width(&styleSliderFocusRing, 5);
+    lv_style_set_outline_pad(&styleSliderFocusRing, 4);
+    lv_style_set_outline_opa(&styleSliderFocusRing, LV_OPA_90);
+
+    // slider edit ring/knob: a fixed accent unrelated to the (user-picked)
+    // primary color, so "armed for editing" never blends into "focused".
+    lv_style_init(&styleSliderEditRing);
+    lv_style_set_outline_color(&styleSliderEditRing, CROSSPAD_THEME_ACCENT);
+    lv_style_set_outline_width(&styleSliderEditRing, 5);
+    lv_style_set_outline_pad(&styleSliderEditRing, 4);
+    lv_style_set_outline_opa(&styleSliderEditRing, LV_OPA_COVER);
+
+    lv_style_init(&styleSliderEditKnob);
+    lv_style_set_bg_color(&styleSliderEditKnob, CROSSPAD_THEME_ACCENT);
+    lv_style_set_bg_opa(&styleSliderEditKnob, LV_OPA_COVER);
+
+    installSliderContrastTheme();
+}
+
+// ── Slider focus/edit contrast (theme extension) ────────────────────────────
+// LVGL's default theme applies the same styles to every lv_slider_class
+// instance from one apply_cb; the documented way to add to that without
+// re-deriving the whole theme is to chain onto it (see lv_theme_private.h).
+static lv_theme_apply_cb_t s_baseThemeApplyCb = nullptr;
+
+static void crosspadSliderThemeApplyCb(lv_theme_t * th, lv_obj_t * obj) {
+    if (s_baseThemeApplyCb) s_baseThemeApplyCb(th, obj);
+
+    if (lv_obj_check_type(obj, &lv_slider_class)) {
+        lv_obj_add_style(obj, &styleSliderFocusRing, LV_STATE_FOCUS_KEY);
+        lv_obj_add_style(obj, &styleSliderEditRing, LV_STATE_EDITED);
+        lv_obj_add_style(obj, &styleSliderEditKnob, LV_PART_KNOB | LV_STATE_EDITED);
+    }
+}
+
+static void installSliderContrastTheme() {
+    lv_theme_t * theme = lv_theme_default_get();
+    if (!theme) return;
+    if (theme->apply_cb != crosspadSliderThemeApplyCb) {
+        s_baseThemeApplyCb = theme->apply_cb;
+        theme->apply_cb = crosspadSliderThemeApplyCb;
+    }
 }
 
 void reinitStyles() {
@@ -365,6 +423,9 @@ void deinitStyles() {
     lv_style_reset(&styleSettingsRowFocused);
     lv_style_reset(&styleSettingsHeader);
     lv_style_reset(&styleSettingsSection);
+    lv_style_reset(&styleSliderFocusRing);
+    lv_style_reset(&styleSliderEditRing);
+    lv_style_reset(&styleSliderEditKnob);
 }
 
 #endif // USE_LVGL
