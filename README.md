@@ -74,6 +74,7 @@ crosspad_gui::vu_set_levels(left_db, right_db);
 | **ui_modal** | Confirmation and selection dialogs |
 | **ui_toast** | Temporary info/success/warning/error messages |
 | **volume_overlay** | Volume control with speaker/headphone mode cycling |
+| **power_gesture** | Portable power-button resolution: `powerBack()` walks dropdown → modal/overlay → encoder edit → drawer → app `handleBack()`; `powerToggleQuickSettings()` for the hold gesture |
 
 ## Widgets
 
