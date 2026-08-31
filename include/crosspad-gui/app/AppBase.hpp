@@ -41,7 +41,6 @@ public:
     using DestroyFn = void (*)(lv_obj_t* app);
     using ShowFn    = void (*)(lv_obj_t* app);
     using HideFn    = void (*)(lv_obj_t* app);
-    using LogicFn   = void (*)(Derived* self);
 
     lv_obj_t* app   = nullptr;   ///< This app's root LVGL object
     lv_obj_t* app_c = nullptr;   ///< Parent container
@@ -64,15 +63,6 @@ public:
         this->app_c = parent->app;
     }
 
-    /// Enhanced constructor for auto-registered apps with business logic.
-    AppBase(lv_obj_t* app_c, const char* name, const char* icon,
-            CreateFn create, DestroyFn destroy, LogicFn appLogic)
-        : name_(name), icon_(icon), create_(create), destroy_(destroy), appLogic_(appLogic)
-    {
-        this->app_c = app_c;
-        type_ = crosspad::APP_FLAG_AUTO_REGISTERED;
-    }
-
     virtual ~AppBase() {
         // The root outlives this object in one case only (the owner is
         // released while the tree is still up); leaving the hook behind would
@@ -87,7 +77,6 @@ public:
     // ── Flag management ─────────────────────────────────────────────────
 
     void AddFlag(AppFlags flag) override    { type_ = type_ | flag; }
-    void RemoveFlag(AppFlags flag)         { type_ = type_ & ~flag; }
     bool HasFlag(AppFlags flag) override   { return (type_ & flag) == flag; }
 
     // ── LVGL lifecycle ──────────────────────────────────────────────────
@@ -136,14 +125,6 @@ public:
         // matching pop unreachable, leaking a stack frame forever.
         if (app && padLogicName_ && padLogicName_[0] != '\0') {
             crosspad::getPadManager().pushPadLogic(padLogicName_);
-        }
-
-        // Call app initialization for auto-registered apps
-        if (HasFlag(crosspad::APP_FLAG_AUTO_REGISTERED)) {
-            this->onAppInit();
-            if (appLogic_) {
-                appLogic_(static_cast<Derived*>(this));
-            }
         }
 
         LV_LOG_INFO("App started");
@@ -201,11 +182,6 @@ public:
             return;
         }
 
-        // Call app deinitialization for auto-registered apps
-        if (HasFlag(crosspad::APP_FLAG_AUTO_REGISTERED)) {
-            this->onAppDeinit();
-        }
-
         visible_ = false;
         started_ = false;
 
@@ -257,7 +233,6 @@ public:
     const char* getIcon() override      { return icon_; }
     bool isVisible()                    { return visible_; }
     bool isStarted() override           { return started_; }
-    bool isPaused()                     { return !visible_; }
 
 private:
     /// The root was deleted by someone other than destroyApp(). Roll the app
@@ -266,9 +241,6 @@ private:
     void onRootDeleted() {
         if (!started_ && !visible_) return;   // destroyApp() is doing this
 
-        if (HasFlag(crosspad::APP_FLAG_AUTO_REGISTERED)) {
-            this->onAppDeinit();
-        }
         visible_ = false;
         started_ = false;
         app = nullptr;
@@ -314,7 +286,6 @@ private:
     DestroyFn destroy_  = lv_Default_onDestroy;
     ShowFn    show_     = lv_Default_onShow;
     HideFn    hide_     = lv_Default_onHide;
-    LogicFn   appLogic_ = nullptr;
 
     /// Set by defaultAppFactory; empty for hand-built apps.
     std::weak_ptr<ILvglApp> selfRef_;
