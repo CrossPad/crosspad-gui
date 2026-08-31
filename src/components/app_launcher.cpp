@@ -142,10 +142,6 @@ void launcher_register_power_off() {
         icon_path,
         PowerOffFactory,
         nullptr,  // no destroy
-        nullptr,  // no app logic
-        nullptr,  // no simple GUI
-        nullptr,  // no refresh
-        nullptr,  // no cleanup
         -100      // keep the destructive Power OFF action at the end of the launcher
     });
 }
