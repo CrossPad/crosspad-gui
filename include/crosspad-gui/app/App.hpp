@@ -8,7 +8,6 @@
 // Forward declarations for crosspad-core types used in convenience accessors
 namespace crosspad { class PadManager; class PadLedController; }
 
-#ifdef USE_LVGL
 #include "lvgl.h"
 #include "crosspad-gui/app/AppBase.hpp"
 
@@ -54,65 +53,3 @@ private:
     static struct console_entry_s* commands[64];
     static size_t commandCount;
 };
-
-
-#else
-// Simple GUI version - minimal app wrapper for when LVGL is not used
-#include "crosspad/app/IApp.hpp"
-
-namespace crosspad { class CrosspadSettings; class CrosspadStatus; }
-using crosspad::CrosspadSettings;
-using crosspad::CrosspadStatus;
-
-class App : public crosspad::IApp {
-public:
-    App(const char* name) : name_(name), visible_(true), appLogic_(nullptr) {
-        initializeResources();
-    }
-
-    App(const char* name, void (*logic)(App* self)) : name_(name), visible_(true), appLogic_(logic) {
-        initializeResources();
-    }
-
-    virtual ~App() = default;
-
-    // IApp interface
-    const char* getName() const override { return name_; }
-
-    // Business logic callbacks
-    virtual void onNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {}
-    virtual void onNoteOff(uint8_t channel, uint8_t note) {}
-    virtual void onPadPressed(uint8_t padIdx, bool isOn, uint8_t velocity) {}
-    virtual void onPadReleased(uint8_t padIdx) {}
-    virtual void onAppInit() {}
-    virtual void onAppDeinit() {}
-    virtual void onAppUpdate() {
-        if (appLogic_) {
-            appLogic_(this);
-        }
-    }
-    virtual void onAppActivated() {}
-    virtual void registerCLICommands() {}
-
-    // Platform-specific resource accessors
-    class Sequencer& sequencer();
-    crosspad::PadManager& padManager();
-    crosspad::PadLedController& ledController();
-    CrosspadStatus& status();
-    CrosspadSettings& settings();
-
-    void addCLICommand(const char* name, void (*handler)(char* argv[], int argc));
-    void sendEvent(int eventType, const void* eventData = nullptr);
-
-    bool isVisible() const { return visible_; }
-
-private:
-    const char* name_;
-    bool visible_;
-    void (*appLogic_)(App* self);
-    void initializeResources();
-
-    static struct console_entry_s* commands[64];
-    static size_t commandCount;
-};
-#endif // USE_LVGL
