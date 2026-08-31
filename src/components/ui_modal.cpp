@@ -3,6 +3,7 @@
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/components/power_gesture.h"
 
 // ---- Internal types ----
 
@@ -12,6 +13,7 @@ struct ConfirmCtx {
     lv_obj_t * overlay;
     lv_group_t * prev_group;
     lv_group_t * modal_group;
+    uint32_t back_token;   // power-button "back" registration
 };
 
 struct SelectCtx {
@@ -21,16 +23,16 @@ struct SelectCtx {
     lv_group_t * prev_group;
     lv_group_t * modal_group;
     int selected;
+    uint32_t back_token;   // power-button "back" registration
 };
 
 // ---- Confirm dialog ----
 
-static void confirm_btn_cb(lv_event_t * e) {
-    ConfirmCtx * ctx = (ConfirmCtx *)lv_event_get_user_data(e);
-    lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
-
-    lv_obj_t * btn_row = lv_obj_get_parent(btn);
-    bool confirmed = (lv_obj_get_child(btn_row, 0) == btn);
+/* One teardown for every way this dialog can close: a button, or the power
+ * button's contextual back (which answers "no", like the close button). */
+static void confirm_close(ConfirmCtx * ctx, bool confirmed) {
+    crosspad_gui::ui_back_remove(ctx->back_token);
+    ctx->back_token = 0;
 
     if (ctx->cb) ctx->cb(confirmed, ctx->user_data);
 
@@ -45,6 +47,21 @@ static void confirm_btn_cb(lv_event_t * e) {
     lv_obj_t * overlay = ctx->overlay;
     delete ctx;
     lv_obj_delete(overlay);
+}
+
+static bool confirm_back_cb(void * user_data) {
+    confirm_close((ConfirmCtx *)user_data, false);
+    return true;
+}
+
+static void confirm_btn_cb(lv_event_t * e) {
+    ConfirmCtx * ctx = (ConfirmCtx *)lv_event_get_user_data(e);
+    lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
+
+    lv_obj_t * btn_row = lv_obj_get_parent(btn);
+    bool confirmed = (lv_obj_get_child(btn_row, 0) == btn);
+
+    confirm_close(ctx, confirmed);
 }
 
 lv_obj_t * ui_modal_confirm(
@@ -113,6 +130,7 @@ lv_obj_t * ui_modal_confirm(
     ctx->user_data = user_data;
     ctx->overlay = overlay;
     ctx->prev_group = encoder_group;
+    ctx->back_token = crosspad_gui::ui_back_push(confirm_back_cb, ctx);
 
     // Modal encoder group
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
@@ -152,22 +170,12 @@ lv_obj_t * ui_modal_confirm(
 
 // ---- Selection dialog ----
 
-static void select_item_cb(lv_event_t * e) {
-    SelectCtx * ctx = (SelectCtx *)lv_event_get_user_data(e);
-    lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
-
-    lv_obj_t * list = lv_obj_get_parent(btn);
-    int idx = 0;
-    uint32_t count = lv_obj_get_child_count(list);
-    for (uint32_t i = 0; i < count; i++) {
-        if (lv_obj_get_child(list, i) == btn) {
-            idx = (int)i;
-            break;
-        }
-    }
+static void select_close(SelectCtx * ctx, int idx, bool cancelled) {
+    crosspad_gui::ui_back_remove(ctx->back_token);
+    ctx->back_token = 0;
 
     ctx->selected = idx;
-    if (ctx->cb) ctx->cb(idx, false, ctx->user_data);
+    if (ctx->cb) ctx->cb(idx, cancelled, ctx->user_data);
 
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     if (ctx->prev_group && nav) {
@@ -182,22 +190,30 @@ static void select_item_cb(lv_event_t * e) {
     lv_obj_delete(overlay);
 }
 
-static void select_cancel_cb(lv_event_t * e) {
+static bool select_back_cb(void * user_data) {
+    select_close((SelectCtx *)user_data, -1, true);
+    return true;
+}
+
+static void select_item_cb(lv_event_t * e) {
     SelectCtx * ctx = (SelectCtx *)lv_event_get_user_data(e);
+    lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
 
-    if (ctx->cb) ctx->cb(-1, true, ctx->user_data);
-
-    lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
-    if (ctx->prev_group && nav) {
-        lv_indev_set_group(nav, ctx->prev_group);
+    lv_obj_t * list = lv_obj_get_parent(btn);
+    int idx = 0;
+    uint32_t count = lv_obj_get_child_count(list);
+    for (uint32_t i = 0; i < count; i++) {
+        if (lv_obj_get_child(list, i) == btn) {
+            idx = (int)i;
+            break;
+        }
     }
-    if (ctx->modal_group) {
-        lv_group_del(ctx->modal_group);
-    }
 
-    lv_obj_t * overlay = ctx->overlay;
-    delete ctx;
-    lv_obj_delete(overlay);
+    select_close(ctx, idx, false);
+}
+
+static void select_cancel_cb(lv_event_t * e) {
+    select_close((SelectCtx *)lv_event_get_user_data(e), -1, true);
 }
 
 lv_obj_t * ui_modal_selection(
@@ -237,6 +253,7 @@ lv_obj_t * ui_modal_selection(
     ctx->overlay = overlay;
     ctx->prev_group = encoder_group;
     ctx->selected = current_selection;
+    ctx->back_token = crosspad_gui::ui_back_push(select_back_cb, ctx);
 
     lv_indev_t * nav2 = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     ctx->modal_group = lv_group_create();

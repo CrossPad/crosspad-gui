@@ -1790,6 +1790,15 @@ void settings_ui_create(lv_obj_t * content_area, lv_group_t * group) {
     show_categories();
 }
 
+bool settings_ui_back() {
+    /* One level up: a category detail returns to the category list. At the
+     * list there is nothing left to pop — the caller (the app's back hook)
+     * decides what "back" means then, which is closing Settings. */
+    if (!s_content || s_current_category < 0) return false;
+    show_categories();
+    return true;
+}
+
 void settings_ui_destroy() {
     save_settings();
     s_content = nullptr;

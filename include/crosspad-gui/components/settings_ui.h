@@ -25,6 +25,11 @@ void settings_ui_create(lv_obj_t * content_area, lv_group_t * group);
 /// Clean up settings UI state. Called when leaving the settings screen.
 void settings_ui_destroy();
 
+// Step one level back: from a category detail to the category list. Returns
+// false when already at the list (nothing to pop) — what an app's back hook
+// returns to let the framework close Settings instead.
+bool settings_ui_back();
+
 /// Register an extra platform-specific category (call before settings_ui_create).
 /// Maximum 8 extra categories. Returns false if full.
 bool settings_ui_add_category(const SettingsCategory& cat);

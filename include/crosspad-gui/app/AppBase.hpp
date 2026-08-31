@@ -41,6 +41,9 @@ public:
     using DestroyFn = void (*)(lv_obj_t* app);
     using ShowFn    = void (*)(lv_obj_t* app);
     using HideFn    = void (*)(lv_obj_t* app);
+    /// Return true to consume the back gesture; false lets the framework close
+    /// the app and return to the launcher.
+    using BackFn    = bool (*)(lv_obj_t* app);
 
     lv_obj_t* app   = nullptr;   ///< This app's root LVGL object
     lv_obj_t* app_c = nullptr;   ///< Parent container
@@ -115,6 +118,10 @@ public:
         }
 
         started_ = true;
+        /* Whatever started this app — the launcher, or a pre-launch gate that
+         * hand-builds it — it now owns the screen, and the back gesture has to
+         * be able to find it. */
+        AppOrchestrator::getInstance().noteAppStarted(this);
         if (show_) {
             show_(app);
             visible_ = true;
@@ -184,6 +191,7 @@ public:
 
         visible_ = false;
         started_ = false;
+        AppOrchestrator::getInstance().noteAppStopped(this);
 
         // An app can be closed from the launcher or from inside itself (a Back
         // button). Only the launcher path used to clear this, so a self-close
@@ -211,7 +219,14 @@ public:
         if (destroy_) {
             destroy_(app_to_destroy);
         } else {
-            LV_LOG_WARN("App with no destroy function, marked as destroyed");
+            /* No teardown callback means nobody else will delete the root, so
+             * the framework has to — an app registered with destroy = nullptr
+             * (the launcher's own Power OFF dialog) used to be "destroyed"
+             * with its widgets still on screen and no way back to the
+             * launcher. There is no double-delete risk here: without destroy_
+             * nothing else queued one. */
+            LV_LOG_WARN("App with no destroy function; deleting its root");
+            lv_obj_delete_async(app_to_destroy);
             restoreEncoderGroup();
             return;
         }
@@ -223,6 +238,9 @@ public:
     // ── Callback setters ────────────────────────────────────────────────
 
     void setOnShow(ShowFn show)       { show_ = show; }
+    /// Optional in-app handler for the power button's short click. Without one
+    /// the gesture closes the app (destroyAppAsync).
+    void setOnBack(BackFn back)       { back_ = back; }
     void setOnHide(HideFn hide)       { hide_ = hide; }
     void setOnDestroy(DestroyFn dest)  { destroy_ = dest; }
     void setPadLogicName(const char* name) override { padLogicName_ = name; }
@@ -233,6 +251,8 @@ public:
     const char* getIcon() override      { return icon_; }
     bool isVisible()                    { return visible_; }
     bool isStarted() override           { return started_; }
+
+    bool handleBack() override { return (back_ && app) ? back_(app) : false; }
 
 private:
     /// The root was deleted by someone other than destroyApp(). Roll the app
@@ -246,6 +266,7 @@ private:
         app = nullptr;
 
         auto& orch = AppOrchestrator::getInstance();
+        orch.noteAppStopped(this);
         if (orch.getRunningApp() == this) {
             orch.setRunningApp(nullptr);
         }
@@ -286,6 +307,7 @@ private:
     DestroyFn destroy_  = lv_Default_onDestroy;
     ShowFn    show_     = lv_Default_onShow;
     HideFn    hide_     = lv_Default_onHide;
+    BackFn    back_     = nullptr;
 
     /// Set by defaultAppFactory; empty for hand-built apps.
     std::weak_ptr<ILvglApp> selfRef_;

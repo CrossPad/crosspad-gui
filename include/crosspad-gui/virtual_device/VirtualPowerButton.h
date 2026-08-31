@@ -10,7 +10,8 @@ namespace crosspad_gui {
  * @brief Emulated power button rendered in LVGL.
  *
  * Renders a small circular button with a power icon.
- * Click toggles the volume overlay (same as real hardware).
+ * Click = contextual back, 0.5 s hold = quick-settings drawer — the same two
+ * gestures the hardware button has (see components/power_gesture.h).
  *
  * Portable across platforms (PC emulator, ESP32-S3 touchscreen, etc.).
  */

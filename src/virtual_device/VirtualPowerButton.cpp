@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-#include "crosspad-gui/components/volume_overlay.h"
+#include "crosspad-gui/components/power_gesture.h"
 
 namespace crosspad_gui {
 
@@ -55,17 +55,19 @@ void VirtualPowerButton::update()
 
 /* -- LVGL event callbacks ------------------------------------------------- */
 
+/* Same two gestures the hardware button has: a short click is the contextual
+ * "back", crossing 0.5 s while held toggles the quick-settings drawer. The
+ * split lives in power_gesture.cpp so the emulation cannot drift from it. */
 void VirtualPowerButton::onPressed(lv_event_t* e)
 {
     (void)e;
-    printf("[VirtualPowerButton] Power button pressed\n");
-    crosspad_gui::volume_overlay_toggle();
+    powerButtonPress();
 }
 
 void VirtualPowerButton::onReleased(lv_event_t* e)
 {
     (void)e;
-    printf("[VirtualPowerButton] Power button released\n");
+    powerButtonRelease();
 }
 
 } // namespace crosspad_gui

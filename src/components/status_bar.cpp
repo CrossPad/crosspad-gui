@@ -108,6 +108,8 @@ static void anim_y_cb(void * var, int32_t v) {
 // Forward declarations
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
+static void drawer_open();
+static void drawer_close();
 static void drawer_open_end_cb(lv_anim_t * a);
 static void drawer_release_encoder();
 static void drawer_close_end_cb(lv_anim_t * a);
@@ -328,6 +330,24 @@ void statusbar_set_perf_level(uint8_t flags) {
     apply_perf_column_visibility();
 }
 
+bool statusbar_drawer_is_open() {
+    return quickSettingsPanelVisible || s_drawer_overlay != NULL;
+}
+
+void statusbar_close_drawer() {
+    drawer_close();
+}
+
+bool statusbar_toggle_drawer() {
+    /* Mid-animation the overlay exists but is not yet "visible"; drawer_close()
+     * refuses that state, so one toggle per animation is the natural result. */
+    if (quickSettingsPanelVisible) { drawer_close(); return true; }
+    if (s_drawer_overlay) return false;   // opening right now
+    if (!openButton) return false;        // drawer disabled
+    drawer_open();
+    return true;
+}
+
 void statusbar_set_drawer_enabled(bool enabled) {
 #if LV_HIDE_QUICK_SETTINGS
     enabled = false;
@@ -422,10 +442,18 @@ static void check_status_timer_cb(lv_timer_t * timer) {
  * other group had focused — closing the drawer launched an app that way. */
 
 static void drawer_open_event_cb(lv_event_t * e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    drawer_open();
+}
+
+/* Also reachable without a click: the power button's 0.5 s hold toggles the
+ * drawer through crosspad_gui::powerToggleQuickSettings(). */
+static void drawer_open() {
     if (quickSettingsPanelVisible) return;
     if (s_drawer_overlay) return;
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_CLICKED) return;
+    /* No arrow = the drawer is disabled in settings. Nothing to open, and the
+     * open path writes through openButton below. */
+    if (!openButton) return;
 
     lv_obj_t * parent = lv_obj_get_parent(status_c);
 
@@ -498,9 +526,12 @@ static void drawer_open_end_cb(lv_anim_t * a) {
 }
 
 static void drawer_close_event_cb(lv_event_t * e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    drawer_close();
+}
+
+static void drawer_close() {
     if (!quickSettingsPanelVisible) return;
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_CLICKED) return;
 
     if (closeButton) {
         lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);

@@ -42,6 +42,12 @@ struct ILvglApp : public crosspad::IApp {
     /// until the callback runs. Default no-op for hand-built implementations.
     virtual void setSelfRef(std::weak_ptr<ILvglApp> self) { (void)self; }
 
+    /// Contextual "back" gesture (the power button's short click) offered to
+    /// the app before the framework closes it. Return true if the app consumed
+    /// it — e.g. it stepped out of its own sub-view. Default false: the
+    /// framework then returns to the launcher.
+    virtual bool handleBack() { return false; }
+
     virtual lv_obj_t* getAppContainer() = 0;
 
     /// Declarative pad logic: name auto-activated on start() and restored on

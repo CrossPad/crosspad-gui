@@ -83,6 +83,17 @@ public:
     ILvglApp* getRunningApp() const { return runningApp_; }
     void setRunningApp(ILvglApp* app) { runningApp_ = app; }
 
+    /// The app that actually owns the screen right now — the most recently
+    /// started one that is still up, which is not always runningApp_: an app
+    /// launched from the pre-launch hook (the sampler's kit-selector gate) is
+    /// hand-built and never handed to setRunningApp(). Falls back to
+    /// runningApp_, and returns nullptr in the bare launcher.
+    ILvglApp* getForegroundApp() const;
+
+    /// Called by AppBase::start() / destroyApp(); platforms do not call these.
+    void noteAppStarted(ILvglApp* app);
+    void noteAppStopped(ILvglApp* app);
+
     const std::vector<std::shared_ptr<ILvglApp>>& getApps() const { return apps_; }
     const std::vector<LauncherAppInfo>& getAppInfos() const { return infos_; }
 
@@ -92,6 +103,7 @@ private:
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
 
+    std::vector<ILvglApp*> started_;                ///< Start order, newest last
     std::vector<std::shared_ptr<ILvglApp>> apps_;   ///< Owned App objects
     std::vector<LauncherAppInfo>           infos_;  ///< Parallel launcher descriptors
 };

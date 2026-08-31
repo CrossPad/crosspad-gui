@@ -95,6 +95,17 @@ void statusbar_set_perf_level(uint8_t flags);
 // Must be called from LVGL task context.
 void statusbar_set_drawer_enabled(bool enabled);
 
+// True while the quick-settings drawer is open (or opening).
+bool statusbar_drawer_is_open();
+
+// Close the drawer if it is open. No-op otherwise.
+void statusbar_close_drawer();
+
+// Open the drawer if closed, close it if open. Returns false when the gesture
+// changed nothing — the drawer is disabled, or an animation is still running.
+// This is what the power button's 0.5 s hold calls.
+bool statusbar_toggle_drawer();
+
 } // namespace crosspad_gui
 
 // Create the status bar as a child of the given parent.
