@@ -346,7 +346,7 @@ static void crosspadSliderThemeApplyCb(lv_theme_t * th, lv_obj_t * obj) {
     if (lv_obj_check_type(obj, &lv_slider_class)) {
         lv_obj_add_style(obj, &styleSliderFocusRing, LV_STATE_FOCUS_KEY);
         lv_obj_add_style(obj, &styleSliderEditRing, LV_STATE_EDITED);
-        lv_obj_add_style(obj, &styleSliderEditKnob, LV_PART_KNOB | LV_STATE_EDITED);
+        lv_obj_add_style(obj, &styleSliderEditKnob, (lv_style_selector_t)LV_PART_KNOB | (lv_style_selector_t)LV_STATE_EDITED);
     }
 }
 
