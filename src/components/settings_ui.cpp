@@ -1394,9 +1394,14 @@ static const uint8_t kUsbSuspSecs[] = { 0, 15, 30, 60, 120 };   // 0 = never
 static const char* kUsbSuspOpts = "Never\n15s\n30s\n1m\n2m";
 static uint8_t s_usbSuspIdx = 2;   // default 30 s
 
-static const uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000 };
-static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s";
-static uint8_t s_longPressIdx = 3; // default 2000ms
+// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms), so
+// it stays above the 0.5 s drawer hold and below the 7 s ship threshold. The
+// list stopped at 3 s, which left no way to ask for the 4 s the gesture ladder
+// is documented around — and 2 s put soft-off close enough to the drawer hold
+// that reaching for the drawer powered the device down instead.
+static const uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000, 4000 };
+static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s\n4s";
+static uint8_t s_longPressIdx = 5; // default 4000ms
 
 static uint8_t idx_for_u16(const uint16_t* arr, uint8_t n, uint16_t val, uint8_t dflt) {
     for (uint8_t i = 0; i < n; ++i) if (arr[i] == val) return i;
@@ -1489,7 +1494,7 @@ static void stm_usb_susp_cb(lv_event_t*) {
 }
 static void stm_long_press_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
-    if (s_longPressIdx >= sizeof(kLongPressMs)/sizeof(kLongPressMs[0])) s_longPressIdx = 3;
+    if (s_longPressIdx >= sizeof(kLongPressMs)/sizeof(kLongPressMs[0])) s_longPressIdx = 5;
     s->stm.longPressMs = kLongPressMs[s_longPressIdx];
     crosspad_gui::getGuiPlatform().writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
 }
@@ -1765,7 +1770,7 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
         }
         settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
         settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
-        s_longPressIdx = idx_for_u16(kLongPressMs, sizeof(kLongPressMs)/sizeof(kLongPressMs[0]), s->stm.longPressMs, 3);
+        s_longPressIdx = idx_for_u16(kLongPressMs, sizeof(kLongPressMs)/sizeof(kLongPressMs[0]), s->stm.longPressMs, 5);
         settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
         // Host-suspend grace before the STM drops to soft-off. Was reachable only
         // over I2C — a device on a sleeping host powered itself down after 30 s
