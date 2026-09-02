@@ -1025,6 +1025,11 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int m
 }
 
 static void initSliderStyle() {
+    // Once: the drawer overlay is rebuilt on every open, and lv_style_init()
+    // on an initialised style orphans its property array.
+    static bool s_ready = false;
+    if (s_ready) return;
+    s_ready = true;
     static const lv_style_prop_t props[] = {LV_STYLE_BG_COLOR, 0};
     static lv_style_transition_dsc_t transition_dsc;
     lv_style_transition_dsc_init(&transition_dsc, props, lv_anim_path_linear, 300, 0, NULL);

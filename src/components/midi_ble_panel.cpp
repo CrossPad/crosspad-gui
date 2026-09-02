@@ -210,26 +210,32 @@ lv_obj_t* lv_CreateMidiBLE(lv_obj_t * parent, App * a) {
     auto* settings = CrosspadSettings::getInstance();
     auto* statusPtr = crosspad::getPlatformServices().status;
 
-    lv_style_init(&style_bg);
-    lv_style_set_pad_all(&style_bg, 0);
-    lv_style_set_pad_gap(&style_bg, 0);
-    lv_style_set_clip_corner(&style_bg, true);
-    lv_style_set_radius(&style_bg, 3);
-    lv_style_set_border_width(&style_bg, 0);
-    lv_style_set_border_post(&style_bg, true);
+    // Once: lv_style_init() on an initialised style orphans its property
+    // array, and this panel is rebuilt on every visit.
+    static bool s_stylesReady = false;
+    if (!s_stylesReady) {
+        lv_style_init(&style_bg);
+        lv_style_set_pad_all(&style_bg, 0);
+        lv_style_set_pad_gap(&style_bg, 0);
+        lv_style_set_clip_corner(&style_bg, true);
+        lv_style_set_radius(&style_bg, 3);
+        lv_style_set_border_width(&style_bg, 0);
+        lv_style_set_border_post(&style_bg, true);
 
-    lv_style_init(&style_btn);
-    lv_style_set_radius(&style_btn, 0);
-    lv_style_set_border_width(&style_btn, 1);
-    lv_style_set_border_opa(&style_btn, LV_OPA_50);
-    lv_style_set_border_color(&style_btn, lv_palette_main(LV_PALETTE_GREY));
-    lv_style_set_border_side(&style_btn, LV_BORDER_SIDE_INTERNAL);
-    lv_style_set_radius(&style_btn, 0);
-    lv_style_set_border_post(&style_btn, true);
+        lv_style_init(&style_btn);
+        lv_style_set_radius(&style_btn, 0);
+        lv_style_set_border_width(&style_btn, 1);
+        lv_style_set_border_opa(&style_btn, LV_OPA_50);
+        lv_style_set_border_color(&style_btn, lv_palette_main(LV_PALETTE_GREY));
+        lv_style_set_border_side(&style_btn, LV_BORDER_SIDE_INTERNAL);
+        lv_style_set_radius(&style_btn, 0);
+        lv_style_set_border_post(&style_btn, true);
 
-    lv_style_init(&style_switch);
-    lv_style_set_bg_color(&style_switch, lv_color_hex(0xFFFF00));
-    lv_style_set_border_color(&style_switch, lv_color_hex(0xFFFF00));
+        lv_style_init(&style_switch);
+        lv_style_set_bg_color(&style_switch, lv_color_hex(0xFFFF00));
+        lv_style_set_border_color(&style_switch, lv_color_hex(0xFFFF00));
+        s_stylesReady = true;
+    }
 
     g_root = lv_obj_create(parent);
     lv_obj_remove_style_all(g_root);
