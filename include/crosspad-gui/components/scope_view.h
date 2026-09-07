@@ -13,8 +13,8 @@
  * wave stands still instead of sliding sideways at the beat frequency between
  * the note and the refresh.
  *
- * Everything the timer needs is allocated at create(): the sample buffer and
- * the canvas pixels come from the heap once and are freed with the object.
+ * The sample buffer and canvas pixels are allocated at create(). RMS history
+ * is allocated lazily when that mode is selected.
  *
  * ```cpp
  * lv_obj_t* scope = create_scope_view(parent, 120, 60);
@@ -29,6 +29,12 @@
 #include <cstdint>
 
 namespace crosspad_gui {
+
+/// The close oscilloscope trace or a several-second RMS envelope.
+enum class ScopeViewMode : uint8_t {
+    Live,
+    HistoryRms,
+};
 
 /**
  * @brief Pull the newest @p n mono samples, oldest first.
@@ -52,5 +58,18 @@ void scope_view_set_source(lv_obj_t* scope, crosspad_gui::ScopeSource src, void*
 
 /// Stop pulling. Call before whatever `ctx` refers to is destroyed.
 void scope_view_clear_source(lv_obj_t* scope);
+
+/// Change how the live stream is rendered. RMS history starts fresh when that
+/// mode is selected; Live does not calculate or maintain it.
+void scope_view_set_mode(lv_obj_t* scope, crosspad_gui::ScopeViewMode mode);
+
+/// Return the current rendering mode. A null object defaults to Live.
+crosspad_gui::ScopeViewMode scope_view_get_mode(lv_obj_t* scope);
+
+/// Drop the accumulated RMS envelope without changing the source or mode.
+void scope_view_clear_history(lv_obj_t* scope);
+
+/// Start or pause sampling and repainting. A paused scope does no timer work.
+void scope_view_set_active(lv_obj_t* scope, bool active);
 
 #endif // USE_LVGL
