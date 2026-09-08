@@ -769,8 +769,8 @@ static lv_obj_t * s_routeAdcDd[2]  = {nullptr, nullptr};
 // Order must match the platform's preset table; the trailing entry is the
 // read-only "no preset describes this" state.
 static const char * kRoutePresetOptions =
-    "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nCustom";
-static constexpr uint8_t kRoutePresetCustomIdx = 4;
+    "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nMix (mics + line)\nCustom";
+static constexpr uint8_t kRoutePresetCustomIdx = 5;
 
 // The dropdown widget inside a row built by settings_row_dropdown(): label
 // first, dropdown second.
