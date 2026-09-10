@@ -72,6 +72,7 @@ struct ScopeState {
     float     peakEnv = 0.0f;   ///< tracked window peak the auto-scale divides by
     crosspad_gui::ScopeViewMode mode = crosspad_gui::ScopeViewMode::Live;
     bool      active  = true;
+    bool      wasSilent = false; ///< the last frame drawn was a silent window
     uint8_t*  pixels  = nullptr;
     float*    history = nullptr; ///< one RMS value per pixel column
     uint32_t  historyHead  = 0;  ///< next slot to write
@@ -84,6 +85,53 @@ struct ScopeState {
 
 lv_color_t color_from_hex(uint32_t hex) {
     return lv_color_make((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF);
+}
+
+/**
+ * @brief The canvas' own RGB565 pixels, written directly.
+ *
+ * The trace used to go through the canvas layer, one lv_draw_line() per pixel
+ * column: 150 draw tasks a frame, 34 ms of software rendering at 30 Hz. LVGL
+ * never idled, and under a pitched kit — whose tap always has samples — the
+ * CDC drain loop below it got no CPU for as long as the sampler was on screen.
+ * A vertical span per column into the buffer is the same picture in ~50 us.
+ */
+struct Pixels {
+    uint8_t* data;
+    uint32_t stride;   ///< bytes per row, as the draw buffer says
+    int32_t  w;
+    int32_t  h;
+};
+
+Pixels pixels_of(lv_obj_t* canvas) {
+    lv_draw_buf_t* db = lv_canvas_get_draw_buf(canvas);
+    return Pixels{ db->data, db->header.stride,
+                   static_cast<int32_t>(db->header.w), static_cast<int32_t>(db->header.h) };
+}
+
+void fill(const Pixels& p, uint16_t c) {
+    for (int32_t y = 0; y < p.h; ++y) {
+        auto* row = reinterpret_cast<uint16_t*>(p.data + static_cast<uint32_t>(y) * p.stride);
+        for (int32_t x = 0; x < p.w; ++x) row[x] = c;
+    }
+}
+
+void hline(const Pixels& p, int32_t y, uint16_t c) {
+    if (y < 0 || y >= p.h) return;
+    auto* row = reinterpret_cast<uint16_t*>(p.data + static_cast<uint32_t>(y) * p.stride);
+    for (int32_t x = 0; x < p.w; ++x) row[x] = c;
+}
+
+/// Column x from y0 to y1 inclusive, either order, clipped to the buffer.
+void vspan(const Pixels& p, int32_t x, int32_t y0, int32_t y1, uint16_t c) {
+    if (x < 0 || x >= p.w) return;
+    if (y0 > y1) { const int32_t t = y0; y0 = y1; y1 = t; }
+    if (y0 < 0) y0 = 0;
+    if (y1 > p.h - 1) y1 = p.h - 1;
+    uint8_t* px = p.data + static_cast<uint32_t>(y0) * p.stride + static_cast<uint32_t>(x) * 2;
+    for (int32_t y = y0; y <= y1; ++y, px += p.stride) {
+        *reinterpret_cast<uint16_t*>(px) = c;
+    }
 }
 
 void draw_frame(ScopeState* st) {
@@ -122,24 +170,7 @@ void draw_frame(ScopeState* st) {
         }
     }
 
-    lv_canvas_fill_bg(canvas, color_from_hex(kBgColor), LV_OPA_COVER);
-
     const int32_t midY = st->h / 2;
-
-    lv_layer_t layer;
-    lv_canvas_init_layer(canvas, &layer);
-
-    lv_draw_line_dsc_t dsc;
-    lv_draw_line_dsc_init(&dsc);
-    dsc.width = 1;
-    dsc.opa   = LV_OPA_COVER;
-
-    // Centre line first, so the trace draws over it.
-    dsc.color = color_from_hex(kAxisColor);
-    dsc.p1 = lv_point_precise_t{ 0, static_cast<lv_value_precise_t>(midY) };
-    dsc.p2 = lv_point_precise_t{ static_cast<lv_value_precise_t>(st->w - 1),
-                                 static_cast<lv_value_precise_t>(midY) };
-    lv_draw_line(&layer, &dsc);
 
     crosspad::ScopeWindow win;
     if (st->mode == crosspad_gui::ScopeViewMode::Live && got >= 2 && rate > 0) {
@@ -161,8 +192,20 @@ void draw_frame(ScopeState* st) {
     const float gain = kAutoScaleTarget /
                        (st->peakEnv > kAutoScaleFloor ? st->peakEnv : kAutoScaleFloor);
 
+    // A silent window after a silent window is the flat line already on
+    // screen: no pixels, no invalidation, nothing for the renderer. The RMS
+    // history scrolls every frame, so only the live trace can rest.
+    const bool silent = st->mode == crosspad_gui::ScopeViewMode::Live && peak <= kAutoScaleFloor;
+    if (silent && st->wasSilent) return;
+    st->wasSilent = silent;
+
+    const Pixels px = pixels_of(canvas);
+    fill(px, lv_color_to_u16(color_from_hex(kBgColor)));
+    // Centre line first, so the trace draws over it.
+    hline(px, midY, lv_color_to_u16(color_from_hex(kAxisColor)));
+    const uint16_t trace = lv_color_to_u16(color_from_hex(kTraceColor));
+
     if (st->mode == crosspad_gui::ScopeViewMode::HistoryRms && st->historyCount > 0) {
-        dsc.color = color_from_hex(kTraceColor);
         const uint32_t capacity = static_cast<uint32_t>(st->w);
         const uint32_t oldest = st->historyCount == capacity ? st->historyHead : 0;
         const int32_t firstX = st->w - static_cast<int32_t>(st->historyCount);
@@ -181,17 +224,13 @@ void draw_frame(ScopeState* st) {
             int32_t mag = static_cast<int32_t>(norm * static_cast<float>(midY));
             if (mag < 1) mag = 1;
             if (mag > midY) mag = midY;
-            const int32_t x = firstX + static_cast<int32_t>(i);
-            dsc.p1 = lv_point_precise_t{static_cast<lv_value_precise_t>(x),
-                                        static_cast<lv_value_precise_t>(midY - mag)};
-            dsc.p2 = lv_point_precise_t{static_cast<lv_value_precise_t>(x),
-                                        static_cast<lv_value_precise_t>(midY + mag)};
-            lv_draw_line(&layer, &dsc);
+            vspan(px, firstX + static_cast<int32_t>(i), midY - mag, midY + mag, trace);
         }
     } else if (win.length >= 2) {
         // One point per pixel column, so the polyline is the window stretched
-        // across the whole width whatever the note.
-        dsc.color = color_from_hex(kTraceColor);
+        // across the whole width whatever the note. Each column carries the
+        // span from the previous sample's row to its own, so a steep edge is
+        // a continuous line, not a scatter of dots.
         const float scale = static_cast<float>(midY) * gain;
 
         int32_t prevY = 0;
@@ -205,18 +244,12 @@ void draw_frame(ScopeState* st) {
             if (y < 0) y = 0;
             if (y > st->h - 1) y = st->h - 1;
 
-            if (x > 0) {
-                dsc.p1 = lv_point_precise_t{ static_cast<lv_value_precise_t>(x - 1),
-                                             static_cast<lv_value_precise_t>(prevY) };
-                dsc.p2 = lv_point_precise_t{ static_cast<lv_value_precise_t>(x),
-                                             static_cast<lv_value_precise_t>(y) };
-                lv_draw_line(&layer, &dsc);
-            }
+            vspan(px, x, x > 0 ? prevY : y, y, trace);
             prevY = y;
         }
     }
 
-    lv_canvas_finish_layer(canvas, &layer);
+    lv_obj_invalidate(canvas);
 
     if (!st->label) return;
 
@@ -332,6 +365,7 @@ void scope_view_set_mode(lv_obj_t* scope, crosspad_gui::ScopeViewMode mode) {
     if (!st || st->mode == mode) return;
     st->mode = mode;
     st->peakEnv = 0.0f;
+    st->wasSilent = false;
     if (mode == crosspad_gui::ScopeViewMode::HistoryRms) {
         if (!st->history) {
             st->history = static_cast<float*>(calloc(static_cast<size_t>(st->w), sizeof(float)));
@@ -354,6 +388,7 @@ void scope_view_clear_history(lv_obj_t* scope) {
     }
     st->historyHead = 0;
     st->historyCount = 0;
+    st->wasSilent = false;
 }
 
 void scope_view_set_active(lv_obj_t* scope, bool active) {
