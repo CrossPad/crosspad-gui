@@ -810,6 +810,17 @@ static void route_sync_from_device() {
     }
 }
 
+// Applies immediately; the row helper has already written and saved the value.
+// dB rather than percent: the digital capture tap has none of the codec ADC's
+// input gain, and the ~11 dB a good recording level needs is past what a percent
+// fits in a byte. The mixer clamps its output, so overdriving distorts.
+static void daw_gain_cb(lv_event_t * e) {
+    (void)e;
+    if (auto* s = get_settings()) {
+        crosspad_gui::getGuiPlatform().setDawOutputGain(s->usbAudioGainDb);
+    }
+}
+
 static void route_preset_cb(lv_event_t * e) {
     (void)e;
     if (s_routePresetIdx >= kRoutePresetCustomIdx) {
@@ -884,6 +895,11 @@ static void build_audio_route_rows(lv_obj_t * parent, lv_group_t * group) {
     s_routePresetDd = row_dropdown(
         settings_row_dropdown(parent, group, "Recording Source",
                               kRoutePresetOptions, &s_routePresetIdx, route_preset_cb));
+
+    if (auto* cfg = get_settings()) {
+        settings_row_slider(parent, group, "DAW Output dB", 0, 36,
+                            &cfg->usbAudioGainDb, daw_gain_cb);
+    }
 
     settings_section_header(parent, "Routing (advanced)");
 

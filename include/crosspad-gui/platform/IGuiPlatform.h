@@ -128,6 +128,10 @@ public:
     virtual void setAudioAdcInput(uint8_t /*codec*/, uint8_t /*input*/) {}
     virtual void setAudioDacOutput(uint8_t /*codec*/, uint8_t /*output*/) {}
     virtual void setAudioCodecMute(uint8_t /*codec*/, bool /*mute*/) {}
+    /// Gain on the bus the USB mic endpoint carries, in dB above unity.
+    /// Separate from the codec volumes on purpose: it changes what a DAW
+    /// records without changing what comes out of the speakers.
+    virtual void setDawOutputGain(uint8_t /*db*/) {}
 };
 
 // Set the platform implementation (call once at startup)
