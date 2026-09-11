@@ -1544,17 +1544,10 @@ static void backup_report(const crosspad::SettingsIoResult& r, const char* okMsg
     }
 }
 
-static void backup_export_all_cb(lv_event_t *) {
-    auto* s = get_settings(); char p[128];
-    if (!s || !backup_path(p, sizeof(p), kBackupAllName)) return;
-    backup_report(crosspad::settingsExportAll(*s, p), "Settings exported to SD");
-}
-
-static void backup_import_all_cb(lv_event_t *) {
-    auto* s = get_settings(); char p[128];
-    if (!s || !backup_path(p, sizeof(p), kBackupAllName)) return;
+static crosspad::SettingsIoResult backup_import_all(const char* p) {
+    auto* s = get_settings();
+    if (!s) return { false, 0, "no settings" };
     auto r = crosspad::settingsImportAll(*s, p);
-    backup_report(r, "Settings imported");
     if (r.ok) {
         // Imported values only live in RAM until something persists and applies
         // them — do both, then redraw so the page shows what was loaded.
@@ -1570,8 +1563,42 @@ static void backup_import_all_cb(lv_event_t *) {
             stm_push_timeouts(s);
         }
         reinitStyles();
-        show_detail(s_current_category);
+        // Only a page that is open can be redrawn; the companion imports
+        // from the launcher too.
+        if (s_content && s_current_category >= 0) show_detail(s_current_category);
     }
+    return r;
+}
+
+static void backup_export_all_cb(lv_event_t *) {
+    auto* s = get_settings(); char p[128];
+    if (!s || !backup_path(p, sizeof(p), kBackupAllName)) return;
+    backup_report(crosspad::settingsExportAll(*s, p), "Settings exported to SD");
+}
+
+static void backup_import_all_cb(lv_event_t *) {
+    char p[128];
+    if (!backup_path(p, sizeof(p), kBackupAllName)) return;
+    backup_report(backup_import_all(p), "Settings imported");
+}
+
+bool settings_ui_backup_export(const char* path, const char** error) {
+    auto* s = get_settings();
+    if (!s) { if (error) *error = "no settings"; return false; }
+    auto r = crosspad::settingsExportAll(*s, path);
+    if (error) *error = r.ok ? nullptr : r.error;
+    return r.ok;
+}
+
+bool settings_ui_backup_import(const char* path, const char** error) {
+    auto r = backup_import_all(path);
+    if (error) *error = r.ok ? nullptr : r.error;
+    return r.ok;
+}
+
+const char* settings_ui_backup_default_path() {
+    static char p[128];
+    return backup_path(p, sizeof(p), kBackupAllName) ? p : nullptr;
 }
 
 static void backup_export_pads_cb(lv_event_t *) {
@@ -1624,6 +1651,16 @@ static void cat_build_backup(lv_obj_t * parent, lv_group_t * group) {
     snprintf(ver, sizeof(ver), "v%u", (unsigned)crosspad::kSettingsFileVersion);
     settings_row_info(parent, "File format", ver);
 }
+#else
+bool settings_ui_backup_export(const char*, const char** error) {
+    if (error) *error = "backup not built";
+    return false;
+}
+bool settings_ui_backup_import(const char*, const char** error) {
+    if (error) *error = "backup not built";
+    return false;
+}
+const char* settings_ui_backup_default_path() { return nullptr; }
 #endif  // FEAT_SETTINGS_BACKUP
 
 // ---- Programming ----

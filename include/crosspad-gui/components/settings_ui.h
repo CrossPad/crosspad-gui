@@ -37,6 +37,16 @@ bool settings_ui_add_category(const SettingsCategory& cat);
 /// Clear all extra platform-specific categories.
 void settings_ui_clear_extra_categories();
 
+// ---- Settings backup (the Settings → Backup rows, callable by a companion) ----
+// The whole-settings JSON file, same envelope as the SD rows write. Import
+// validates, persists and applies (brightness, volumes, LEDs, vibration, STM
+// pad config). Both run on the LVGL thread; `error` gets a static string
+// when they return false. Without FEAT_SETTINGS_BACKUP they only report that.
+bool settings_ui_backup_export(const char* path, const char** error);
+bool settings_ui_backup_import(const char* path, const char** error);
+// Where the Backup page writes its file, or nullptr with no backup directory.
+const char* settings_ui_backup_default_path();
+
 // ---- Widget helpers (for building custom category pages) ----
 
 lv_obj_t * settings_section_header(lv_obj_t * parent, const char * text);
