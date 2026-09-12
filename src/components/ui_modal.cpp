@@ -55,6 +55,12 @@ static bool confirm_back_cb(void * user_data) {
     return true;
 }
 
+void ui_modal_confirm_dismiss(lv_obj_t * overlay, bool confirmed) {
+    if (!overlay) return;
+    ConfirmCtx * ctx = (ConfirmCtx *)lv_obj_get_user_data(overlay);
+    if (ctx) confirm_close(ctx, confirmed);
+}
+
 static void confirm_btn_cb(lv_event_t * e) {
     ConfirmCtx * ctx = (ConfirmCtx *)lv_event_get_user_data(e);
     lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
@@ -132,6 +138,7 @@ lv_obj_t * ui_modal_confirm(
     ctx->overlay = overlay;
     ctx->prev_group = encoder_group;
     ctx->back_token = crosspad_gui::ui_back_push(confirm_back_cb, ctx);
+    lv_obj_set_user_data(overlay, ctx);   // ui_modal_confirm_dismiss() finds it here
 
     // Modal encoder group
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();

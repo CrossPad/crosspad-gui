@@ -21,6 +21,12 @@ lv_obj_t * ui_modal_confirm(
     lv_group_t * encoder_group
 );
 
+// Close a confirm dialog from code (a timeout, a request withdrawn) exactly
+// as a button press would: callback, encoder group restored, overlay deleted.
+// `overlay` is what ui_modal_confirm returned and must still be alive — the
+// callback is the last moment the caller knows that.
+void ui_modal_confirm_dismiss(lv_obj_t * overlay, bool confirmed);
+
 // Selection list modal on lv_layer_top().
 // options: NULL-terminated array of option strings
 // current_selection: index of the currently selected option (highlighted)

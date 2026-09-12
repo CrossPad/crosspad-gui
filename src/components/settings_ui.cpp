@@ -992,6 +992,9 @@ static void cat_build_usb(lv_obj_t * parent, lv_group_t * group) {
     // all — so say what the switch costs before it is thrown.
     settings_row_info(parent, "Serial console / OTA",
                       s->usbAudioEnabled ? "unavailable" : "available");
+    // A host asks for the serial profile over SysEx; with this on, the device
+    // confirms first (the platform raises the prompt). The row helper persists.
+    settings_row_switch(parent, group, "Ask before USB serial", &s->usbSerialGuard, nullptr);
 
     // Routing is live in both USB profiles — the codecs do not care which
     // descriptor set is enumerated — so the rows stay usable while the device
