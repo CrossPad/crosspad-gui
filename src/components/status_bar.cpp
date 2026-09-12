@@ -8,6 +8,7 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
 #include "crosspad/pad/PadLedController.hpp"
+#include "crosspad/platform/IClock.hpp"
 
 #if LV_USE_PERF_MONITOR && LV_VERSION_CHECK(9,4,0)
 #include "debugging/sysmon/lv_sysmon.h"
@@ -420,7 +421,8 @@ static bool s_lastSd = false;
 static bool s_lastBt = false;
 static bool s_lastBtActive = false;
 static bool s_lastWifi = false;
-static bool s_lastCharging = false;
+enum class ChargeSlot : uint8_t { Unknown, Hidden, Charging, Host, HostUpdate };
+static ChargeSlot s_lastChargeSlot = ChargeSlot::Unknown;
 static uint8_t s_lastBatteryPct = 0;
 
 static void check_status_timer_cb(lv_timer_t * timer) {
@@ -451,11 +453,21 @@ static void check_status_timer_cb(lv_timer_t * timer) {
         s_lastWifi = wifi;
         lv_obj_set_hidden(status_wifi, !wifi);
     }
-    // Charging
-    bool charging = status.stm32.chargingStatus;
-    if (charging != s_lastCharging) {
-        s_lastCharging = charging;
-        lv_obj_set_hidden(status_charging, !charging);
+    // Charging slot: the USB glyph while a host companion reports in (orange
+    // when it said newer firmware exists), the bolt when only charging.
+    const bool host = status.hostAlive(getClock().getTimeUs());
+    ChargeSlot slot = host ? (status.fwUpdateAvailable ? ChargeSlot::HostUpdate : ChargeSlot::Host)
+                    : status.stm32.chargingStatus ? ChargeSlot::Charging
+                    : ChargeSlot::Hidden;
+    if (slot != s_lastChargeSlot) {
+        s_lastChargeSlot = slot;
+        lv_obj_set_hidden(status_charging, slot == ChargeSlot::Hidden);
+        lv_image_set_src(status_charging, host ? LV_SYMBOL_USB : LV_SYMBOL_CHARGE);
+        if (slot == ChargeSlot::HostUpdate) {
+            lv_obj_set_style_text_color(status_charging, lv_palette_main(LV_PALETTE_ORANGE), 0);
+        } else {
+            lv_obj_remove_local_style_prop(status_charging, LV_STYLE_TEXT_COLOR, 0);
+        }
     }
     // Battery level — negative pct means STM32 reports no battery (VBAT < 3200 mV).
     // Blink empty/full to signal it.
@@ -915,7 +927,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
     s_lastWifi = !status.wifiConnected;
-    s_lastCharging = !status.stm32.chargingStatus;
+    s_lastChargeSlot = ChargeSlot::Unknown;
     s_lastBatteryPct = 0;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);
     return cont;
