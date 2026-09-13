@@ -84,6 +84,21 @@ static void SchedulePreview(const char * path) {
 static void UpdateFileList();
 static void FocusPane(int pane);
 
+/* A row is not cheap -- seven widgets, their styles, an entry in the encoder
+ * group -- and a directory of seventy of them held the LVGL thread long enough
+ * for the task watchdog to fire. They go up a chunk at a time now: the first
+ * screenful is there at once and the rest arrives while the list is already
+ * being used. */
+static constexpr uint32_t kBuildTickMs = 10;
+static constexpr size_t   kBuildChunk  = 8;
+/* Per pane: the right one starts filling the moment the selection on the left
+ * settles, which is while the left one may still be going up. One shared state
+ * meant the left build was abandoned half-listed. */
+static std::vector<uint16_t> s_buildOrder[2];
+static size_t       s_buildNext[2]  = {0, 0};
+static bool         s_buildRun[2]   = {false, false};
+static lv_timer_t * s_buildTimer = nullptr;
+
 static void SubScanTimer_cb(lv_timer_t * t) {
     lv_timer_pause(t);
     if (!s_subWanted[0]) return;
@@ -255,6 +270,14 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
             lv_timer_delete(s_subTimer);
             s_subTimer = nullptr;
         }
+        if (s_buildTimer) {
+            lv_timer_delete(s_buildTimer);
+            s_buildTimer = nullptr;
+        }
+        s_buildRun[0] = s_buildRun[1] = false;
+        s_buildNext[0] = s_buildNext[1] = 0;
+        s_buildOrder[0].clear();
+        s_buildOrder[1].clear();
         crosspad_gui::ui_back_remove(s_backToken);
         s_backToken = 0;
         if (s_prevEncoderIndev) {
@@ -426,6 +449,76 @@ static const char * FilterSymbol() {
     }
 }
 
+/// Put the footer buttons back after the rows; the group walks in add order.
+static void FooterLast() {
+    if (!file_explorer_group) return;
+    if (closeButton) { lv_group_remove_obj(closeButton); lv_group_add_obj(file_explorer_group, closeButton); }
+    if (loadButton)  { lv_group_remove_obj(loadButton);  lv_group_add_obj(file_explorer_group, loadButton); }
+}
+
+/// Fill one pane's rows a chunk at a time.
+static void BuildChunk(int pane) {
+    if (pane < 0 || pane > 1 || !s_buildRun[pane]) return;
+    lv_obj_t * list = (pane == 0) ? itemList : fileList;
+    if (!list) { s_buildRun[pane] = false; return; }
+    const std::vector<crosspad_gui::FileItem> & vec = (pane == 0) ? entries : subEntries;
+
+    const char * fileSymbol = FilterSymbol();
+    size_t built = 0;
+    while (s_buildNext[pane] < s_buildOrder[pane].size() && built < kBuildChunk) {
+        const size_t idx = s_buildOrder[pane][s_buildNext[pane]++];
+        if (idx >= vec.size()) continue;
+        lv_obj_t * row = lv_list_add_button(
+            list, vec[idx].isFolder ? LV_SYMBOL_DIRECTORY : fileSymbol,
+            vec[idx].name.c_str());
+        AttachRow(row, pane, idx);
+        /* Appended in order, so the group order stays the row order. */
+        if (pane == s_activePane && file_explorer_group) {
+            lv_group_add_obj(file_explorer_group, row);
+        }
+        ++built;
+    }
+
+    if (s_buildNext[pane] >= s_buildOrder[pane].size()) {
+        s_buildRun[pane] = false;
+        if (pane == s_activePane) FooterLast();
+    }
+}
+
+static void BuildTimer_cb(lv_timer_t *) {
+    BuildChunk(0);
+    BuildChunk(1);
+    if (!s_buildRun[0] && !s_buildRun[1] && s_buildTimer) lv_timer_pause(s_buildTimer);
+}
+
+/// Indices of what belongs in a pane: folders first, then the filter's files.
+static std::vector<uint16_t> PaneOrder(const std::vector<crosspad_gui::FileItem> & vec,
+                                       bool foldersOnly) {
+    std::vector<uint16_t> order;
+    order.reserve(vec.size());
+    for (size_t i = 0; i < vec.size() && i <= 0xFFFEu; ++i) {
+        if (vec[i].isFolder) order.push_back((uint16_t)i);
+    }
+    if (!foldersOnly && _fileFilter != FILTER_NONE) {
+        for (size_t i = 0; i < vec.size() && i <= 0xFFFEu; ++i) {
+            if (!vec[i].isFolder && MatchesFilter(vec[i].name)) order.push_back((uint16_t)i);
+        }
+    }
+    return order;
+}
+
+static void StartBuild(int pane, std::vector<uint16_t> order) {
+    if (pane < 0 || pane > 1) return;
+    s_buildOrder[pane] = std::move(order);
+    s_buildNext[pane]  = 0;
+    s_buildRun[pane]   = !s_buildOrder[pane].empty();
+    BuildChunk(pane);                          // the first screenful, straight away
+    if (!s_buildRun[pane]) { if (pane == s_activePane) FooterLast(); return; }
+    if (!s_buildTimer) s_buildTimer = lv_timer_create(BuildTimer_cb, kBuildTickMs, nullptr);
+    lv_timer_reset(s_buildTimer);
+    lv_timer_resume(s_buildTimer);
+}
+
 /// The right pane: what the folder highlighted on the left holds.
 static void UpdateFileList() {
     if (!fileList) return;
@@ -443,22 +536,8 @@ static void UpdateFileList() {
     /* A way back to the folders that does not need the power button. */
     lv_obj_t * back = lv_list_add_button(fileList, LV_SYMBOL_LEFT, "Folders");
     AttachRow(back, 1, kBackRow);
-
-    for (size_t i = 0; i < subEntries.size(); ++i) {
-        if (!subEntries[i].isFolder) continue;
-        lv_obj_t * row = lv_list_add_button(fileList, LV_SYMBOL_DIRECTORY,
-                                            subEntries[i].name.c_str());
-        AttachRow(row, 1, i);
-    }
-    if (_fileFilter != FILTER_NONE) {
-        const char * symbol = FilterSymbol();
-        for (size_t i = 0; i < subEntries.size(); ++i) {
-            if (subEntries[i].isFolder || !MatchesFilter(subEntries[i].name)) continue;
-            lv_obj_t * row = lv_list_add_button(fileList, symbol, subEntries[i].name.c_str());
-            AttachRow(row, 1, i);
-        }
-    }
     if (s_activePane == 1) FocusPane(1);   // the rows it was walking are gone
+    StartBuild(1, PaneOrder(subEntries, false));
 }
 
 /// The left pane: the folders here, or the files when there are no folders --
@@ -478,29 +557,13 @@ static void UpdateEntriesList() {
         if (item.isFolder) { anyFolder = true; break; }
     }
 
-    lv_obj_t * first = nullptr;
-    if (anyFolder) {
-        for (size_t i = 0; i < entries.size(); ++i) {
-            if (!entries[i].isFolder) continue;
-            lv_obj_t * row = lv_list_add_button(itemList, LV_SYMBOL_DIRECTORY,
-                                                entries[i].name.c_str());
-            AttachRow(row, 0, i);
-            if (!first) first = row;
-        }
-    } else if (_fileFilter != FILTER_NONE) {
-        const char * symbol = FilterSymbol();
-        for (size_t i = 0; i < entries.size(); ++i) {
-            if (entries[i].isFolder || !MatchesFilter(entries[i].name)) continue;
-            lv_obj_t * row = lv_list_add_button(itemList, symbol, entries[i].name.c_str());
-            AttachRow(row, 0, i);
-            if (!first) first = row;
-        }
-    }
-
     FocusPane(0);
-    /* On the first folder rather than on "Go back...", so the right pane has
+    StartBuild(0, PaneOrder(entries, anyFolder));
+    /* On the first entry rather than on "Go back...", so the right pane has
      * something in it the moment the browser opens. */
-    if (first) lv_group_focus_obj(first);
+    if (lv_obj_get_child_count(itemList) > 1) {
+        lv_group_focus_obj(lv_obj_get_child(itemList, 1));
+    }
 }
 
 // The path MUST be taken by value: `item` lives in `entries`, which
