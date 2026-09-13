@@ -77,6 +77,16 @@ void initStyles() {
     lv_style_set_border_color(&styleAppContainer, lv_color_black());
     lv_style_set_pad_all(&styleAppContainer, 0);
     lv_style_set_clip_corner(&styleAppContainer, false);
+    /* Square and opaque, and both matter for speed rather than looks: LVGL
+     * only skips what is underneath an object when that object covers its area
+     * outright, and the default theme's rounded corners disqualify every one of
+     * these containers. A screen drawn on top of another screen then costs both
+     * -- the sample browser sat over the pad editor over the sampler panel and
+     * paid for all three, 3.8 us per drawn pixel against 0.7 for a screen that
+     * covers. These containers fill the app area, so the corners were against
+     * the bezel and nobody was looking at them. */
+    lv_style_set_radius(&styleAppContainer, 0);
+    lv_style_set_bg_opa(&styleAppContainer, LV_OPA_COVER);
 
     // app picker style
     lv_style_init(&styleAppPicker);
