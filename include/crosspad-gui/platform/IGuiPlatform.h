@@ -132,6 +132,13 @@ public:
     /// Separate from the codec volumes on purpose: it changes what a DAW
     /// records without changing what comes out of the speakers.
     virtual void setDawOutputGain(uint8_t /*db*/) {}
+
+    // Hands the SD card to the USB host as a mass-storage drive. It costs a
+    // restart and stops audio, so the USB page confirms before calling
+    // requestUsbTransfer(); boards without the mode leave this false and the
+    // row is not drawn.
+    virtual bool usbTransferSupported() { return false; }
+    virtual void requestUsbTransfer() {}
 };
 
 // Set the platform implementation (call once at startup)

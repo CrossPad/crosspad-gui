@@ -4,6 +4,7 @@
 #include "crosspad/config/crosspad_config.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
+#include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/components/dfu_panel.h"
 #include "crosspad-gui/components/stm_pad_editor_screen.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
@@ -972,6 +973,19 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
 
 // ---- USB ----
 
+static void usb_transfer_confirm_cb(bool confirmed, void * user_data) {
+    (void)user_data;
+    if (confirmed) getGuiPlatform().requestUsbTransfer();
+}
+
+static void usb_transfer_start_cb(lv_event_t * e) {
+    (void)e;
+    ui_modal_confirm("SD card as USB drive",
+                     "The CrossPad restarts and audio stops. Your computer will see "
+                     "the SD card as a USB drive.",
+                     "Restart", "Cancel", usb_transfer_confirm_cb, nullptr, s_group);
+}
+
 static void cat_build_usb(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
@@ -995,6 +1009,11 @@ static void cat_build_usb(lv_obj_t * parent, lv_group_t * group) {
     // A host asks for the serial profile over SysEx; with this on, the device
     // confirms first (the platform raises the prompt). The row helper persists.
     settings_row_switch(parent, group, "Ask before USB serial", &s->usbSerialGuard, nullptr);
+
+    if (getGuiPlatform().usbTransferSupported()) {
+        settings_row_action(parent, group, "SD card as USB drive", "Start",
+                            usb_transfer_start_cb);
+    }
 
     // Routing is live in both USB profiles — the codecs do not care which
     // descriptor set is enumerated — so the rows stay usable while the device
