@@ -130,6 +130,16 @@ static void exit_row_cb(lv_event_t * e) {
 
 // ---- Row builder helper for a clickable button row ----
 
+/* Scroll the focused widget into view in one frame. LVGL's own
+ * scroll-on-focus animates the list over 200-400 ms, and every frame of that
+ * redraws the whole list: 3-4 full screens per encoder step measured. */
+static void focus_scroll_instant(lv_obj_t * obj) {
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_event_cb(obj, [](lv_event_t * e) {
+        lv_obj_scroll_to_view_recursive(lv_event_get_target_obj(e), LV_ANIM_OFF);
+    }, LV_EVENT_FOCUSED, nullptr);
+}
+
 static lv_obj_t* make_nav_button(lv_obj_t* parent, const char* icon_text,
                                   const char* label_text, lv_color_t bg_color,
                                   lv_event_cb_t cb, void* user_data) {
@@ -161,6 +171,7 @@ static lv_obj_t* make_nav_button(lv_obj_t* parent, const char* icon_text,
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
 
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, user_data);
+    focus_scroll_instant(btn);
     if (s_group) lv_group_add_obj(s_group, btn);
 
     return btn;
@@ -187,6 +198,9 @@ static void show_categories() {
         if (cat->build == cat_build_usb && !getGuiPlatform().usbAudioSupported()) continue;
 
         lv_obj_t * row = lv_button_create(s_content);
+        /* Without the theme: its 80 ms transition on every state change costs
+         * three full redraws of two rows per focus step instead of one. */
+        lv_obj_remove_style_all(row);
         lv_obj_set_size(row, LV_PCT(100), 36);
         lv_obj_add_style(row, &styleSettingsRow, 0);
         lv_obj_add_style(row, &styleSettingsRowFocused, LV_STATE_FOCUSED);
@@ -218,6 +232,7 @@ static void show_categories() {
         lv_obj_set_style_text_color(chev, lv_color_make(100, 100, 100), 0);
 
         lv_obj_add_event_cb(row, category_row_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        focus_scroll_instant(row);
         if (s_group) lv_group_add_obj(s_group, row);
     }
 
@@ -314,6 +329,8 @@ lv_obj_t * settings_row_switch(lv_obj_t * parent, lv_group_t * group,
     lv_obj_add_event_cb(sw, switch_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
     lv_obj_add_event_cb(sw, switch_row_delete_cb, LV_EVENT_DELETE, ctx);
 
+    focus_scroll_instant(sw);
+
     if (group) lv_group_add_obj(group, sw);
 
     return row;
@@ -390,6 +407,8 @@ lv_obj_t * settings_row_slider(lv_obj_t * parent, lv_group_t * group,
     lv_obj_add_event_cb(slider, slider_value_changed_cb, LV_EVENT_RELEASED, ctx);
     lv_obj_add_event_cb(slider, slider_row_delete_cb, LV_EVENT_DELETE, ctx);
 
+    focus_scroll_instant(slider);
+
     if (group) lv_group_add_obj(group, slider);
 
     return label_row;
@@ -462,6 +481,7 @@ lv_obj_t * settings_row_action(lv_obj_t * parent, lv_group_t * group,
     if (callback) {
         lv_obj_add_event_cb(btn, callback, LV_EVENT_CLICKED, user_data);
     }
+    focus_scroll_instant(btn);
     if (group) lv_group_add_obj(group, btn);
 
     return row;
@@ -538,6 +558,8 @@ lv_obj_t * settings_row_dropdown(lv_obj_t * parent, lv_group_t * group,
     lv_obj_add_event_cb(dd, dropdown_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
     lv_obj_add_event_cb(dd, dropdown_row_delete_cb, LV_EVENT_DELETE, ctx);
 
+    focus_scroll_instant(dd);
+
     if (group) lv_group_add_obj(group, dd);
 
     return row;
@@ -595,6 +617,8 @@ static lv_obj_t * settings_row_bitswitch(lv_obj_t * parent, lv_group_t * group,
     BitSwitchRowCtx * ctx = new BitSwitchRowCtx{flags, bit, extra_cb};
     lv_obj_add_event_cb(sw, bitswitch_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
     lv_obj_add_event_cb(sw, bitswitch_row_delete_cb, LV_EVENT_DELETE, ctx);
+
+    focus_scroll_instant(sw);
 
     if (group) lv_group_add_obj(group, sw);
     return row;
@@ -1360,6 +1384,7 @@ static void open_global_pad_sliders(lv_obj_t* parent, lv_group_t* group) {
         lv_obj_set_style_pad_all(sl, 3, LV_PART_KNOB);
         lv_obj_add_event_cb(sl, global_sens_val_cb, LV_EVENT_VALUE_CHANGED, nullptr);
         lv_obj_add_event_cb(sl, global_sens_val_cb, LV_EVENT_RELEASED, nullptr);
+        focus_scroll_instant(sl);
         if (group) lv_group_add_obj(group, sl);
     }
 
