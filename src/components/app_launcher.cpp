@@ -142,7 +142,9 @@ void launcher_register_power_off() {
         icon_path,
         PowerOffFactory,
         nullptr,  // no destroy
-        -100      // keep the destructive Power OFF action at the end of the launcher
+        -100,     // keep the destructive Power OFF action at the end of the launcher
+        nullptr,
+        true      // power.png is a black glyph
     });
 }
 
@@ -205,8 +207,10 @@ lv_obj_t* launcher_create_button_grid(
             lv_image_set_src(img, info.icon);
             lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
             lv_obj_set_size(img, s_config.icon_size, s_config.icon_size);
-            lv_obj_set_style_image_recolor(img, lv_color_bw_from_color(CROSSPAD_THEME_CARD_BG), 0);
-            lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+            if (info.recolor_icon) {
+                lv_obj_set_style_image_recolor(img, lv_color_bw_from_color(CROSSPAD_THEME_CARD_BG), 0);
+                lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+            }
             lv_obj_center(img);
         }
 

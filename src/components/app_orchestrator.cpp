@@ -76,7 +76,7 @@ void AppOrchestrator::populateApps(lv_obj_t* container) {
 
         ILvglApp* raw = app.get();
         apps_.push_back(std::move(app));
-        infos_.push_back({raw->getName(), raw->getIcon(), raw});
+        infos_.push_back({raw->getName(), raw->getIcon(), raw, entry.recolorIcon});
     }
 
     LV_LOG_INFO("AppOrchestrator: populated %d apps", (int)apps_.size());

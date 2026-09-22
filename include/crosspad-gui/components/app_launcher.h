@@ -11,6 +11,7 @@ struct LauncherAppInfo {
     const char* name;
     const char* icon;
     void* app_ptr;  // Opaque pointer to platform's App object
+    bool recolor_icon;  // Tint the icon flat (AppEntry::recolorIcon); false = raw colours
 };
 
 // Called when the user clicks an app button in the launcher grid.
