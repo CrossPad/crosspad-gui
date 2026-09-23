@@ -1511,6 +1511,27 @@ static void stm_push_timeouts(crosspad::CrosspadSettings* s) {
     plat.writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
 }
 
+// Everything the STM keeps from Stm32Settings, for paths that replace the whole
+// struct at once (reset to defaults, backup import).
+static void stm_push_config(crosspad::CrosspadSettings* s) {
+    auto& plat = getGuiPlatform();
+    for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
+    plat.writeStmConfig8(REG_CTL_MIDI_CHAN,      s->stm.midiChannel);
+    plat.writeStmConfig8(REG_CTL_NOTE_OFFSET,    (uint8_t)s->stm.noteOffset);
+    plat.writeStmConfig8(REG_CTL_VEL_CURVE_DEF,  s->stm.velCurveDef);
+    plat.writeStmConfig8(REG_CTL_VEL_FLOOR_DEF,  s->stm.velFloorDef);
+    plat.writeStmConfig8(REG_CTL_CC_PRESS_BASE,  s->stm.ccPressBase);
+    plat.writeStmConfig8(REG_CTL_PAN_CC_EN,      s->stm.panCcEn);
+    plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,    s->stm.ccPanBase);
+    plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
+    plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
+    plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
+    plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
+    plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);
+    stm_push_timeouts(s);
+    plat.writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
+}
+
 static void stm_dim_to_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     if (s_dimIdx >= sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0])) s_dimIdx = 0;
@@ -1605,10 +1626,7 @@ static crosspad::SettingsIoResult backup_import_all(const char* p) {
         plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
         crosspad::getPadLedController().setBrightness(s->RGBbrightness);
         crosspad::getVibration().applySettings(s->vibration);
-        if (stm_config_available()) {
-            for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
-            stm_push_timeouts(s);
-        }
+        if (stm_config_available()) stm_push_config(s);
         reinitStyles();
         // Only a page that is open can be redrawn; the companion imports
         // from the launcher too.
@@ -1807,24 +1825,7 @@ static void factory_reset_cb(lv_event_t * e) {
     plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
     crosspad::getPadLedController().setBrightness(s->RGBbrightness);
     crosspad::getVibration().applySettings(s->vibration);
-    if (stm_config_available()) {
-        for (uint8_t i = 0; i < crosspad::CROSSPAD_MAX_PADS; ++i) plat.writeStmConfigPad(i);
-        plat.writeStmConfig8(REG_CTL_MIDI_CHAN,      s->stm.midiChannel);
-        plat.writeStmConfig8(REG_CTL_NOTE_OFFSET,    (uint8_t)s->stm.noteOffset);
-        plat.writeStmConfig8(REG_CTL_VEL_CURVE_DEF,  s->stm.velCurveDef);
-        plat.writeStmConfig8(REG_CTL_VEL_FLOOR_DEF,  s->stm.velFloorDef);
-        plat.writeStmConfig8(REG_CTL_CC_PRESS_BASE,  s->stm.ccPressBase);
-        plat.writeStmConfig8(REG_CTL_PAN_CC_EN,      s->stm.panCcEn);
-        plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,    s->stm.ccPanBase);
-        plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
-        plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
-        plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
-        plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
-        plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);
-        plat.writeStmConfig16(REG_CTL_DIM_TO_S_HI,   s->stm.dimTimeoutS);
-        plat.writeStmConfig16(REG_CTL_SLEEP_TO_S_HI, s->stm.sleepTimeoutS);
-        plat.writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
-    }
+    if (stm_config_available()) stm_push_config(s);
     statusbar_set_drawer_enabled(s->quickSettingsEnabled);
     statusbar_set_perf_level(s->perfStatsFlags);
     reinitStyles();

@@ -146,7 +146,7 @@ lv_subject_t * statusbar_get_loading_subject() {
 }
 
 void statusbar_show_loader_message(const char * title, const char * message, bool isError) {
-    lv_obj_t * mbox = lv_msgbox_create(lv_layer_top());
+    lv_obj_t * mbox = lv_msgbox_create(crosspad_gui::getOverlayParent());
     lv_obj_add_style(mbox, &styleStatusBar, 0);
     lv_obj_set_style_border_width(mbox, 2, 0);
     lv_msgbox_add_title(mbox, title);
