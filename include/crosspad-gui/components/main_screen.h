@@ -4,6 +4,7 @@
 
 #include "lvgl.h"
 #include "crosspad-gui/components/app_launcher.h"
+#include "crosspad/settings/CrosspadSettings.hpp"
 #include <cstddef>
 
 namespace crosspad_gui {
@@ -13,6 +14,7 @@ namespace crosspad_gui {
  */
 struct MainScreenConfig {
     lv_indev_t* encoder = nullptr;       ///< Rotary encoder input device
+    crosspad::LauncherStyle style = crosspad::LauncherStyle::Grid;
     launcher_app_select_cb_t on_select = nullptr;
     launcher_close_popup_cb_t on_close = nullptr;
     int button_size  = 64;
@@ -28,14 +30,16 @@ struct MainScreenResult {
     lv_obj_t*  status_bar    = nullptr;  ///< Status bar container (child of parent)
     lv_obj_t*  app_container = nullptr;  ///< Container where apps render their UI
     lv_group_t* encoder_group = nullptr; ///< Encoder navigation group
-    lv_obj_t*  launcher_grid = nullptr;  ///< The button grid widget
+    lv_obj_t*  launcher_grid = nullptr;  ///< The button grid, when style is Grid
+    lv_obj_t*  launcher_menu = nullptr;  ///< The list menu, when style is List
 };
 
 /**
  * @brief Build the standard main screen layout.
  *
  * Sets up the parent with a column flex layout, creates the status bar,
- * creates the app container, and populates a launcher button grid.
+ * creates the app container, and populates the launcher -- the button grid
+ * or the list menu, as config.style says.
  *
  * Cleans the parent before building.
  *

@@ -61,8 +61,11 @@ MainScreenResult build_main_screen(
     lc.button_spacing = config.button_spacing;
     lc.show_names     = config.show_names;
 
-    result.launcher_grid = launcher_create_button_grid(
-        app_c, apps, app_count, &lc);
+    if (config.style == crosspad::LauncherStyle::List) {
+        result.launcher_menu = launcher_create_menu(app_c, apps, app_count, &lc);
+    } else {
+        result.launcher_grid = launcher_create_button_grid(app_c, apps, app_count, &lc);
+    }
 
     return result;
 }

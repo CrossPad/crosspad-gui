@@ -42,6 +42,7 @@ struct GuiStartResult {
     lv_obj_t*   app_container  = nullptr;
     lv_group_t* encoder_group  = nullptr;
     lv_obj_t*   launcher_grid  = nullptr;
+    lv_obj_t*   launcher_menu  = nullptr;
     bool        success        = false;
 };
 
