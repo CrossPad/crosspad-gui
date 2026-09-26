@@ -645,6 +645,10 @@ static void lcd_brightness_hw_cb(lv_event_t * e) {
     crosspad_gui::getGuiPlatform().setLcdBrightness(get_settings()->LCDbrightness);
 }
 
+/* The launcher's style through the dropdown's uint8_t; the launcher is
+ * rebuilt on the way back to it, which is when the new style shows. */
+static uint8_t s_launcherStyleIdx = 0;
+
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
@@ -671,6 +675,13 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           theme_options,
                           &s->themeColorIndex,
                           theme_color_changed_cb);
+
+    s_launcherStyleIdx = (uint8_t)s->launcherStyle;
+    settings_row_dropdown(parent, group, "Launcher", "Icon grid\nList",
+                          &s_launcherStyleIdx,
+                          [](lv_event_t *) {
+                              get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
+                          });
 
     settings_row_switch(parent, group, "Quick Settings Drawer",
                         &s->quickSettingsEnabled,
@@ -1809,6 +1820,7 @@ static void factory_reset_cb(lv_event_t * e) {
     s->perfStatsFlags = 0;
     s->RGBbrightness = 100;
     s->quickSettingsEnabled = true;
+    s->launcherStyle = crosspad::LauncherStyle::Grid;
     s->AudioEngineEnabled = true;
     s->Kit = 0;
     for (int i = 0; i < crosspad::CROSSPAD_MAX_PADS; i++) {
