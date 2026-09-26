@@ -29,4 +29,12 @@ void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group);
 // Calculate number of digits in an integer (for spinbox sizing)
 int CalcDigits(int value);
 
+// A button the encoder can edit, like a slider: a click on it enters edit mode,
+// where turning the encoder sends it LV_EVENT_KEY with LV_KEY_LEFT/RIGHT, and
+// the next click sends LV_EVENT_CLICKED (the owner leaves edit mode there with
+// lv_group_set_editing(group, false)). Touch sees a plain button. For a value
+// that is shown as text and turned, where a spinbox's text area scrolls its
+// own digits out of sight.
+lv_obj_t * lv_CreateEditableButton(lv_obj_t * parent);
+
 #endif // USE_LVGL

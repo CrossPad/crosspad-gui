@@ -2,6 +2,8 @@
 
 #include "crosspad-gui/widgets/gui_helpers.h"
 
+#include "src/core/lv_obj_class_private.h"   // lv_obj_class_t fields: a class of our own
+
 lv_color_t lv_color_bw_from_color(lv_color_t color) {
     return ((color.red + color.green + color.blue) / 3) > 0x7F ? lv_color_black() : lv_color_white();
 }
@@ -37,6 +39,22 @@ void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group) {
         return;
     }
     lv_indev_set_group(indev, group);
+}
+
+lv_obj_t * lv_CreateEditableButton(lv_obj_t * parent) {
+    /* lv_button_class exactly, except editable: same constructor and event
+     * handler, so it looks and behaves like any button until an encoder
+     * clicks it. */
+    static lv_obj_class_t cls;
+    if (cls.instance_size == 0) {
+        cls = lv_button_class;
+        cls.base_class = lv_button_class.base_class;
+        cls.editable = LV_OBJ_CLASS_EDITABLE_TRUE;
+        cls.name = "editable_button";
+    }
+    lv_obj_t * obj = lv_obj_class_create_obj(&cls, parent);
+    lv_obj_class_init_obj(obj);
+    return obj;
 }
 
 int CalcDigits(int value) {
