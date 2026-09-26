@@ -54,7 +54,7 @@ GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
     result.status_bar    = msResult.status_bar;
     result.app_container = msResult.app_container;
     result.encoder_group = msResult.encoder_group;
-    result.launcher_grid = msResult.launcher_grid;
+    result.launcher      = msResult.launcher;
     result.success       = true;
 
     return result;

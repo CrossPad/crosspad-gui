@@ -15,9 +15,6 @@ struct MainScreenConfig {
     lv_indev_t* encoder = nullptr;       ///< Rotary encoder input device
     launcher_app_select_cb_t on_select = nullptr;
     launcher_close_popup_cb_t on_close = nullptr;
-    int button_size  = 64;
-    int button_spacing = 10;
-    bool show_names  = true;
     lv_color_t bg_color = lv_color_make(26, 26, 46);
 };
 
@@ -28,14 +25,14 @@ struct MainScreenResult {
     lv_obj_t*  status_bar    = nullptr;  ///< Status bar container (child of parent)
     lv_obj_t*  app_container = nullptr;  ///< Container where apps render their UI
     lv_group_t* encoder_group = nullptr; ///< Encoder navigation group
-    lv_obj_t*  launcher_grid = nullptr;  ///< The button grid widget
+    lv_obj_t*  launcher      = nullptr;  ///< The launcher menu widget
 };
 
 /**
  * @brief Build the standard main screen layout.
  *
  * Sets up the parent with a column flex layout, creates the status bar,
- * creates the app container, and populates a launcher button grid.
+ * creates the app container, and populates the launcher menu.
  *
  * Cleans the parent before building.
  *

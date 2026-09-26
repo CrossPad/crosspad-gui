@@ -57,12 +57,8 @@ MainScreenResult build_main_screen(
     lc.encoder_group  = result.encoder_group;
     lc.on_select      = config.on_select;
     lc.on_close       = config.on_close;
-    lc.button_size    = config.button_size;
-    lc.button_spacing = config.button_spacing;
-    lc.show_names     = config.show_names;
 
-    result.launcher_grid = launcher_create_button_grid(
-        app_c, apps, app_count, &lc);
+    result.launcher = launcher_create_menu(app_c, apps, app_count, &lc);
 
     return result;
 }
