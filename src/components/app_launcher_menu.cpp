@@ -48,7 +48,9 @@ constexpr lv_opa_t kChipSelOpa   = 36;    // ~14 % ink on the lime card
 constexpr lv_opa_t kMetaOpa      = 179;   // ~70 %
 /// Rows the menu holds; the registry holds 16 apps, plus the built-in Power.
 constexpr size_t  kMaxRows       = 24;
-constexpr size_t  kIconPathLen   = 48;
+/// An icon path: the platform's asset prefix (a whole absolute directory on
+/// the simulator) and the file name.
+constexpr size_t  kIconPathLen   = 256;
 
 constexpr uint32_t kBg       = 0x16181B;
 constexpr uint32_t kRow      = 0x20242A;
@@ -120,7 +122,6 @@ lv_obj_t* s_barMark = nullptr;
 lv_obj_t* s_barPos = nullptr;
 /* A tap that only moved the selection must not also open the row. */
 bool     s_focusedByPointer = false;
-char     s_iconPaths[kMaxRows][kIconPathLen];
 
 bool s_stylesReady = false;
 lv_style_t s_stRow, s_stRowSel, s_stChipSel;
@@ -268,10 +269,13 @@ void add_row(const LauncherAppInfo& info, const char* prefix) {
     const MenuLook* look = look_for(info.name);
     r.color = look ? look->color : kBarText;
 
+    /* lv_image_set_src() keeps its own copy of a file path, so the buffer
+     * only has to outlive this call. */
+    char iconPath[kIconPathLen];
     const char* iconSrc = info.icon;
     if (look && look->icon) {
-        snprintf(s_iconPaths[i], kIconPathLen, "%s%s", prefix, look->icon);
-        iconSrc = s_iconPaths[i];
+        snprintf(iconPath, sizeof(iconPath), "%s%s", prefix, look->icon);
+        iconSrc = iconPath;
     }
     r.glyph = iconSrc && (uint8_t)iconSrc[0] >= 0x80;
     /* The menu's own icons are flat glyphs made to be tinted; an app's own
