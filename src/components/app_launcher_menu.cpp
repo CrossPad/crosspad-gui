@@ -82,6 +82,8 @@ const MenuLook kLooks[] = {
     {"Sequencer",    "Sequencer",    0xFF7A9A, "record and loop the pads",   "ic_sequencer.png"},
     {"Song",         "Song",         0xF26DF9, "scenes arranged in a row",   "ic_song.png"},
     {"Arrange",      "Arrange",      0x4FC3F7, "audio tracks on a timeline", "ic_arrange.png"},
+    {"Recorder",     "Recorder",     0xFF5C5C, "record a sample, trim a loop", "ic_recorder.png"},
+    {"Slicer",       "Slicer",       0xFFB347, "chop a loop into a kit",     "ic_slicer.png"},
     {"PadMixer",     "Pad Mixer",    0x7AA2FF, "a fader for every pad",      nullptr},
     {"Mixer",        "Mixer",        0xFFC857, "channels and outputs",       "ic_mixer.png"},
     {"DawControl",   "DAW Control",  0xA0E7A0, "FL Studio, Ableton",         nullptr},
