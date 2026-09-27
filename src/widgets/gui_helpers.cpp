@@ -41,6 +41,14 @@ void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group) {
     lv_indev_set_group(indev, group);
 }
 
+void lv_group_delete_deferred(lv_group_t * group) {
+    if (group == NULL) return;
+    lv_async_call([](void * g) {
+        lv_group_t * grp = static_cast<lv_group_t *>(g);
+        if (lv_group_is_alive(grp)) lv_group_delete(grp);
+    }, group);
+}
+
 lv_obj_t * lv_CreateEditableButton(lv_obj_t * parent) {
     /* lv_button_class exactly, except editable: same constructor and event
      * handler, so it looks and behaves like any button until an encoder

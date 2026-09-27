@@ -26,6 +26,14 @@ void lv_list_cleanup(lv_obj_t * list);
 bool lv_group_is_alive(const lv_group_t * group);
 void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group);
 
+/* Delete a group once the input read that is running has finished with it.
+ * A window closed from its own button's CLICKED cannot delete its group
+ * there: when the click came from the encoder, LVGL sends LV_KEY_ENTER to
+ * that group right after CLICKED returns (indev_encoder_proc), and a group
+ * deleted in the handler is freed memory by then -- a LoadProhibited in
+ * lv_obj_get_state on the LVGL task. Point the indev elsewhere first. */
+void lv_group_delete_deferred(lv_group_t * group);
+
 // Calculate number of digits in an integer (for spinbox sizing)
 int CalcDigits(int value);
 
