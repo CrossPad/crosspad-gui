@@ -54,6 +54,10 @@ lv_obj_t * lv_CreateEditableButton(lv_obj_t * parent) {
     }
     lv_obj_t * obj = lv_obj_class_create_obj(&cls, parent);
     lv_obj_class_init_obj(obj);
+    /* The theme styles a button by its class, and this one is not
+     * lv_button_class: without these it has no background at all. */
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(obj, 6, 0);
     return obj;
 }
 
