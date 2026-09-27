@@ -202,7 +202,9 @@ void select_row(size_t i) {
 void row_focused_cb(lv_event_t* e) {
     const size_t i = (size_t)(uintptr_t)lv_event_get_user_data(e);
     lv_indev_t* indev = lv_indev_active();
-    s_focusedByPointer = indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER;
+    /* LVGL sends FOCUSED on every press of a group member, also when it is
+     * focused already: only a tap that moves the selection is "only moved". */
+    s_focusedByPointer = indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER && i != s_sel;
     select_row(i);
 }
 
@@ -293,7 +295,9 @@ void add_row(const LauncherAppInfo& info, const char* prefix) {
     lv_obj_add_event_cb(r.row, row_focused_cb, LV_EVENT_FOCUSED, (void*)(uintptr_t)i);
     lv_obj_add_event_cb(r.row, row_clicked_cb, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
 
+    /* The row is what a tap lands on: its boxes pass the click through. */
     r.chip = make_box(r.row);
+    lv_obj_remove_flag(r.chip, LV_OBJ_FLAG_CLICKABLE);
     if (r.glyph) {
         r.icon = lv_label_create(r.chip);
         lv_label_set_text(r.icon, iconSrc);
@@ -305,6 +309,7 @@ void add_row(const LauncherAppInfo& info, const char* prefix) {
     }
 
     lv_obj_t* txt = make_box(r.row);
+    lv_obj_remove_flag(txt, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_grow(txt, 1);
     lv_obj_set_height(txt, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(txt, LV_FLEX_FLOW_COLUMN);
