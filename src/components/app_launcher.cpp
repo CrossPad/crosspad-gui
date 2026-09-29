@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/app_launcher.h"
+#include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
@@ -19,11 +20,13 @@ static LauncherConfig s_config = {};
 
 // ── Power OFF dialog ────────────────────────────────────────────────────────
 
-// Context for ClosePopUpApp callback
+// Context for the Cancel button: the dialog is an app, closed by its host.
+// One dialog at a time, so one context.
 struct PopupCtx {
     void* app_ptr;
     launcher_close_popup_cb_t on_close;
 };
+static PopupCtx s_popup = {};
 
 // Encoder group state for the active power off dialog
 static lv_group_t* s_powerOffGroup = nullptr;
@@ -41,24 +44,19 @@ static void RestorePowerOffEncoder() {
     s_powerOffPrevGroup = nullptr;
 }
 
-static void ClosePowerOffMsgboxEvent(lv_event_t* e) {
+static void ClosePowerOffDialogEvent(lv_event_t* e) {
     if (lv_event_get_code(e) == LV_EVENT_DELETE) {
         RestorePowerOffEncoder();
     }
 }
 
 static void ClosePopUpApp(lv_event_t* e) {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-
     LV_LOG_INFO("Power off cancelled");
-    auto* ctx = (PopupCtx*)lv_event_get_user_data(e);
-    if (ctx && ctx->on_close) {
-        ctx->on_close(ctx->app_ptr);
+    if (s_popup.on_close) {
+        s_popup.on_close(s_popup.app_ptr);   // the host deletes the dialog with the app
+    } else {
+        lv_obj_delete_async((lv_obj_t*)lv_event_get_user_data(e));
     }
-    lv_obj_t* btn = (lv_obj_t*)lv_event_get_current_target(e);
-    lv_obj_t* mbox = lv_obj_get_parent(lv_obj_get_parent(btn));
-    lv_msgbox_close(mbox);
-    // Note: ctx is leaked (small, one-shot allocation per dialog)
 }
 
 lv_obj_t* launcher_create_power_off_dialog(
@@ -66,27 +64,23 @@ lv_obj_t* launcher_create_power_off_dialog(
     void* app_ptr,
     launcher_close_popup_cb_t on_close)
 {
-    lv_obj_t* msgbox = lv_msgbox_create(parent);
-    lv_obj_t* closeBtn = lv_msgbox_add_close_button(msgbox);
-    lv_obj_remove_event(closeBtn, 0);  // remove default close event
-    lv_msgbox_add_title(msgbox, "Power OFF");
-    lv_msgbox_add_text(msgbox, "Are you sure you want to power off?");
-    lv_obj_t* yes = lv_msgbox_add_footer_button(msgbox, "Yes");
-    lv_obj_t* no  = lv_msgbox_add_footer_button(msgbox, "No");
-    lv_obj_add_style(yes, &styleButton, 0);
-    lv_obj_add_style(no, &styleButton, 0);
+    s_popup = PopupCtx{app_ptr, on_close};
+    lv_obj_t* row = nullptr;
+    lv_obj_t* message = nullptr;
+    lv_obj_t* dialog = ui_modal_frame(parent, "Power off?",
+                                      "Hold the power button to start the CrossPad again.",
+                                      &row, &message);
+    lv_obj_t* cancel = ui_modal_button(row, "Cancel", UI_MODAL_BUTTON_NORMAL);
+    lv_obj_t* off = ui_modal_button(row, LV_SYMBOL_POWER "  Power off", UI_MODAL_BUTTON_DANGER);
+    lv_obj_add_event_cb(cancel, ClosePopUpApp, LV_EVENT_CLICKED, dialog);
 
-    // "Yes" sends power off via platform
-    lv_obj_add_event_cb(yes, [](lv_event_t* e) {
-        if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-
+    /* The buttons make way for what is happening; hidden, not deleted: this
+     * runs in one of them. */
+    lv_obj_add_event_cb(off, [](lv_event_t* e) {
         LV_LOG_INFO("Powering off...");
-        lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
-        lv_obj_t* footer = lv_obj_get_parent(obj);
-        lv_obj_clean(footer);
-        lv_obj_t* label = lv_label_create(footer);
-        lv_label_set_text(label, "Powering off...");
-        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_t* msg = (lv_obj_t*)lv_event_get_user_data(e);
+        lv_label_set_text(msg, "Powering off ...");
+        lv_obj_add_flag(lv_obj_get_parent(lv_event_get_target_obj(e)), LV_OBJ_FLAG_HIDDEN);
 
         lv_async_call([](void*) {
             auto& platform = getGuiPlatform();
@@ -97,27 +91,21 @@ lv_obj_t* launcher_create_power_off_dialog(
             platform.delayMs(500);
             platform.sendPowerOff();
         }, nullptr);
-    }, LV_EVENT_CLICKED, msgbox);
+    }, LV_EVENT_CLICKED, message);
 
-    // "No" and close button dismiss
-    auto* ctx = new PopupCtx{app_ptr, on_close};
-    lv_obj_add_event_cb(no, ClosePopUpApp, LV_EVENT_CLICKED, ctx);
-    lv_obj_add_event_cb(closeBtn, ClosePopUpApp, LV_EVENT_CLICKED, ctx);
-
-    // Route encoder to msgbox buttons; restore previous group on delete
+    // Route encoder to the buttons, Cancel first; restore previous group on delete
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
     if (nav) {
         s_powerOffPrevGroup = lv_indev_get_group(nav);
         s_powerOffGroup = lv_group_create();
-        lv_group_add_obj(s_powerOffGroup, no);
-        lv_group_add_obj(s_powerOffGroup, yes);
-        lv_group_add_obj(s_powerOffGroup, closeBtn);
-        lv_group_focus_obj(no);
+        lv_group_add_obj(s_powerOffGroup, cancel);
+        lv_group_add_obj(s_powerOffGroup, off);
+        lv_group_focus_obj(cancel);
         lv_indev_set_group(nav, s_powerOffGroup);
-        lv_obj_add_event_cb(msgbox, ClosePowerOffMsgboxEvent, LV_EVENT_DELETE, nullptr);
+        lv_obj_add_event_cb(dialog, ClosePowerOffDialogEvent, LV_EVENT_DELETE, nullptr);
     }
 
-    return msgbox;
+    return dialog;
 }
 
 // ── Power OFF app registration ──────────────────────────────────────────────

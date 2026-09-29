@@ -541,9 +541,15 @@ static void drawer_open() {
     s_drawer_overlay = lv_obj_create(parent);
     lv_obj_add_flag(s_drawer_overlay, LV_OBJ_FLAG_FLOATING);
     lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(status_c));
-    lv_obj_add_style(s_drawer_overlay, &styleStatusBar, 0);
+    /* Dark under the bar, the accent along its foot: the look of the
+     * Settings rows, not a second status bar. */
+    lv_obj_set_style_bg_color(s_drawer_overlay, lv_color_make(20, 20, 20), 0);
     lv_obj_set_style_bg_opa(s_drawer_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(s_drawer_overlay, 0, 0);
+    lv_obj_set_style_border_side(s_drawer_overlay, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(s_drawer_overlay, 2, 0);
+    lv_obj_set_style_border_color(s_drawer_overlay, CROSSPAD_THEME_PRIMARY, 0);
+    lv_obj_set_style_pad_hor(s_drawer_overlay, 10, 0);
+    lv_obj_set_style_pad_ver(s_drawer_overlay, 6, 0);
     lv_obj_set_style_radius(s_drawer_overlay, 0, 0);
     lv_obj_remove_flag(s_drawer_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(s_drawer_overlay, LV_SCROLLBAR_MODE_OFF);
@@ -939,7 +945,13 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
 struct DrawerSliderCtx {
     uint8_t * setting;
     lv_event_cb_t hw_apply_cb; // optional
+    lv_obj_t * value;          // the percentage beside the slider
+    int max;
 };
+
+static void show_percent(DrawerSliderCtx * ctx, int value) {
+    if (ctx->value) lv_label_set_text_fmt(ctx->value, "%d%%", ctx->max ? value * 100 / ctx->max : 0);
+}
 
 static void drawer_slider_event_cb(lv_event_t * e) {
     auto * ctx = (DrawerSliderCtx *)lv_event_get_user_data(e);
@@ -949,6 +961,7 @@ static void drawer_slider_event_cb(lv_event_t * e) {
     if (code == LV_EVENT_VALUE_CHANGED) {
         int value = lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
         *(ctx->setting) = (uint8_t)value;
+        show_percent(ctx, value);
         // Live hardware apply on every drag tick — keep slider feeling responsive.
         if (ctx->hw_apply_cb) ctx->hw_apply_cb(e);
     } else if (code == LV_EVENT_RELEASED) {
@@ -970,70 +983,81 @@ static void check_ram_timer_cb(lv_timer_t * timer) {
     lv_subject_set_int(&s_psRamUsage, psRam);
 }
 
-static lv_style_t style_main;
+static lv_style_t style_track;
 static lv_style_t style_indicator;
 static lv_style_t style_knob;
-static lv_style_t style_pressed_color;
-static lv_style_t style_focused;   // encoder focus ring — the drawer has no other cue
+static lv_style_t style_knob_focused;   // the encoder's ring -- the drawer has no other cue
+static lv_style_t style_knob_edited;    // being turned: the knob takes the accent
 
-static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * txt, int min, int max,
-                                        uint8_t * setting, lv_event_cb_t hw_apply_cb)
+static const lv_color_t kDrawerDim = lv_color_hex(0x9AA0A8);
+
+/* A row as the Settings rows: the icon in the accent, the name, then the
+ * slider, and what it is set to. */
+static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, const char * txt,
+                                        int min, int max, uint8_t * setting, lv_event_cb_t hw_apply_cb)
 {
-    lv_obj_t * cont = lv_obj_create(parent);
-    lv_obj_set_style_border_width(cont, 0, 0);
-    lv_obj_set_style_bg_opa(cont, LV_OPA_0, 0);
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_scroll_snap_y(cont, LV_SCROLL_SNAP_CENTER);
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_OVERFLOW_VISIBLE);   // the knob's ring and hit area
 
-    lv_obj_t * label = lv_label_create(cont);
+    lv_obj_t * glyph = lv_label_create(row);
+    lv_obj_set_width(glyph, 20);
+    lv_obj_set_style_text_font(glyph, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(glyph, CROSSPAD_THEME_PRIMARY, 0);
+    lv_label_set_text(glyph, icon);
+
+    lv_obj_t * label = lv_label_create(row);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_label_set_text(label, txt);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_color(label, lv_color_black(), 0);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 5, 0);
 
-    lv_obj_t * slider = lv_slider_create(cont);
+    lv_obj_t * slider = lv_slider_create(row);
     lv_obj_remove_style_all(slider);
-    lv_obj_set_size(slider, 150, 15);
-    lv_obj_align(slider, LV_ALIGN_CENTER, 40, 0);
+    lv_obj_set_height(slider, 6);
+    lv_obj_set_flex_grow(slider, 1);
     lv_slider_set_range(slider, min, max);
+
+    lv_obj_t * value = lv_label_create(row);
+    lv_obj_set_width(value, 40);
+    lv_obj_set_style_text_font(value, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(value, kDrawerDim, 0);
+    lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_RIGHT, 0);
+
     if (setting != NULL) {
         lv_slider_set_value(slider, *setting, LV_ANIM_OFF);
-        auto * ctx = new DrawerSliderCtx{setting, hw_apply_cb};
+        auto * ctx = new DrawerSliderCtx{setting, hw_apply_cb, value, max};
+        show_percent(ctx, *setting);
         lv_obj_add_event_cb(slider, drawer_slider_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
         lv_obj_add_event_cb(slider, drawer_slider_event_cb, LV_EVENT_RELEASED, ctx);
         lv_obj_add_event_cb(slider, drawer_slider_delete_cb, LV_EVENT_DELETE, ctx);
     } else {
         lv_slider_set_value(slider, 50, LV_ANIM_OFF);
         lv_obj_set_state(slider, LV_STATE_DISABLED, 0);
+        lv_label_set_text(value, "-");
     }
     /* ADV_HITTEST makes the knob the only grabbable part of a slider, and the
-     * knob is ~20 px on a 320 px screen. Grow the hit area, not the graphic. */
+     * knob is ~16 px on a 320 px screen. Grow the hit area, not the graphic. */
     lv_obj_add_flag(slider, LV_OBJ_FLAG_ADV_HITTEST);
     lv_obj_set_ext_click_area(slider, 14);
 
-    lv_obj_add_style(slider, &style_main, LV_PART_MAIN);
+    lv_obj_add_style(slider, &style_track, LV_PART_MAIN);
     lv_obj_add_style(slider, &style_indicator, LV_PART_INDICATOR);
-    lv_obj_add_style(slider, &style_pressed_color,
-                     (lv_style_selector_t)LV_PART_INDICATOR | LV_STATE_PRESSED);
     lv_obj_add_style(slider, &style_knob, LV_PART_KNOB);
-    lv_obj_add_style(slider, &style_pressed_color,
-                     (lv_style_selector_t)LV_PART_KNOB | LV_STATE_PRESSED);
-    lv_obj_add_style(slider, &style_focused,
+    lv_obj_add_style(slider, &style_knob_focused,
                      (lv_style_selector_t)LV_PART_KNOB | LV_STATE_FOCUSED);
-    lv_obj_add_style(slider, &style_pressed_color,
+    lv_obj_add_style(slider, &style_knob_edited,
                      (lv_style_selector_t)LV_PART_KNOB | LV_STATE_EDITED);
+    lv_obj_add_style(slider, &style_knob_edited,
+                     (lv_style_selector_t)LV_PART_KNOB | LV_STATE_PRESSED);
 
     if (s_drawer_group && setting != NULL) lv_group_add_obj(s_drawer_group, slider);
-
-    lv_obj_update_layout(cont);
-    /* +20, not +15: the vertical half of the slider's extended hit area is
-     * clipped by this container, and the grid row is 35 px tall anyway. */
-    unsigned int h = lv_obj_get_height(slider) > lv_obj_get_height(label)
-                     ? (lv_obj_get_height(slider) + 20)
-                     : (lv_obj_get_height(label) + 20);
-    unsigned int w = lv_obj_get_content_width(parent);
-    lv_obj_set_size(cont, w, h);
-    return cont;
+    return row;
 }
 
 static void initSliderStyle() {
@@ -1042,46 +1066,36 @@ static void initSliderStyle() {
     static bool s_ready = false;
     if (s_ready) return;
     s_ready = true;
-    static const lv_style_prop_t props[] = {LV_STYLE_BG_COLOR, 0};
-    static lv_style_transition_dsc_t transition_dsc;
-    lv_style_transition_dsc_init(&transition_dsc, props, lv_anim_path_linear, 300, 0, NULL);
 
-    lv_style_init(&style_main);
-    lv_style_set_bg_opa(&style_main, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_main, lv_color_black());
-    lv_style_set_radius(&style_main, LV_RADIUS_CIRCLE);
-    lv_style_set_pad_ver(&style_main, -2);
+    lv_style_init(&style_track);
+    lv_style_set_bg_opa(&style_track, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_track, lv_color_make(45, 45, 45));
+    lv_style_set_radius(&style_track, LV_RADIUS_CIRCLE);
 
     lv_style_init(&style_indicator);
-    lv_style_set_bg_opa(&style_indicator, LV_OPA_0);
-    lv_style_set_bg_color(&style_indicator, lv_palette_main(LV_PALETTE_CYAN));
+    lv_style_set_bg_opa(&style_indicator, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_indicator, CROSSPAD_THEME_PRIMARY);
     lv_style_set_radius(&style_indicator, LV_RADIUS_CIRCLE);
-    lv_style_set_transition(&style_indicator, &transition_dsc);
 
     lv_style_init(&style_knob);
     lv_style_set_bg_opa(&style_knob, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_knob, lv_palette_main(LV_PALETTE_CYAN));
-    lv_style_set_border_color(&style_knob, lv_palette_darken(LV_PALETTE_CYAN, 3));
-    lv_style_set_border_width(&style_knob, 2);
+    lv_style_set_bg_color(&style_knob, lv_color_white());
     lv_style_set_radius(&style_knob, LV_RADIUS_CIRCLE);
-    lv_style_set_pad_all(&style_knob, 6);
-    lv_style_set_transition(&style_knob, &transition_dsc);
+    lv_style_set_pad_all(&style_knob, 5);
 
-    lv_style_init(&style_pressed_color);
-    lv_style_set_bg_color(&style_pressed_color, lv_palette_darken(LV_PALETTE_CYAN, 2));
-    lv_style_set_bg_opa(&style_indicator, LV_OPA_100);
+    lv_style_init(&style_knob_focused);
+    lv_style_set_outline_color(&style_knob_focused, lv_color_white());
+    lv_style_set_outline_width(&style_knob_focused, 2);
+    lv_style_set_outline_pad(&style_knob_focused, 2);
 
-    lv_style_init(&style_focused);
-    lv_style_set_border_color(&style_focused, lv_color_white());
-    lv_style_set_border_width(&style_focused, 3);
+    lv_style_init(&style_knob_edited);
+    lv_style_set_bg_color(&style_knob_edited, CROSSPAD_THEME_PRIMARY);
 }
 
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
-    lv_obj_set_layout(cont, LV_LAYOUT_GRID);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(cont, 0, 0);
     lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    static int32_t column_dsc[] = {70, 190, 35, LV_GRID_TEMPLATE_LAST};
-    static int32_t row_dsc[]    = {35, 35, 35, 40, LV_GRID_TEMPLATE_LAST};
-    lv_obj_set_grid_dsc_array(cont, column_dsc, row_dsc);
 
     initSliderStyle();
 
@@ -1109,47 +1123,50 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
-    lv_obj_t * slider1 = lv_create_my_slider(cont, "SPK", 0, 100,
-                                              &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
-    lv_obj_t * slider2 = lv_create_my_slider(cont, "PAD Brightness", 0, 255,
-                                              &(settings->RGBbrightness), rgb_apply);
-    lv_obj_t * slider3 = lv_create_my_slider(cont, "SCR Brightness", 5, 100,
-                                              &(settings->LCDbrightness), lcd_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Speaker", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
+
+    /* Memory, small and dim, and the way back up. */
     lv_obj_t * footer = lv_obj_create(cont);
+    lv_obj_remove_style_all(footer);
+    lv_obj_set_size(footer, LV_PCT(100), 30);
+    lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(footer, 14, 0);
+    lv_obj_remove_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(footer, LV_OBJ_FLAG_OVERFLOW_VISIBLE);   // the close button's ring
 
-    lv_obj_set_grid_cell(slider1, LV_GRID_ALIGN_CENTER, 0, 3, LV_GRID_ALIGN_CENTER, 0, 1);
-    lv_obj_set_grid_cell(slider2, LV_GRID_ALIGN_CENTER, 0, 3, LV_GRID_ALIGN_CENTER, 1, 1);
-    lv_obj_set_grid_cell(slider3, LV_GRID_ALIGN_CENTER, 0, 3, LV_GRID_ALIGN_CENTER, 2, 1);
-    lv_obj_set_grid_cell(footer,  LV_GRID_ALIGN_CENTER, 1, 1, LV_GRID_ALIGN_CENTER, 3, 1);
-
-    // RAM usage labels
-    lv_obj_add_style(footer, &styleStatusBar, 0);
-    lv_obj_set_style_bg_opa(footer, LV_OPA_0, 0);
     lv_obj_t * ram = lv_label_create(footer);
     lv_obj_t * psRam = lv_label_create(footer);
-    lv_label_bind_text(ram, &s_ramUsage, "Stack: %d%%");
-    lv_label_bind_text(psRam, &s_psRamUsage, "PSRAM: %d%%");
-    lv_obj_set_content_height(footer, 32);
-    lv_obj_set_content_width(footer, 220);
-    lv_obj_align(ram, LV_ALIGN_CENTER, -45, 6);
-    lv_obj_align(psRam, LV_ALIGN_CENTER, 57, 6);
+    for (lv_obj_t * l : {ram, psRam}) {
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_color(l, kDrawerDim, 0);
+    }
+    lv_label_bind_text(ram, &s_ramUsage, "RAM %d%%");
+    lv_label_bind_text(psRam, &s_psRamUsage, "PSRAM %d%%");
+    lv_obj_set_flex_grow(psRam, 1);
 
     t_ramUpdate = lv_timer_create(check_ram_timer_cb, 1000, NULL);
 
-    // Close button
-    closeButton = lv_button_create(cont);
-    lv_obj_add_style(closeButton, &styleStatusBar, 0);
+    closeButton = lv_button_create(footer);
+    lv_obj_remove_style_all(closeButton);
+    lv_obj_set_size(closeButton, 44, 24);
+    lv_obj_set_style_radius(closeButton, 8, 0);
+    lv_obj_set_style_bg_color(closeButton, lv_color_make(45, 45, 45), 0);
+    lv_obj_set_style_bg_opa(closeButton, LV_OPA_COVER, 0);
     lv_obj_t * img_close = lv_image_create(closeButton);
     lv_image_set_src(img_close, asset_drawer_up);
+    lv_obj_set_style_image_recolor(img_close, CROSSPAD_THEME_PRIMARY, 0);
+    lv_obj_set_style_image_recolor_opa(img_close, LV_OPA_COVER, 0);
     lv_obj_center(img_close);
-    lv_obj_set_size(closeButton, QUICK_BUTTON_SIZE * 1.5, QUICK_BUTTON_SIZE);
-    lv_obj_align(closeButton, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_add_event_cb(closeButton, drawer_close_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(closeButton, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_ext_click_area(closeButton, 30);
+    lv_obj_set_ext_click_area(closeButton, 20);
     lv_obj_set_style_outline_color(closeButton, lv_color_white(), LV_STATE_FOCUSED);
     lv_obj_set_style_outline_width(closeButton, 2, LV_STATE_FOCUSED);
-    lv_obj_set_grid_cell(closeButton, LV_GRID_ALIGN_END, 2, 1, LV_GRID_ALIGN_END, 3, 1);
+    lv_obj_set_style_outline_pad(closeButton, 2, LV_STATE_FOCUSED);
 
     if (s_drawer_group) {
         lv_group_add_obj(s_drawer_group, closeButton);
