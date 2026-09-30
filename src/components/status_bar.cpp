@@ -52,6 +52,7 @@ static lv_group_t * s_drawer_saved_group = NULL; // group to hand back when it c
 
 // status icons
 static lv_obj_t * status_logo;
+static lv_obj_t * status_title;   // a screen's status line in the logo's place
 static lv_obj_t * status_battery;
 static lv_obj_t * status_charging;
 static lv_obj_t * status_wifi;
@@ -136,6 +137,20 @@ static void delete_open_button();
 // ── Loading API ─────────────────────────────────────────────────────────────
 
 namespace crosspad_gui {
+
+lv_obj_t * statusbar_show_title() {
+    if (!status_title || !status_logo) return nullptr;
+    lv_obj_add_flag(status_logo, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(status_title, LV_OBJ_FLAG_HIDDEN);
+    return status_title;
+}
+
+void statusbar_hide_title() {
+    if (!status_title || !status_logo) return;
+    lv_label_set_text(status_title, "");
+    lv_obj_add_flag(status_title, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(status_logo, LV_OBJ_FLAG_HIDDEN);
+}
 
 void statusbar_set_loading(int progress) {
     lv_subject_set_int(&s_loading, progress);
@@ -794,6 +809,19 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_add_style(status_logo, &styleStatusBar, 0);
     lv_obj_center(status_logo);
     lv_obj_add_flag(status_logo, LV_OBJ_FLAG_IGNORE_LAYOUT);
+
+    /* Made with the bar, hidden, so it is always this bar's: one kept across
+     * a rebuild would point at a label already gone. One line of fixed
+     * height -- "..." only cuts a label that cannot grow. */
+    status_title = lv_label_create(cont);
+    lv_obj_set_size(status_title, 200, lv_font_get_line_height(&lv_font_montserrat_10));
+    lv_obj_set_style_text_font(status_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(status_title, lv_color_black(), 0);
+    lv_obj_set_style_text_align(status_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(status_title, LV_LABEL_LONG_DOT);
+    lv_label_set_text(status_title, "");
+    lv_obj_center(status_title);
+    lv_obj_add_flag(status_title, (lv_obj_flag_t)(LV_OBJ_FLAG_IGNORE_LAYOUT | LV_OBJ_FLAG_HIDDEN));
 
     // Battery
     status_battery = lv_img_create(cont);

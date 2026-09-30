@@ -79,6 +79,16 @@ void statusbar_set_icon_visible(const char * id, bool visible);
 // Remove all app icons. Intended for app teardown / return to launcher.
 void statusbar_clear_all_icons();
 
+// ── Title ───────────────────────────────────────────────────────────────────
+
+// Text centred in the bar in place of the CrossPad logo, for a screen whose
+// status line would otherwise take a row of its own (Arrange). Returns the
+// bar's label to set the text on -- the bar owns it and it goes with the bar
+// -- or nullptr when there is no bar. statusbar_hide_title() brings the logo
+// back. Must be called from LVGL task context.
+lv_obj_t * statusbar_show_title();
+void statusbar_hide_title();
+
 // ── Performance Stats ────────────────────────────────────────────────────────
 
 // Set performance stats display flags (bitfield).
