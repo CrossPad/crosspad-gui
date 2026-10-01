@@ -166,13 +166,17 @@ static void SetFolderTitle(const std::string & path) {
     lv_subject_copy_string(&Folder, cropped.c_str());
 }
 
-// One level up. Above the start folder there is still /crosspad, which the
-// in-list "Go back..." entry keeps reaching; the power gesture stops at the
-// start folder and closes the explorer instead (see explorerBack_cb).
+// One level up, as far as the card's own root: "Go back..." used to stop at
+// /crosspad, which put every sample anyone wanted to use inside that one
+// folder. Samples live wherever they were dropped off a computer, so the whole
+// card is reachable now -- the same ground the Recorder's browser covers. The
+// start folder is still where the explorer opens, and the power gesture still
+// closes it there rather than climbing (see explorerBack_cb); "/" is its own
+// parent, so there is no climbing past it either.
 static void GoUpOneLevel() {
     size_t pos = currentFolder.path.find_last_of('/');
     std::string newPath = (pos != std::string::npos) ? currentFolder.path.substr(0, pos) : "";
-    currentFolder.path = newPath.empty() ? "/crosspad" : newPath;
+    currentFolder.path = newPath.empty() ? "/" : newPath;
     pos = currentFolder.path.find_last_of('/');
     currentFolder.name = (pos != std::string::npos) ? currentFolder.path.substr(pos + 1) : currentFolder.path;
     currentFilePinned = false;   // new listing, old pick is gone
@@ -204,9 +208,9 @@ static bool explorerBack_cb(void *) {
         return true;
     }
     /* Climb only while the listing is *below* the folder the explorer was
-     * opened on. The in-list "Go back..." can walk above it, all the way to
-     * /crosspad where it clamps — and a rule of "not the start folder, so go
-     * up" would then climb forever and never close the explorer. */
+     * opened on. The in-list "Go back..." can walk above it, all the way to the
+     * card's root — and a rule of "not the start folder, so go up" would then
+     * climb forever and never close the explorer. */
     const bool below = currentFolder.path.size() > s_rootPath.size() &&
                        currentFolder.path.compare(0, s_rootPath.size(), s_rootPath) == 0;
     if (below) {
@@ -243,7 +247,17 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
 
     // PCT(100) ties to the parent's post-layout box rather than a stale
     // content_height; SCROLLABLE off so children cannot push past the bounds.
+    //
+    // FLOATING is what makes the two lines after it mean anything. Without it a
+    // parent that lays its children out -- the Sampler's app container is a flex
+    // column -- appends this under the ones already there and ignores the
+    // set_pos: measured on the board, the lists began at y=156 and Close and
+    // Load landed at y=297 on a 240 px screen, which is the missing bottom.
+    // Floating takes the container out of the parent's layout, so "cover the
+    // parent" is what it does, in a laid-out parent or a bare one. The
+    // Recorder's own browser overlay has had this from the start.
     lv_obj_t * cont = lv_obj_create(parent);
+    lv_obj_add_flag(cont, LV_OBJ_FLAG_FLOATING);
     lv_obj_set_size(cont, LV_PCT(100), LV_PCT(100));
     lv_obj_set_pos(cont, 0, 0);
     lv_obj_add_style(cont, &styleAppContainer, 0);
@@ -294,11 +308,14 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     static char buf2[MAX_PATH_LEN];
     lv_subject_init_string(&Folder, buf1, buf2, MAX_PATH_LEN, startPath.c_str());
 
-    // Explicit Y positions for 320x240. The list stops above the footer, so a
-    // long listing cannot displace the buttons.
+    /* The list stops above the footer, so a long listing cannot displace the
+     * buttons -- but how much room that leaves is measured, not assumed. A
+     * fixed 144 px of list was right for one parent only, the app container,
+     * and every other caller lost its footer off the bottom of whatever it
+     * handed over: the Sampler's pad editor opens this over the app container
+     * and the pitched editor over its own, and the two did not agree. */
     const int titleY    = 4;
     const int listY     = 28;
-    const int listH     = 144;       
     const int listLR    = 8;
     const int contW     = lv_obj_get_content_width(cont);
     const int btnW      = 90;
@@ -320,6 +337,21 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
     lv_obj_set_pos(title, titleX, titleY);
 
+    closeButton = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t *) {
+        CloseExplorer();
+    });
+    lv_obj_set_width(closeButton, btnW);
+
+    loadButton = lv_CreateFooterButton(cont, "Load", btnXOff, cb, user_data);
+    lv_obj_set_width(loadButton, btnW);
+
+    /* Where the footer actually landed, bottom-aligned in whatever height this
+     * parent gave: the lists get what is left above it. */
+    lv_obj_update_layout(cont);
+    const int footerTop = lv_obj_get_y(closeButton);
+    int listH = footerTop - listY - 6;
+    if (listH < 48) listH = 48;     // a parent too short to be comfortable still lists
+
     /* Two panes of equal width. The lists are not in the encoder group -- their
      * rows are, and only those of the pane being walked (see FocusPane). */
     const int paneGap = 6;
@@ -339,14 +371,6 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     };
     itemList = makePane(listX);
     fileList = makePane(listX + paneW + paneGap);
-
-    closeButton = lv_CreateFooterButton(cont, "Close", -btnXOff, [](lv_event_t *) {
-        CloseExplorer();
-    });
-    lv_obj_set_width(closeButton, btnW);
-
-    loadButton = lv_CreateFooterButton(cont, "Load", btnXOff, cb, user_data);
-    lv_obj_set_width(loadButton, btnW);
 
     s_backToken = crosspad_gui::ui_back_push(explorerBack_cb, nullptr);
 
