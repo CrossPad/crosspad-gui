@@ -32,6 +32,11 @@ static lv_obj_t *  s_content  = nullptr;
 static lv_group_t* s_group    = nullptr;
 static int         s_current_category = -1;
 
+/* A category a caller asked Settings to open on (the Firmware app's shortcut to
+ * "Updates"); "" for the list. */
+static constexpr size_t kOpenNextMax = 32;
+static char s_open_next[kOpenNextMax];
+
 // Extra platform-registered categories
 static constexpr int MAX_EXTRA_CATEGORIES = 8;
 static SettingsCategory s_extra_cats[MAX_EXTRA_CATEGORIES];
@@ -1907,6 +1912,20 @@ void settings_ui_create(lv_obj_t * content_area, lv_group_t * group) {
     s_current_category = -1;
 
     show_categories();
+    if (!s_open_next[0]) return;
+    const int total = total_category_count();
+    for (int i = 0; i < total; i++) {
+        const SettingsCategory * cat = get_category(i);
+        if (cat && strcmp(cat->name, s_open_next) == 0) {
+            show_detail(i);
+            break;
+        }
+    }
+    s_open_next[0] = '\0';
+}
+
+void settings_ui_open_next(const char * category) {
+    snprintf(s_open_next, sizeof(s_open_next), "%s", category ? category : "");
 }
 
 bool settings_ui_back() {
