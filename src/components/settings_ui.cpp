@@ -1841,6 +1841,7 @@ static void factory_reset_cb(lv_event_t * e) {
     statusbar_set_drawer_enabled(s->quickSettingsEnabled);
     statusbar_set_perf_level(s->perfStatsFlags);
     reinitStyles();
+    plat.onFactoryReset();
 
     ui_toast_show("Settings reset to defaults", 2000, UI_TOAST_WARNING);
     show_detail(s_current_category);

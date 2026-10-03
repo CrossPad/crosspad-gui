@@ -139,6 +139,12 @@ public:
     // row is not drawn.
     virtual bool usbTransferSupported() { return false; }
     virtual void requestUsbTransfer() {}
+
+    // What a Settings factory reset must clear beyond the settings: state the
+    // platform keeps on its own, such as saved WiFi networks (and a radio the
+    // reset has just switched off). Called on the LVGL thread after the reset
+    // settings are saved, so it must not block or write flash there itself.
+    virtual void onFactoryReset() {}
 };
 
 // Set the platform implementation (call once at startup)

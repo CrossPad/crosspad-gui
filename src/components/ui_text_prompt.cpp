@@ -119,6 +119,10 @@ void overlay_delete_cb(lv_event_t* e) {
     // before finish() ran: the caller still gets its one "cancelled", and the
     // object is already going, so no second delete.
     if (!ctx->finished) release(ctx, false);
+    // A typed password does not outlive the prompt in freed memory. Volatile,
+    // so the stores are not dropped as dead before the delete.
+    volatile char* text = ctx->text;
+    for (size_t i = 0; i < sizeof(ctx->text); ++i) text[i] = '\0';
     delete ctx;
 }
 
