@@ -66,6 +66,8 @@ const MenuLook kLooks[] = {
     {"Sequencer",    "Sequencer",    "ic_sequencer.png"},
     {"Song",         "Song",         "ic_song.png"},
     {"Arrange",      "Arrange",      "ic_arrange.png"},
+    {"Clips",        "Clips",        nullptr},
+    {"Looper",       "Looper",       nullptr},
     {"Recorder",     "Recorder",     "ic_recorder.png"},
     {"Slicer",       "Slicer",       "ic_slicer.png"},
     {"PitchPlay",    "Pitch Play",   "ic_pitchplay.png"},
