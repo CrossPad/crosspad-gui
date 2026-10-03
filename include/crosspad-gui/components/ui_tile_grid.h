@@ -16,6 +16,13 @@
  *
  * LVGL thread only. The grid owns nothing the callbacks allocate; a caller
  * that hangs state on a tile frees it from the tile's LV_EVENT_DELETE.
+ *
+ * Callbacks may call any function here (refill, tile_of, select, set_sections);
+ * the grid ignores the focus and scroll events they raise, so move the
+ * selection with ui_tile_grid_select, not lv_group_focus_obj. A callback that
+ * selects from `selected` is called again for that selection.
+ * The pool grows with the grid when it is resized (never shrinks); the rows
+ * table is the one allocation that follows the item count, O(items / cols).
  */
 
 #ifdef USE_LVGL

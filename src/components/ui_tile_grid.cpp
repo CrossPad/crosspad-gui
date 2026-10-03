@@ -55,6 +55,24 @@ void set_index(lv_obj_t* tile, uint32_t index) {
     lv_obj_set_user_data(tile, reinterpret_cast<void*>(static_cast<uintptr_t>(index)));
 }
 
+/// The caller's callbacks run with `quiet` set: whatever they call back into
+/// the grid cannot be taken for the user's own scroll or focus.
+void notify_selected(Grid* g, uint32_t index) {
+    if (!g->cfg.selected) return;
+    const bool wasQuiet = g->quiet;
+    g->quiet = true;
+    g->cfg.selected(index, g->cfg.user);
+    g->quiet = wasQuiet;
+}
+
+void notify_window(Grid* g) {
+    if (!g->cfg.window) return;
+    const bool wasQuiet = g->quiet;
+    g->quiet = true;
+    g->cfg.window(g->cfg.user);
+    g->quiet = wasQuiet;
+}
+
 int32_t pitch(const Grid* g) { return g->cfg.tileH + g->cfg.gap; }
 int32_t view_h(const Grid* g) { return lv_obj_get_content_height(g->obj); }
 
@@ -245,8 +263,8 @@ void select_index(Grid* g, uint32_t index, bool focus) {
     if (t && g->group && (focus || is_tile(g, lv_group_get_focused(g->group))) && lv_group_get_focused(g->group) != t)
         lv_group_focus_obj(t);
     g->quiet = wasQuiet;
-    if (g->cfg.selected) g->cfg.selected(index, g->cfg.user);
-    if (g->cfg.window) g->cfg.window(g->cfg.user);
+    notify_selected(g, index);
+    notify_window(g);
 }
 
 void tile_clicked_cb(lv_event_t* e) {
@@ -268,13 +286,13 @@ void tile_focused_cb(lv_event_t* e) {
 void scrolled_cb(lv_event_t* e) {
     Grid* g = grid_of(lv_event_get_target_obj(e));
     if (!g || g->quiet) return;
-    if (update_window(g) && g->cfg.selected) g->cfg.selected(static_cast<uint32_t>(g->sel), g->cfg.user);
+    if (update_window(g)) notify_selected(g, static_cast<uint32_t>(g->sel));
 }
 
 void scroll_end_cb(lv_event_t* e) {
     Grid* g = grid_of(lv_event_get_target_obj(e));
-    if (!g || g->quiet || !g->cfg.window) return;
-    g->cfg.window(g->cfg.user);
+    if (!g || g->quiet) return;
+    notify_window(g);
 }
 
 void deleted_cb(lv_event_t* e) {
@@ -288,36 +306,55 @@ void deleted_cb(lv_event_t* e) {
     lv_free(g);
 }
 
-void ensure_pool(Grid* g) {
-    if (g->slotCount) return;
+lv_obj_t* make_tile(Grid* g) {
+    lv_obj_t* t = lv_obj_create(g->obj);
+    lv_obj_remove_style_all(t);
+    lv_obj_set_size(t, g->tileW, g->cfg.tileH);
+    lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
+    // We scroll for the encoder ourselves (one row, no animation):
+    // LVGL's scroll-on-focus would animate and fight the window.
+    lv_obj_remove_flag(t, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS));
+    set_index(t, kUnused);
+    lv_obj_add_flag(t, LV_OBJ_FLAG_HIDDEN);
+    if (g->cfg.create) g->cfg.create(t, g->cfg.user);
+    lv_obj_add_event_cb(t, tile_clicked_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(t, tile_focused_cb, LV_EVENT_FOCUSED, nullptr);
+    if (g->group) lv_group_add_obj(g->group, t);
+    return t;
+}
+
+/// Fits the pool to the grid's size now: tiles take the current width and rows
+/// are added (never removed) until the viewport and its slack are covered.
+void fit_pool(Grid* g) {
     lv_obj_update_layout(g->obj);
     const int32_t w = lv_obj_get_content_width(g->obj);
-    g->tileW = (w - (g->cfg.cols - 1) * g->cfg.gap) / g->cfg.cols;
+    const int32_t tileW = (w - (g->cfg.cols - 1) * g->cfg.gap) / g->cfg.cols;
+    g->tileW = tileW > 1 ? tileW : 1;
     int32_t rows = (view_h(g) + pitch(g) - 1) / pitch(g) + 2 * kSlackRows;
     if (rows > kMaxSlots) rows = kMaxSlots;
-    g->slotCount = static_cast<uint8_t>(rows);
     const bool wasQuiet = g->quiet;
     g->quiet = true;
+    while (g->slotCount < rows) {
+        Slot& s = g->slots[g->slotCount];
+        s.row = -1;
+        for (uint8_t c = 0; c < g->cfg.cols; ++c) s.tiles[c] = make_tile(g);
+        ++g->slotCount;
+    }
     for (uint8_t s = 0; s < g->slotCount; ++s) {
-        g->slots[s].row = -1;
         for (uint8_t c = 0; c < g->cfg.cols; ++c) {
-            lv_obj_t* t = lv_obj_create(g->obj);
-            lv_obj_remove_style_all(t);
-            lv_obj_set_size(t, g->tileW, g->cfg.tileH);
-            lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
-            // We scroll for the encoder ourselves (one row, no animation):
-            // LVGL's scroll-on-focus would animate and fight the window.
-            lv_obj_remove_flag(t, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS));
-            set_index(t, kUnused);
-            lv_obj_add_flag(t, LV_OBJ_FLAG_HIDDEN);
-            if (g->cfg.create) g->cfg.create(t, g->cfg.user);
-            lv_obj_add_event_cb(t, tile_clicked_cb, LV_EVENT_CLICKED, nullptr);
-            lv_obj_add_event_cb(t, tile_focused_cb, LV_EVENT_FOCUSED, nullptr);
-            if (g->group) lv_group_add_obj(g->group, t);
-            g->slots[s].tiles[c] = t;
+            lv_obj_set_size(g->slots[s].tiles[c], g->tileW, g->cfg.tileH);
+            if (g->slots[s].row >= 0) lv_obj_set_x(g->slots[s].tiles[c], c * (g->tileW + g->cfg.gap));
         }
     }
     g->quiet = wasQuiet;
+}
+
+void size_changed_cb(lv_event_t* e) {
+    Grid* g = grid_of(lv_event_get_target_obj(e));
+    if (!g || !g->slotCount) return;   // before the first set_sections the pool is built at its size
+    fit_pool(g);
+    update_window(g);
+    notify_window(g);
 }
 
 } // namespace
@@ -346,6 +383,7 @@ lv_obj_t* ui_tile_grid_create(lv_obj_t* parent, lv_group_t* group, const TileGri
     lv_obj_center(g->empty);
     lv_obj_add_flag(g->empty, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(obj, scrolled_cb, LV_EVENT_SCROLL, nullptr);
+    lv_obj_add_event_cb(obj, size_changed_cb, LV_EVENT_SIZE_CHANGED, nullptr);
     lv_obj_add_event_cb(obj, scroll_end_cb, LV_EVENT_SCROLL_END, nullptr);
     lv_obj_add_event_cb(obj, deleted_cb, LV_EVENT_DELETE, nullptr);
     return obj;
@@ -354,7 +392,7 @@ lv_obj_t* ui_tile_grid_create(lv_obj_t* parent, lv_group_t* group, const TileGri
 void ui_tile_grid_set_sections(lv_obj_t* obj, const TileGridSection* sections, uint8_t n) {
     Grid* g = grid_of(obj);
     if (!g) return;
-    ensure_pool(g);
+    fit_pool(g);
     const bool wasQuiet = g->quiet;
     g->quiet = true;
     for (uint8_t s = 0; s < g->slotCount; ++s) free_slot(g, g->slots[s]);
@@ -412,7 +450,7 @@ void ui_tile_grid_set_sections(lv_obj_t* obj, const TileGridSection* sections, u
     lv_obj_readjust_scroll(obj, LV_ANIM_OFF);
     update_window(g);
     g->quiet = wasQuiet;
-    if (g->cfg.window) g->cfg.window(g->cfg.user);
+    notify_window(g);
 }
 
 void ui_tile_grid_refill(lv_obj_t* obj, uint32_t index) {

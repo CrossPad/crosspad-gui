@@ -24,9 +24,11 @@ struct Fixture {
     int fills = 0;
     int unused = 0;
     std::vector<uint32_t> clicks;
+    std::vector<uint32_t> selections;
+    int refillsFromSelected = 0;
     int windows = 0;
 
-    explicit Fixture(uint32_t count) {
+    explicit Fixture(uint32_t count, int32_t gridH = kGridH) {
         lvgl_headless_init();
         screen = lv_obj_create(nullptr);
         lv_screen_load(screen);
@@ -44,11 +46,17 @@ struct Fixture {
         };
         cfg.unused = [](lv_obj_t*, void* user) { static_cast<Fixture*>(user)->unused++; };
         cfg.clicked = [](uint32_t index, void* user) { static_cast<Fixture*>(user)->clicks.push_back(index); };
+        cfg.selected = [](uint32_t index, void* user) {
+            auto* f = static_cast<Fixture*>(user);
+            f->selections.push_back(index);
+            ui_tile_grid_refill(f->grid, index);   // calling back into the grid from a callback is allowed
+            f->refillsFromSelected++;
+        };
         cfg.window = [](void* user) { static_cast<Fixture*>(user)->windows++; };
         cfg.user = this;
         cfg.emptyText = "Nothing here";
         grid = ui_tile_grid_create(screen, group, cfg);
-        lv_obj_set_size(grid, kGridW, kGridH);
+        lv_obj_set_size(grid, kGridW, gridH);
         const TileGridSection one{nullptr, count};
         ui_tile_grid_set_sections(grid, &one, 1);
     }
@@ -89,6 +97,9 @@ TEST_CASE("encoder focus walks logical indices and rows are recycled", "[tile_gr
         CHECK(ui_tile_grid_built_rows(f.grid) <= ui_tile_grid_pool_rows(f.grid));
     }
     CHECK(f.unused > 0);                             // recycled rows let go of their items
+    REQUIRE(f.selections.size() == 40);              // once per step, in order
+    for (uint32_t i = 0; i < 40; ++i) CHECK(f.selections[i] == i);
+    CHECK(f.refillsFromSelected == 40);
     for (int32_t i = 38; i >= 0; --i) {
         lv_group_focus_prev(f.group);
         REQUIRE(ui_tile_grid_selected(f.grid) == i);
@@ -132,13 +143,16 @@ TEST_CASE("a fling moves the window and the selection follows into view", "[tile
     REQUIRE(t);
     CHECK(f.shown(t) == static_cast<uint32_t>(sel));
     CHECK(lv_group_get_focused(f.group) == t);
+    CHECK(f.selections.back() == static_cast<uint32_t>(sel));
     CHECK(ui_tile_grid_built_rows(f.grid) <= ui_tile_grid_pool_rows(f.grid));
 }
 
 TEST_CASE("sections start on a new row under their title", "[tile_grid]") {
     Fixture f(0);
     const TileGridSection two[] = {{"Official", 2}, {"Community", 5}};
+    const int unusedBefore = f.unused;
     ui_tile_grid_set_sections(f.grid, two, 2);
+    CHECK(f.unused == unusedBefore);                 // an empty grid had nothing to let go of
     CHECK(ui_tile_grid_count(f.grid) == 7);
     lv_obj_t* a = ui_tile_grid_tile_of(f.grid, 0);
     lv_obj_t* b = ui_tile_grid_tile_of(f.grid, 2);   // first community tile
@@ -148,6 +162,12 @@ TEST_CASE("sections start on a new row under their title", "[tile_grid]") {
     CHECK(lv_obj_get_y(a) == kHeaderH);
     CHECK(lv_obj_get_y(b) == kHeaderH + kPitch + kHeaderH);
     CHECK(lv_obj_get_x(b) == 0);
+    std::vector<uint32_t> seen;
+    ui_tile_grid_for_each(f.grid, [](lv_obj_t*, uint32_t index, void* user) {
+        static_cast<std::vector<uint32_t>*>(user)->push_back(index);
+    }, &seen);
+    CHECK(seen.size() == 7);
+    for (uint32_t i = 0; i < seen.size(); ++i) CHECK(seen[i] == i);
 }
 
 TEST_CASE("an empty grid has no tiles and no selection", "[tile_grid]") {
@@ -164,7 +184,9 @@ TEST_CASE("new sections clamp the selection; refills touch built tiles only", "[
     Fixture f(40);
     ui_tile_grid_select(f.grid, 39, true);
     const TileGridSection fewer{nullptr, 31};
+    f.unused = 0;
     ui_tile_grid_set_sections(f.grid, &fewer, 1);
+    CHECK(f.unused > 0);                             // every built tile let go of its item
     CHECK(ui_tile_grid_selected(f.grid) == 30);
     f.fills = 0;
     ui_tile_grid_refill(f.grid, 30);
@@ -180,10 +202,32 @@ TEST_CASE("new sections clamp the selection; refills touch built tiles only", "[
 TEST_CASE("a click reports the logical index of the tile", "[tile_grid]") {
     Fixture f(40);
     ui_tile_grid_select(f.grid, 25, true);
+    f.windows = 0;
     lv_obj_send_event(ui_tile_grid_tile_of(f.grid, 25), LV_EVENT_CLICKED, nullptr);
     REQUIRE(f.clicks.size() == 1);
     CHECK(f.clicks[0] == 25);
-    CHECK(f.windows > 0);
+    CHECK(f.windows == 0);                           // a click moves nothing
+}
+
+TEST_CASE("a grid sized after its items grows its pool and tiles", "[tile_grid]") {
+    Fixture f(40, 40);                               // too short for a row: a minimum pool
+    const uint32_t small = ui_tile_grid_pool_rows(f.grid);
+    lv_obj_set_size(f.grid, 200, kGridH);
+    lv_obj_update_layout(f.grid);
+    CHECK(ui_tile_grid_pool_rows(f.grid) > small);
+    CHECK(ui_tile_grid_pool_rows(f.grid) == 5);
+    struct Probe { int32_t tileW; int visited; } probe{(200 - 2 * kGap) / 3, 0};
+    ui_tile_grid_for_each(f.grid, [](lv_obj_t* tile, uint32_t, void* user) {
+        auto* p = static_cast<Probe*>(user);
+        CHECK(lv_obj_get_width(tile) == p->tileW);
+        CHECK_FALSE(lv_obj_has_flag(tile, LV_OBJ_FLAG_HIDDEN));
+        ++p->visited;
+    }, &probe);
+    CHECK(probe.visited == 12);                            // 4 rows built: two in view, the sliver, one below
+    CHECK(f.shown(ui_tile_grid_tile_of(f.grid, 11)) == 11);
+    ui_tile_grid_select(f.grid, 20, true);
+    CHECK(f.shown(ui_tile_grid_tile_of(f.grid, 20)) == 20);
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 20));
 }
 
 TEST_CASE("snapshots of the grid as the device draws it", "[tile_grid]") {
@@ -204,8 +248,9 @@ TEST_CASE("snapshots of the grid as the device draws it", "[tile_grid]") {
     lv_style_set_bg_opa(&tileStyle, LV_OPA_COVER);
     lv_style_set_radius(&tileStyle, 6);
     lv_style_init(&focusStyle);
-    lv_style_set_border_color(&focusStyle, lv_color_hex(0x00D4FF));
-    lv_style_set_border_width(&focusStyle, 2);
+    lv_style_set_outline_color(&focusStyle, lv_color_hex(0x00D4FF));
+    lv_style_set_outline_width(&focusStyle, 2);
+    lv_style_set_outline_pad(&focusStyle, 0);
     lv_style_init(&headerStyle);
     lv_style_set_text_color(&headerStyle, lv_color_hex(0x9AA0AA));
 
