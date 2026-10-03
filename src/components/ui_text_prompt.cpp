@@ -21,6 +21,7 @@ constexpr int32_t kKeyGap = 3;
 constexpr int32_t kKeyRadius = 4;
 constexpr int32_t kFocusRingW = 2;
 constexpr size_t kTextMax = 128;   // longest entry this widget holds (a WiFi password is 64)
+constexpr uint32_t kFirstKey = 0;   // top-left on every map: where the encoder starts
 const lv_color_t kKey        = lv_color_make(45, 45, 45);
 const lv_color_t kKeyMode    = lv_color_make(28, 28, 28);   // shift, symbols, OK, close
 const lv_color_t kKeyPressed = lv_color_make(90, 90, 90);
@@ -30,6 +31,7 @@ struct PromptCtx {
     void* user;
     lv_obj_t* overlay;
     lv_obj_t* field;
+    lv_obj_t* eye;
     lv_obj_t* eye_label;
     lv_group_t* group;
     lv_group_t* prev_group;
@@ -72,6 +74,27 @@ void eye_clicked_cb(lv_event_t* e) {
     const bool hidden = lv_textarea_get_password_mode(ctx->field);
     lv_textarea_set_password_mode(ctx->field, !hidden);
     lv_label_set_text(ctx->eye_label, hidden ? LV_SYMBOL_EYE_CLOSE : LV_SYMBOL_EYE_OPEN);
+}
+
+// Focusing the keyboard -- on open, or turning back from the eye -- goes
+// straight into its keys, so the encoder never needs a press just to start
+// typing. The highlighted key is left alone: a touch focuses on its own.
+void group_focus_cb(lv_group_t* g) {
+    lv_obj_t* focused = lv_group_get_focused(g);
+    if (focused && lv_obj_check_type(focused, &lv_keyboard_class)) lv_group_set_editing(g, true);
+}
+
+// Turning left from the first key leaves the keys for the eye; turning back
+// lands on that same first key. Without it the encoder reached the eye only by
+// a long press, and the keyboard types the highlighted key on the press
+// itself. Runs before the keyboard's own key handling, which would otherwise
+// wrap round to the last key.
+void keyboard_key_cb(lv_event_t* e) {
+    auto* ctx = static_cast<PromptCtx*>(lv_event_get_user_data(e));
+    lv_obj_t* kb = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    if (lv_event_get_key(e) != LV_KEY_LEFT || lv_buttonmatrix_get_selected_button(kb) != kFirstKey) return;
+    lv_group_focus_obj(ctx->eye);   // leaves editing mode too
+    lv_event_stop_processing(e);
 }
 
 void overlay_delete_cb(lv_event_t* e) {
@@ -151,6 +174,7 @@ void ui_text_prompt(const char* title, const char* initial, uint32_t flags,
     lv_obj_t* eye = nullptr;
     if (password) {
         eye = lv_button_create(row);
+        ctx->eye = eye;
         lv_obj_set_size(eye, kEyeW, kFieldH);
         lv_obj_add_event_cb(eye, eye_clicked_cb, LV_EVENT_CLICKED, ctx);
         ctx->eye_label = lv_label_create(eye);
@@ -171,10 +195,17 @@ void ui_text_prompt(const char* title, const char* initial, uint32_t flags,
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
     ctx->prev_group = nav ? lv_indev_get_group(nav) : nullptr;
     ctx->group = lv_group_create();
-    if (eye) lv_group_add_obj(ctx->group, eye);
+    if (eye) {
+        lv_group_add_obj(ctx->group, eye);
+        lv_obj_add_event_cb(kb, keyboard_key_cb,
+                            static_cast<lv_event_code_t>(LV_EVENT_KEY | LV_EVENT_PREPROCESS), ctx);
+    }
     lv_group_add_obj(ctx->group, kb);
-    lv_group_focus_obj(kb);
-    lv_group_set_editing(ctx->group, true);   // rotation walks the keys, a press presses
+    lv_group_set_focus_cb(ctx->group, group_focus_cb);
+    lv_group_focus_obj(kb);   // editing: rotation walks the keys, a press presses
+    // Highlighted from the start, so an encoder user sees where they are; the
+    // keyboard picks one on focus only when the encoder already owns the group.
+    lv_buttonmatrix_set_selected_button(kb, kFirstKey);
     if (nav) lv_indev_set_group(nav, ctx->group);
     ctx->back_token = ui_back_push(back_cb, ctx);
 }
