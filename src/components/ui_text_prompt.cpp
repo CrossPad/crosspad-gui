@@ -37,6 +37,7 @@ struct PromptCtx {
     lv_group_t* prev_group;
     uint32_t back_token;
     bool finished;
+    bool required;   // UI_TEXT_REQUIRED: OK on an empty field is not an answer
     char text[kTextMax + 1];
 };
 
@@ -61,7 +62,18 @@ void finish(PromptCtx* ctx, bool ok) {
 
 void keyboard_event_cb(lv_event_t* e) {
     auto* ctx = static_cast<PromptCtx*>(lv_event_get_user_data(e));
-    finish(ctx, lv_event_get_code(e) == LV_EVENT_READY);
+    const bool ok = lv_event_get_code(e) == LV_EVENT_READY;
+    if (ok && ctx->required && lv_textarea_get_text(ctx->field)[0] == '\0') return;   // stays open
+    finish(ctx, ok);
+}
+
+// After a key acts, a matrix left with no selection (a lost press clears it)
+// would show the encoder user no highlight, and LVGL's next left turn from
+// none lands on the last key, OK: put the selection back on the first key.
+void keyboard_value_cb(lv_event_t* e) {
+    lv_obj_t* kb = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    if (lv_buttonmatrix_get_selected_button(kb) == LV_BUTTONMATRIX_BUTTON_NONE)
+        lv_buttonmatrix_set_selected_button(kb, kFirstKey);
 }
 
 bool back_cb(void* user) {
@@ -92,7 +104,11 @@ void group_focus_cb(lv_group_t* g) {
 void keyboard_key_cb(lv_event_t* e) {
     auto* ctx = static_cast<PromptCtx*>(lv_event_get_user_data(e));
     lv_obj_t* kb = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    if (lv_event_get_key(e) != LV_KEY_LEFT || lv_buttonmatrix_get_selected_button(kb) != kFirstKey) return;
+    // No selection counts as the first key: LVGL's left turn from none goes to
+    // the last key, OK, one press from submitting.
+    const uint32_t sel = lv_buttonmatrix_get_selected_button(kb);
+    if (lv_event_get_key(e) != LV_KEY_LEFT || (sel != kFirstKey && sel != LV_BUTTONMATRIX_BUTTON_NONE)) return;
+    lv_buttonmatrix_set_selected_button(kb, kFirstKey);   // where turning back lands
     lv_group_focus_obj(ctx->eye);   // leaves editing mode too
     lv_event_stop_processing(e);
 }
@@ -134,6 +150,7 @@ void ui_text_prompt(const char* title, const char* initial, uint32_t flags,
     ctx->done = done;
     ctx->user = user;
     const bool password = (flags & UI_TEXT_PASSWORD) != 0;
+    ctx->required = (flags & UI_TEXT_REQUIRED) != 0;
 
     lv_obj_t* overlay = lv_obj_create(getOverlayParent());
     lv_obj_remove_style_all(overlay);
@@ -191,6 +208,7 @@ void ui_text_prompt(const char* title, const char* initial, uint32_t flags,
     // lv_keyboard's own handler sends READY for its OK key, CANCEL for its close key.
     lv_obj_add_event_cb(kb, keyboard_event_cb, LV_EVENT_READY, ctx);
     lv_obj_add_event_cb(kb, keyboard_event_cb, LV_EVENT_CANCEL, ctx);
+    lv_obj_add_event_cb(kb, keyboard_value_cb, LV_EVENT_VALUE_CHANGED, nullptr);   // after the keyboard's own
 
     lv_indev_t* nav = getGuiPlatform().getNavigationEncoder();
     ctx->prev_group = nav ? lv_indev_get_group(nav) : nullptr;

@@ -8,6 +8,7 @@ namespace crosspad_gui {
 
 enum TextPromptFlags : uint32_t {
     UI_TEXT_PASSWORD = 1u << 0,   // dots, with a show/hide toggle
+    UI_TEXT_REQUIRED = 1u << 1,   // OK on an empty field keeps the prompt open
 };
 
 // ok=false (cancel or power-button back) passes "". `text` is valid only
