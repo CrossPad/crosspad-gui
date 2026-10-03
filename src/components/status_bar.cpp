@@ -1137,9 +1137,28 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         lv_indev_set_group(nav, s_drawer_group);
     }
 
+    /* Three things that go to three places, and used to be one slider: the
+     * speaker amp, the headphone jack and the line outs. They share two
+     * codecs -- speaker on codec 0's first output pair, headphones on codec
+     * 1's, the line outs on the second pair of each -- and the only volume
+     * call there was wrote every pair of a codec, so moving one moved its
+     * neighbour. */
     auto spk_apply = [](lv_event_t * e) {
         (void)e;
         crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+    };
+    auto hp_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+    };
+    auto line_apply = [](lv_event_t * e) {
+        (void)e;
+        /* One slider, both line outs: its value is kept in codec 0's second
+         * pair and mirrored into codec 1's, so whichever the settings screen
+         * reads shows the same number. */
+        const uint8_t v = settings->masterFX.outVolumeCodec[0][1];
+        settings->masterFX.outVolumeCodec[1][1] = v;
+        crosspad_gui::getGuiPlatform().setLineOutVolume(v);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
@@ -1153,6 +1172,10 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
     lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Speaker", 0, 100,
                         &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Headphones", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[1][0]), hp_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Line out", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[0][1]), line_apply);
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
     lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
 

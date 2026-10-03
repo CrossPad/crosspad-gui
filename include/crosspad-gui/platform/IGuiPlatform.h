@@ -87,6 +87,12 @@ public:
     // Apply headphone codec output volume (0..100 codec range; same caveat).
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 
+    /// The line outs, which on a dual-codec board are the second output pair
+    /// of each codec. Separate from the speaker and the headphones: on this
+    /// hardware all three hang off the same two codecs and used to move
+    /// together, because the only volume call there was wrote every pair.
+    virtual void setLineOutVolume(uint8_t /*volume*/) {}
+
     // USB device profile. Boards that can re-enumerate between a data profile
     // (CDC+MIDI) and a USB Audio profile (UAC2) override these; the settings UI
     // hides the row where usbAudioSupported() is false.
