@@ -38,8 +38,9 @@ struct PromptCtx {
     char text[kTextMax + 1];
 };
 
-void finish(PromptCtx* ctx, bool ok) {
-    if (ctx->finished) return;   // READY and a back can both arrive in one frame
+// Everything a prompt owes its caller, once: shared by finish() and by an
+// overlay deleted from outside (overlay_delete_cb).
+void release(PromptCtx* ctx, bool ok) {
     ctx->finished = true;
     ui_back_remove(ctx->back_token);
     // Copied before the overlay goes: the field dies with it.
@@ -48,6 +49,11 @@ void finish(PromptCtx* ctx, bool ok) {
     if (nav) lv_indev_restore_group(nav, ctx->prev_group);
     lv_group_delete_deferred(ctx->group);
     ctx->done(ok, ctx->text, ctx->user);
+}
+
+void finish(PromptCtx* ctx, bool ok) {
+    if (ctx->finished) return;   // READY and a back can both arrive in one frame
+    release(ctx, ok);
     lv_obj_delete_async(ctx->overlay);   // ctx is freed by the overlay's LV_EVENT_DELETE
 }
 
@@ -69,7 +75,12 @@ void eye_clicked_cb(lv_event_t* e) {
 }
 
 void overlay_delete_cb(lv_event_t* e) {
-    delete static_cast<PromptCtx*>(lv_event_get_user_data(e));
+    auto* ctx = static_cast<PromptCtx*>(lv_event_get_user_data(e));
+    // Deleted from outside (an lv_obj_clean of the parent, a screen rebuild)
+    // before finish() ran: the caller still gets its one "cancelled", and the
+    // object is already going, so no second delete.
+    if (!ctx->finished) release(ctx, false);
+    delete ctx;
 }
 
 // The theme's key look animates every press into a full-object redraw; plain
