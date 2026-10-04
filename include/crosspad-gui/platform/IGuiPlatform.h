@@ -80,18 +80,13 @@ public:
     // without backlight control.
     virtual void setLcdBrightness(uint8_t /*pct*/) {}
 
-    // Apply speaker codec output volume (0..100 codec range; callers may pass
-    // 0..127 — implementation should clamp).
+    /// Output 1's volume (0..100 codec range; callers may pass 0..127 --
+    /// implementation should clamp). On a dual-codec board that is the whole
+    /// of codec 0: the two outputs are two codecs, not two pairs of one.
     virtual void setSpeakerVolume(uint8_t /*volume*/) {}
 
-    // Apply headphone codec output volume (0..100 codec range; same caveat).
+    /// Output 2's volume -- the whole of codec 1, same caveat.
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
-
-    /// The line outs, which on a dual-codec board are the second output pair
-    /// of each codec. Separate from the speaker and the headphones: on this
-    /// hardware all three hang off the same two codecs and used to move
-    /// together, because the only volume call there was wrote every pair.
-    virtual void setLineOutVolume(uint8_t /*volume*/) {}
 
     // USB device profile. Boards that can re-enumerate between a data profile
     // (CDC+MIDI) and a USB Audio profile (UAC2) override these; the settings UI

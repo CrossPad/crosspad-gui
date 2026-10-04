@@ -8,6 +8,7 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
 #include "crosspad/pad/PadLedController.hpp"
+#include "crosspad/stm32/reg_map.h"
 #include "crosspad/platform/IClock.hpp"
 
 #if LV_USE_PERF_MONITOR && LV_VERSION_CHECK(9,4,0)
@@ -1088,6 +1089,81 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, cons
     return row;
 }
 
+/* The speaker amp's gate, as a drawer row.
+ *
+ * The speakers have no volume of their own -- they ride output 1 -- so what
+ * belongs here is the STM's amp enable, the same field Settings -> Audio
+ * writes. ON only *permits* Stm32Manager's SpeakerAmpGate to raise
+ * REG_CTL_AUDIO_EN while the bus carries signal; OFF drops the amp at once,
+ * because waiting for the 100 ms maintenance poll is audible. */
+struct DrawerSwitchCtx { bool * setting; };
+
+static void drawer_switch_event_cb(lv_event_t * e)
+{
+    auto * ctx = static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
+    auto * sw = static_cast<lv_obj_t *>(lv_event_get_target(e));
+    if (!ctx || !ctx->setting || !settings) return;
+
+    const bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    *ctx->setting = on;
+    settings->stm.audioEn = on ? 1 : 0;
+    if (on) {
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+    } else {
+        crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_AUDIO_EN, 0);
+    }
+}
+
+static void drawer_switch_delete_cb(lv_event_t * e)
+{
+    delete static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
+}
+
+static lv_obj_t * lv_create_my_switch(lv_obj_t * parent, const char * icon, const char * txt,
+                                      bool * setting)
+{
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+    lv_obj_t * glyph = lv_label_create(row);
+    lv_obj_set_width(glyph, 20);
+    lv_obj_set_style_text_font(glyph, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(glyph, CROSSPAD_THEME_PRIMARY, 0);
+    lv_label_set_text(glyph, icon);
+
+    lv_obj_t * label = lv_label_create(row);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_label_set_text(label, txt);
+
+    lv_obj_t * spacer = lv_obj_create(row);
+    lv_obj_remove_style_all(spacer);
+    lv_obj_set_height(spacer, 1);
+    lv_obj_set_flex_grow(spacer, 1);
+    lv_obj_remove_flag(spacer, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * sw = lv_switch_create(row);
+    lv_obj_set_size(sw, 40, 20);
+    if (setting != NULL) {
+        if (*setting) lv_obj_add_state(sw, LV_STATE_CHECKED);
+        auto * ctx = new DrawerSwitchCtx{setting};
+        lv_obj_add_event_cb(sw, drawer_switch_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+        lv_obj_add_event_cb(sw, drawer_switch_delete_cb, LV_EVENT_DELETE, ctx);
+        if (s_drawer_group) lv_group_add_obj(s_drawer_group, sw);
+    } else {
+        lv_obj_set_state(sw, LV_STATE_DISABLED, 0);
+    }
+    lv_obj_set_ext_click_area(sw, 10);
+    return row;
+}
+
 static void initSliderStyle() {
     // Once: the drawer overlay is rebuilt on every open, and lv_style_init()
     // on an initialised style orphans its property array.
@@ -1137,23 +1213,21 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         lv_indev_set_group(nav, s_drawer_group);
     }
 
-    /* Three things that go to three places, and used to be one slider: the
-     * speaker amp, the headphone jack and the line outs. They share two
-     * codecs -- speaker on codec 0's first output pair, headphones on codec
-     * 1's, the line outs on the second pair of each -- and the only volume
-     * call there was wrote every pair of a codec, so moving one moved its
-     * neighbour. */
-    auto spk_apply = [](lv_event_t * e) {
+    /* Two outputs, because the board has two codecs: output 1 is the whole of
+     * codec 0, output 2 the whole of codec 1. The first index of
+     * outVolumeCodec is the codec -- the same convention audio_control.cpp
+     * and audio_route_control.cpp already use.
+     *
+     * The speakers are not a third volume: their level rides output 1 and
+     * their own control is the amp gate on the STM (REG_CTL_AUDIO_EN), so the
+     * row below them is a switch, not a slider. */
+    auto out1_apply = [](lv_event_t * e) {
         (void)e;
         crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
     };
-    auto hp_apply = [](lv_event_t * e) {
+    auto out2_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[0][1]);
-    };
-    auto line_apply = [](lv_event_t * e) {
-        (void)e;
-        crosspad_gui::getGuiPlatform().setLineOutVolume(settings->masterFX.outVolumeCodec[1][0]);
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
@@ -1165,12 +1239,12 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
-    lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Speaker", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
-    lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Headphones", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][1]), hp_apply);
-    lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Line out", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Out 1", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[0][0]), out1_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[1][0]), out2_apply);
+    lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
+                        &(settings->masterFX.speakersEnabled));
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
     lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
 
