@@ -156,9 +156,13 @@ void markdown_render(lv_obj_t* parent, const std::string& markdown)
     }
 }
 
+namespace {
+
 struct FileCloser {
     void operator()(FILE* f) const { std::fclose(f); }
 };
+
+} // namespace
 
 void markdown_render_file(lv_obj_t* parent, const std::string& filepath)
 {
