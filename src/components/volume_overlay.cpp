@@ -43,8 +43,9 @@ static void slider_cb(lv_event_t * e) {
     lv_obj_t * slider = (lv_obj_t *)lv_event_get_target(e);
     uint8_t val = (uint8_t)lv_slider_get_value(slider);
 
-    // Persist into settings. The first index is the codec: output 1 is the
-    // whole of codec 0, output 2 the whole of codec 1.
+    // Persist into settings. The first index is the codec, and the jacks are
+    // numbered the other way round: Out 2 (phones, and the speakers beside
+    // them) is codec 0, Out 1 (line out) is codec 1.
     if (settings) {
         if (s_mode == 1) {
             settings->masterFX.outVolumeCodec[0][0] = val;
@@ -72,12 +73,12 @@ static void show(int mode) {
     if (s_overlay) {
         s_mode = mode;
         if (mode == 1) {
-            lv_label_set_text(s_label, LV_SYMBOL_VOLUME_MAX " Speakers");
+            lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Out 2");
             uint8_t v = settings->masterFX.outVolumeCodec[0][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         } else {
-            lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
+            lv_label_set_text(s_label, LV_SYMBOL_UPLOAD " Out 1");
             uint8_t v = settings->masterFX.outVolumeCodec[1][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
@@ -118,12 +119,12 @@ static void show(int mode) {
     lv_obj_add_event_cb(s_slider, slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     if (mode == 1) {
-        lv_label_set_text(s_label, LV_SYMBOL_VOLUME_MAX " Speakers");
+        lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Out 2");
         uint8_t v = settings->masterFX.outVolumeCodec[0][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     } else {
-        lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
+        lv_label_set_text(s_label, LV_SYMBOL_UPLOAD " Out 1");
         uint8_t v = settings->masterFX.outVolumeCodec[1][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);

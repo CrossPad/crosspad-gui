@@ -80,12 +80,22 @@ public:
     // without backlight control.
     virtual void setLcdBrightness(uint8_t /*pct*/) {}
 
-    /// Output 1's volume (0..100 codec range; callers may pass 0..127 --
-    /// implementation should clamp). On a dual-codec board that is the whole
-    /// of codec 0: the two outputs are two codecs, not two pairs of one.
+    /* The two output volumes (0..100 codec range; callers may pass 0..127 --
+     * implementation should clamp). An output is a whole codec, not an output
+     * pair of one, and the names below are older than the wiring they ended
+     * up describing -- on CrossPad hardware:
+     *
+     *   setSpeakerVolume()   -> codec 0 -> the jack marked **Out 2**, the
+     *                           phones, and the internal speakers beside
+     *                           them: one level for both, which is why the
+     *                           speakers' own control is a gate, not a fader.
+     *   setHeadphoneVolume() -> codec 1 -> the jack marked **Out 1**, the
+     *                           line out.
+     *
+     * Read the names as "output A" and "output B" and the mapping from the
+     * platform (IdfGuiPlatform). Renaming them is a MAJOR bump and a change
+     * in crosspad-pc too, so it waits for a release that can carry one. */
     virtual void setSpeakerVolume(uint8_t /*volume*/) {}
-
-    /// Output 2's volume -- the whole of codec 1, same caveat.
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 
     // USB device profile. Boards that can re-enumerate between a data profile

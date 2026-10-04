@@ -1213,21 +1213,24 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         lv_indev_set_group(nav, s_drawer_group);
     }
 
-    /* Two outputs, because the board has two codecs: output 1 is the whole of
-     * codec 0, output 2 the whole of codec 1. The first index of
-     * outVolumeCodec is the codec -- the same convention audio_control.cpp
-     * and audio_route_control.cpp already use.
+    /* Two outputs, because the board has two codecs -- and the jacks are
+     * numbered the other way round from the codecs:
+     *   Out 1, the line out, is codec 1  -> outVolumeCodec[1][0]
+     *   Out 2, the phones,   is codec 0  -> outVolumeCodec[0][0]
+     * The first index is the codec, the convention audio_control.cpp and
+     * audio_route_control.cpp already use; only the labels are the jacks'.
      *
-     * The speakers are not a third volume: their level rides output 1 and
-     * their own control is the amp gate on the STM (REG_CTL_AUDIO_EN), so the
-     * row below them is a switch, not a slider. */
-    auto out1_apply = [](lv_event_t * e) {
-        (void)e;
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
-    };
-    auto out2_apply = [](lv_event_t * e) {
+     * The speakers are not a third volume. They hang off codec 0 beside the
+     * phones jack -- which is why moving one moved the other -- so their
+     * level is Out 2's, and what is theirs alone is the amp gate on the STM
+     * (REG_CTL_AUDIO_EN). Hence a switch below them, not a slider. */
+    auto line_apply = [](lv_event_t * e) {
         (void)e;
         crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+    };
+    auto phones_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
@@ -1239,10 +1242,10 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
-    lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Out 1", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][0]), out1_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Out 1", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
     lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[1][0]), out2_apply);
+                        &(settings->masterFX.outVolumeCodec[0][0]), phones_apply);
     lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
                         &(settings->masterFX.speakersEnabled));
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
