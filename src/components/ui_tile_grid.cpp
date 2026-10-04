@@ -43,6 +43,9 @@ struct Grid {
     int32_t tileW;
     /// Inside our own scroll/focus/hide calls: the events they raise are not the user's.
     bool quiet;
+    /// The tile the focus just left (its DEFOCUSED), read by the next tile's FOCUSED:
+    /// LVGL sends the two back to back, so it tells a step inside the grid from an entry.
+    lv_obj_t* leftTile;
 };
 
 Grid* grid_of(lv_obj_t* obj) { return obj ? static_cast<Grid*>(lv_obj_get_user_data(obj)) : nullptr; }
@@ -103,6 +106,37 @@ bool is_tile(const Grid* g, const lv_obj_t* obj) {
         for (uint8_t c = 0; c < g->cfg.cols; ++c)
             if (g->slots[s].tiles[c] == obj) return true;
     return false;
+}
+
+bool focusable(lv_obj_t* obj) {
+    if (lv_obj_has_state(obj, LV_STATE_DISABLED)) return false;
+    for (lv_obj_t* p = obj; p; p = lv_obj_get_parent(p))
+        if (lv_obj_has_flag(p, LV_OBJ_FLAG_HIDDEN)) return false;
+    return true;
+}
+
+/// Where one step of the group's walk goes from `from`, by LVGL's rules
+/// (hidden and disabled objects skipped, wrap as the group has it).
+lv_obj_t* group_step(lv_group_t* group, lv_obj_t* from, bool forward) {
+    const uint32_t n = lv_group_get_obj_count(group);
+    uint32_t at = n;
+    for (uint32_t i = 0; i < n && at == n; ++i)
+        if (lv_group_get_obj_by_index(group, i) == from) at = i;
+    if (at == n) return nullptr;
+    const bool wrap = lv_group_get_wrap(group);
+    uint32_t i = at;
+    for (uint32_t k = 1; k < n; ++k) {
+        if (forward) {
+            if (i + 1 == n && !wrap) return nullptr;
+            i = i + 1 == n ? 0 : i + 1;
+        } else {
+            if (i == 0 && !wrap) return nullptr;
+            i = i == 0 ? n - 1 : i - 1;
+        }
+        lv_obj_t* obj = lv_group_get_obj_by_index(group, i);
+        if (focusable(obj)) return obj;
+    }
+    return nullptr;
 }
 
 void visible_rows(const Grid* g, int32_t& first, int32_t& last) {
@@ -275,12 +309,44 @@ void tile_clicked_cb(lv_event_t* e) {
     g->cfg.clicked(index, g->cfg.user);
 }
 
+/// A step from tile to tile moves the selection by one. The walk that comes
+/// onto the grid from outside lands on whichever pooled tile is first (or last)
+/// in the group, which may show any item: forward it goes to item 0, backward
+/// to the last item, so the walk covers every item in order. A touch or a
+/// focus set elsewhere keeps the tile it chose.
 void tile_focused_cb(lv_event_t* e) {
     lv_obj_t* tile = lv_event_get_target_obj(e);
     Grid* g = grid_of(lv_obj_get_parent(tile));
     const uint32_t index = index_of(tile);
     if (!g || g->quiet || index == kUnused) return;
-    select_index(g, index, false);
+    lv_obj_t* from = g->leftTile;
+    g->leftTile = nullptr;
+    lv_indev_t* indev = lv_indev_active();
+    if (!g->group || (indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER)) {
+        select_index(g, index, false);
+        return;
+    }
+    const uint32_t fromIndex = from ? index_of(from) : kUnused;
+    bool forward = false;
+    bool backward = false;
+    if (fromIndex != kUnused && tile == group_step(g->group, from, true)) {
+        forward = index != fromIndex + 1;      // the walk wrapped round onto the grid
+    } else if (fromIndex != kUnused && tile == group_step(g->group, from, false)) {
+        backward = index + 1 != fromIndex;
+    } else {
+        forward = !is_tile(g, group_step(g->group, tile, false));
+        backward = !forward && !is_tile(g, group_step(g->group, tile, true));
+    }
+    if (forward) select_index(g, 0, true);
+    else if (backward) select_index(g, g->count - 1, true);
+    else select_index(g, index, false);
+}
+
+void tile_defocused_cb(lv_event_t* e) {
+    lv_obj_t* tile = lv_event_get_target_obj(e);
+    Grid* g = grid_of(lv_obj_get_parent(tile));
+    if (!g || g->quiet) return;
+    g->leftTile = tile;
 }
 
 void scrolled_cb(lv_event_t* e) {
@@ -319,6 +385,7 @@ lv_obj_t* make_tile(Grid* g) {
     if (g->cfg.create) g->cfg.create(t, g->cfg.user);
     lv_obj_add_event_cb(t, tile_clicked_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(t, tile_focused_cb, LV_EVENT_FOCUSED, nullptr);
+    lv_obj_add_event_cb(t, tile_defocused_cb, LV_EVENT_DEFOCUSED, nullptr);
     if (g->group) lv_group_add_obj(g->group, t);
     return t;
 }

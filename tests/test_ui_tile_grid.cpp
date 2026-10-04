@@ -219,6 +219,71 @@ TEST_CASE("new sections keep the encoder on the grid", "[tile_grid]") {
     CHECK(lv_group_get_focused(f.group) == other);
 }
 
+TEST_CASE("the walk onto the grid from outside starts at item 0 and covers every item", "[tile_grid]") {
+    // The bench sequence: tiles, then a tab bar, wrap on; a deep walk leaves
+    // the window at the bottom, so the first pooled tile in the group shows item 27.
+    Fixture f(34);
+    lv_group_set_wrap(f.group, true);
+    lv_obj_t* tabs[3];
+    for (lv_obj_t*& t : tabs) {
+        t = lv_button_create(f.screen);
+        lv_group_add_obj(f.group, t);
+    }
+    ui_tile_grid_select(f.grid, 0, true);
+    for (int i = 0; i < 33; ++i) lv_group_focus_next(f.group);
+    REQUIRE(ui_tile_grid_selected(f.grid) == 33);
+    CHECK_FALSE(ui_tile_grid_tile_of(f.grid, 0));    // row 0 has no objects now
+    for (lv_obj_t* t : tabs) {
+        lv_group_focus_next(f.group);
+        REQUIRE(lv_group_get_focused(f.group) == t);
+    }
+    lv_group_focus_next(f.group);                    // forward from the tab bar onto the grid
+    CHECK(ui_tile_grid_selected(f.grid) == 0);
+    REQUIRE(ui_tile_grid_tile_of(f.grid, 0));
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 0));
+    CHECK(ui_tile_grid_index_visible(f.grid, 0));
+    std::vector<uint32_t> visited{0};
+    for (int i = 0; i < 64; ++i) {
+        lv_group_focus_next(f.group);
+        if (lv_group_get_focused(f.group) == tabs[0]) break;
+        visited.push_back(static_cast<uint32_t>(ui_tile_grid_selected(f.grid)));
+        REQUIRE(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, visited.back()));
+    }
+    REQUIRE(visited.size() == 34);                   // every item once, in order, then the tab bar
+    for (uint32_t i = 0; i < visited.size(); ++i) CHECK(visited[i] == i);
+
+    lv_group_focus_prev(f.group);                    // back from the tab bar: the last item
+    CHECK(ui_tile_grid_selected(f.grid) == 33);
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 33));
+    for (int32_t i = 32; i >= 0; --i) {
+        lv_group_focus_prev(f.group);
+        REQUIRE(ui_tile_grid_selected(f.grid) == i);
+        REQUIRE(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, static_cast<uint32_t>(i)));
+    }
+    lv_group_focus_prev(f.group);                    // past item 0 the walk leaves the grid
+    CHECK(lv_group_get_focused(f.group) == tabs[2]);
+
+    ui_tile_grid_select(f.grid, 20, true);           // a deep selection, then out and back in
+    lv_group_focus_obj(tabs[1]);
+    lv_group_focus_prev(f.group);
+    lv_group_focus_next(f.group);
+    lv_group_focus_next(f.group);
+    CHECK(lv_group_get_focused(f.group) == tabs[2]);
+    lv_group_focus_next(f.group);
+    CHECK(ui_tile_grid_selected(f.grid) == 0);
+}
+
+TEST_CASE("a touch on a tile keeps that tile", "[tile_grid]") {
+    Fixture f(40);
+    lv_obj_t* other = lv_button_create(f.screen);
+    lv_group_add_obj(f.group, other);
+    ui_tile_grid_select(f.grid, 20, true);
+    lv_group_focus_obj(other);
+    lv_group_focus_obj(ui_tile_grid_tile_of(f.grid, 22));   // focus set from elsewhere, mid-grid
+    CHECK(ui_tile_grid_selected(f.grid) == 22);
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 22));
+}
+
 TEST_CASE("a click reports the logical index of the tile", "[tile_grid]") {
     Fixture f(40);
     ui_tile_grid_select(f.grid, 25, true);

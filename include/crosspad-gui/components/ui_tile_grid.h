@@ -10,7 +10,9 @@
  * left the window to rows that entered it and calls `fill` for their new
  * items. Encoder focus moves over logical indices: the pool's tiles sit in the
  * caller's group in item order (rearranged after every recycle), and a tile
- * that gets focus scrolls its row into view. Touch scrolls freely; the
+ * that gets focus scrolls its row into view. The group's walk coming onto the
+ * grid from another object lands on item 0 going forward and on the last item
+ * going back, whatever rows are built. Touch scrolls freely; the
  * selection follows into view. Tiles have no style of their own: `create`
  * builds their content once, `fill` shows an item in it.
  *
