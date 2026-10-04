@@ -1149,16 +1149,11 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
     auto hp_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[0][1]);
     };
     auto line_apply = [](lv_event_t * e) {
         (void)e;
-        /* One slider, both line outs: its value is kept in codec 0's second
-         * pair and mirrored into codec 1's, so whichever the settings screen
-         * reads shows the same number. */
-        const uint8_t v = settings->masterFX.outVolumeCodec[0][1];
-        settings->masterFX.outVolumeCodec[1][1] = v;
-        crosspad_gui::getGuiPlatform().setLineOutVolume(v);
+        crosspad_gui::getGuiPlatform().setLineOutVolume(settings->masterFX.outVolumeCodec[1][0]);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
@@ -1173,9 +1168,9 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Speaker", 0, 100,
                         &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
     lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Headphones", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[1][0]), hp_apply);
+                        &(settings->masterFX.outVolumeCodec[0][1]), hp_apply);
     lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Line out", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][1]), line_apply);
+                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
     lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
 

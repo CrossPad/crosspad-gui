@@ -45,10 +45,11 @@ static void slider_cb(lv_event_t * e) {
 
     // Persist into settings (per-codec, OUT1 = speakers/headphones).
     if (settings) {
+        /* [0][0] the speaker, [0][1] the headphones (AudioSettings). */
         if (s_mode == 1) {
             settings->masterFX.outVolumeCodec[0][0] = val;
         } else if (s_mode == 2) {
-            settings->masterFX.outVolumeCodec[1][0] = val;
+            settings->masterFX.outVolumeCodec[0][1] = val;
         }
     }
 
@@ -77,7 +78,7 @@ static void show(int mode) {
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         } else {
             lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-            uint8_t v = settings->masterFX.outVolumeCodec[1][0];
+            uint8_t v = settings->masterFX.outVolumeCodec[0][1];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         }
@@ -123,7 +124,7 @@ static void show(int mode) {
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     } else {
         lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Headphones");
-        uint8_t v = settings->masterFX.outVolumeCodec[1][0];
+        uint8_t v = settings->masterFX.outVolumeCodec[0][1];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     }
