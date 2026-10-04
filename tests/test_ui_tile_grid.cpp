@@ -8,6 +8,16 @@
 
 using namespace crosspad_gui;
 
+// lv_malloc and lv_malloc_zeroed both end in lv_malloc_core, wrapped at link
+// time. While g_failFrom is set, a request of at least that many bytes fails:
+// LVGL's own objects stay far below the sizes the tests pick.
+static size_t g_failFrom = 0;
+extern "C" void* __real_lv_malloc_core(size_t size);
+extern "C" void* __wrap_lv_malloc_core(size_t size) {
+    if (g_failFrom && size >= g_failFrom) return nullptr;
+    return __real_lv_malloc_core(size);
+}
+
 namespace {
 
 constexpr int32_t kGridW = 300;
@@ -217,6 +227,45 @@ TEST_CASE("new sections keep the encoder on the grid", "[tile_grid]") {
     lv_group_focus_obj(other);                      // focus elsewhere stays elsewhere
     ui_tile_grid_set_sections(f.grid, &same, 1);
     CHECK(lv_group_get_focused(f.group) == other);
+}
+
+TEST_CASE("a row table that cannot be allocated leaves an empty grid", "[tile_grid]") {
+    Fixture f(40);
+    ui_tile_grid_select(f.grid, 5, true);
+    constexpr uint32_t kHuge = 30000;            // 10000 rows: far past any LVGL object
+    g_failFrom = 64 * 1024;
+    const TileGridSection huge{nullptr, kHuge};
+    ui_tile_grid_set_sections(f.grid, &huge, 1);
+    g_failFrom = 0;
+    CHECK(ui_tile_grid_count(f.grid) == 0);
+    CHECK(ui_tile_grid_selected(f.grid) == -1);
+    CHECK(ui_tile_grid_tile_of(f.grid, 0) == nullptr);
+    ui_tile_grid_refill_all(f.grid);
+    ui_tile_grid_select(f.grid, 3, true);
+    CHECK(ui_tile_grid_selected(f.grid) == -1);
+    const TileGridSection again{nullptr, 40};    // the next set_sections that fits works again
+    ui_tile_grid_set_sections(f.grid, &again, 1);
+    CHECK(ui_tile_grid_count(f.grid) == 40);
+    CHECK(ui_tile_grid_tile_of(f.grid, 0) != nullptr);
+}
+
+TEST_CASE("a grid whose state cannot be allocated is a bare container", "[tile_grid]") {
+    lvgl_headless_init();
+    lv_obj_t* screen = lv_obj_create(nullptr);
+    TileGridConfig cfg;
+    g_failFrom = 512;                            // the grid's state (pool of 8 rows), not an lv_obj_t
+    lv_obj_t* grid = ui_tile_grid_create(screen, nullptr, cfg);
+    g_failFrom = 0;
+    REQUIRE(grid);
+    CHECK(lv_obj_get_child_count(grid) == 0);
+    const TileGridSection some{nullptr, 10};
+    ui_tile_grid_set_sections(grid, &some, 1);
+    ui_tile_grid_refill_all(grid);
+    ui_tile_grid_select(grid, 2, true);
+    CHECK(ui_tile_grid_count(grid) == 0);
+    CHECK(ui_tile_grid_selected(grid) == -1);
+    CHECK(ui_tile_grid_tile_of(grid, 0) == nullptr);
+    lv_obj_delete(screen);
 }
 
 TEST_CASE("the walk onto the grid from outside starts at item 0 and covers every item", "[tile_grid]") {

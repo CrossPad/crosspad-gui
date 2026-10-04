@@ -432,6 +432,7 @@ lv_obj_t* ui_tile_grid_create(lv_obj_t* parent, lv_group_t* group, const TileGri
     lv_obj_set_scroll_dir(obj, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
     auto* g = static_cast<Grid*>(lv_malloc_zeroed(sizeof(Grid)));
+    if (!g) return obj;   // a bare container: every API tolerates grid_of() == nullptr
     g->cfg = cfg;
     if (g->cfg.cols == 0) g->cfg.cols = 1;
     if (g->cfg.cols > kMaxCols) g->cfg.cols = kMaxCols;
@@ -480,8 +481,9 @@ void ui_tile_grid_set_sections(lv_obj_t* obj, const TileGridSection* sections, u
         count += sections[i].count;
         rowCount += (sections[i].count + g->cfg.cols - 1) / g->cfg.cols;
     }
-    g->count = count;
     if (rowCount) g->rows = static_cast<TileRow*>(lv_malloc(rowCount * sizeof(TileRow)));
+    if (!g->rows) count = n = 0;   // no row table: shown as empty, never written through
+    g->count = count;
     int32_t y = 0;
     uint32_t first = 0;
     uint32_t r = 0;

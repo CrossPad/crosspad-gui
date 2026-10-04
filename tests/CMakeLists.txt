@@ -30,6 +30,8 @@ add_executable(crosspad_gui_tests
 target_include_directories(crosspad_gui_tests PRIVATE ${GUI_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(crosspad_gui_tests PRIVATE USE_LVGL=1)
 target_link_libraries(crosspad_gui_tests PRIVATE lvgl_host Catch2::Catch2WithMain)
+# Tests make LVGL's allocations fail through this wrap (see test_ui_tile_grid.cpp).
+target_link_options(crosspad_gui_tests PRIVATE -Wl,--wrap=lv_malloc_core)
 
 include(CTest)
 include(Catch)
