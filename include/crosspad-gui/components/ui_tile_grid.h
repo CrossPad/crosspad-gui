@@ -64,7 +64,8 @@ using TileVisitor = void (*)(lv_obj_t* tile, uint32_t index, void* user);
 /// The grid is a plain scrollable object: size it like any other.
 lv_obj_t* ui_tile_grid_create(lv_obj_t* parent, lv_group_t* group, const TileGridConfig& cfg);
 
-/// Replaces the items (at most 4 sections). Keeps the selection, clamped.
+/// Replaces the items (at most 4 sections). Keeps the selection, clamped, and
+/// an encoder that was on a tile stays on the grid, on that selection.
 void ui_tile_grid_set_sections(lv_obj_t* grid, const TileGridSection* sections, uint8_t n);
 
 /// Calls `fill` again for `index` if it has a tile now; for every built tile.

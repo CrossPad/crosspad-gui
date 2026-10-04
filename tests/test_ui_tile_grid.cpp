@@ -199,6 +199,26 @@ TEST_CASE("new sections clamp the selection; refills touch built tiles only", "[
     CHECK(f.fills <= static_cast<int>(3 * ui_tile_grid_built_rows(f.grid)));
 }
 
+TEST_CASE("new sections keep the encoder on the grid", "[tile_grid]") {
+    Fixture f(40);
+    lv_obj_t* other = lv_button_create(f.screen);   // something else in the group (a tab bar)
+    lv_group_add_obj(f.group, other);
+    ui_tile_grid_select(f.grid, 5, true);
+    const TileGridSection same{nullptr, 40};
+    ui_tile_grid_set_sections(f.grid, &same, 1);
+    CHECK(ui_tile_grid_selected(f.grid) == 5);
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 5));
+    ui_tile_grid_select(f.grid, 30, true);
+    const TileGridSection fewer{nullptr, 3};
+    ui_tile_grid_set_sections(f.grid, &fewer, 1);
+    CHECK(ui_tile_grid_selected(f.grid) == 2);
+    REQUIRE(ui_tile_grid_tile_of(f.grid, 2));
+    CHECK(lv_group_get_focused(f.group) == ui_tile_grid_tile_of(f.grid, 2));
+    lv_group_focus_obj(other);                      // focus elsewhere stays elsewhere
+    ui_tile_grid_set_sections(f.grid, &same, 1);
+    CHECK(lv_group_get_focused(f.group) == other);
+}
+
 TEST_CASE("a click reports the logical index of the tile", "[tile_grid]") {
     Fixture f(40);
     ui_tile_grid_select(f.grid, 25, true);

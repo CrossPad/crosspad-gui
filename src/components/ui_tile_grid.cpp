@@ -395,6 +395,9 @@ void ui_tile_grid_set_sections(lv_obj_t* obj, const TileGridSection* sections, u
     fit_pool(g);
     const bool wasQuiet = g->quiet;
     g->quiet = true;
+    // Hiding a focused tile hands the focus on, and freeing every row walks it
+    // off the grid: remember whether the encoder was here to put it back.
+    const bool focusOnGrid = g->group && is_tile(g, lv_group_get_focused(g->group));
     for (uint8_t s = 0; s < g->slotCount; ++s) free_slot(g, g->slots[s]);
     for (lv_obj_t*& h : g->headers) {
         if (h) lv_obj_delete(h);
@@ -448,7 +451,15 @@ void ui_tile_grid_set_sections(lv_obj_t* obj, const TileGridSection* sections, u
     }
     lv_obj_update_layout(obj);
     lv_obj_readjust_scroll(obj, LV_ANIM_OFF);
+    if (focusOnGrid && count > 0) {
+        if (g->sel < 0) g->sel = 0;
+        scroll_into_view(g, static_cast<uint32_t>(g->sel));
+    }
     update_window(g);
+    if (focusOnGrid && g->sel >= 0) {
+        lv_obj_t* t = tile_of(g, static_cast<uint32_t>(g->sel));
+        if (t) lv_group_focus_obj(t);
+    }
     g->quiet = wasQuiet;
     notify_window(g);
 }
