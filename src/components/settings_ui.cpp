@@ -1478,9 +1478,10 @@ static const uint8_t kUsbSuspSecs[] = { 0, 15, 30, 60, 120 };   // 0 = never
 static const char* kUsbSuspOpts = "Never\n15s\n30s\n1m\n2m";
 static uint8_t s_usbSuspIdx = 2;   // default 30 s
 
-// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms).
-static constexpr uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000, 4000 };
-static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s\n4s";
+// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms), so
+// a 0.5 s option was shown but never applied — the hold was always 1 s.
+static constexpr uint16_t kLongPressMs[] = { 1000, 1500, 2000, 3000, 4000 };
+static const char* kLongPressOpts = "1s\n1.5s\n2s\n3s\n4s";
 static constexpr uint8_t kLongPressN = sizeof(kLongPressMs) / sizeof(kLongPressMs[0]);
 static constexpr uint16_t kLongPressDefaultMs = 4000;
 static constexpr uint8_t kLongPressDefaultIdx =
@@ -1889,7 +1890,9 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
         }
         settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
         settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
-        s_longPressIdx = idx_for_u16(kLongPressMs, kLongPressN, s->stm.longPressMs, kLongPressDefaultIdx);
+        // A saved 0.5 s behaved as 1 s on the STM; show it as what it was.
+        const uint16_t lpMs = s->stm.longPressMs < 1000 ? 1000 : s->stm.longPressMs;
+        s_longPressIdx = idx_for_u16(kLongPressMs, kLongPressN, lpMs, kLongPressDefaultIdx);
         settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
         // Host-suspend grace before the STM drops to soft-off. Was reachable only
         // over I2C — a device on a sleeping host powered itself down after 30 s
