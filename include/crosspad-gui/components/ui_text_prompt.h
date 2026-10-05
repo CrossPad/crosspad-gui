@@ -1,0 +1,28 @@
+#pragma once
+
+#ifdef USE_LVGL
+#include <cstddef>
+#include <cstdint>
+
+namespace crosspad_gui {
+
+enum TextPromptFlags : uint32_t {
+    UI_TEXT_PASSWORD = 1u << 0,   // dots, with a show/hide toggle
+    UI_TEXT_REQUIRED = 1u << 1,   // OK on an empty field keeps the prompt open
+};
+
+// ok=false (cancel or power-button back) passes "". `text` is valid only
+// during the call. Runs on the LVGL thread, exactly once.
+using TextPromptDone = void (*)(bool ok, const char* text, void* user);
+
+// Full-screen text entry on the overlay parent: title, one-line field,
+// keyboard. Touch types; the encoder walks the keys (the first one highlighted
+// on open) and a press presses; turning left from the first key reaches the
+// password eye, turning on from there goes back to the keys. A power click
+// cancels. The encoder group in place before is put back after.
+void ui_text_prompt(const char* title, const char* initial, uint32_t flags,
+                    size_t max_len, TextPromptDone done, void* user);
+
+} // namespace crosspad_gui
+
+#endif // USE_LVGL

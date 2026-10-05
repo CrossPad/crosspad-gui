@@ -1,9 +1,11 @@
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/ui_wifi_bars.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 
+#include "crosspad/net/WifiTypes.hpp"
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
@@ -436,7 +438,6 @@ void statusbar_set_drawer_enabled(bool enabled) {
 static bool s_lastSd = false;
 static bool s_lastBt = false;
 static bool s_lastBtActive = false;
-static bool s_lastWifi = false;
 enum class ChargeSlot : uint8_t { Unknown, Hidden, Charging, Host, HostUpdate };
 static ChargeSlot s_lastChargeSlot = ChargeSlot::Unknown;
 static uint8_t s_lastBatteryPct = 0;
@@ -463,12 +464,12 @@ static void check_status_timer_cb(lv_timer_t * timer) {
         lv_obj_set_style_image_opa(status_bluetooth, opa, 0);
         lv_obj_set_style_text_opa(status_bluetooth, opa, 0);
     }
-    // WiFi
-    bool wifi = status.wifiConnected;
-    if (wifi != s_lastWifi) {
-        s_lastWifi = wifi;
-        lv_obj_set_hidden(status_wifi, !wifi);
-    }
+    // WiFi: the bars draw what crosspad::wifiBarsLook() says and repaint only
+    // when that changes, so the connecting sweep costs one 15x12 box per step.
+    auto* wifiCfg = crosspad::CrosspadSettings::getInstance();
+    crosspad_gui::ui_wifi_bars_update(status_wifi, wifiCfg && wifiCfg->wireless.enableWiFi,
+                                      (crosspad::WifiLinkState)status.wifiState, status.wifiRssi,
+                                      lv_tick_get());
     // Charging slot: the USB glyph while a host companion reports in (orange
     // when it said newer firmware exists), the bolt when only charging.
     const bool host = status.hostAlive(getClock().getTimeUs());
@@ -838,14 +839,9 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_flex_grow(status_charging, 0);
     lv_obj_set_height(status_charging, LV_SIZE_CONTENT);
 
-    // WiFi
-    status_wifi = lv_img_create(cont);
-    lv_image_set_src(status_wifi, LV_SYMBOL_WIFI);
-    lv_obj_add_flag(status_wifi, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_image_recolor(status_wifi, lv_color_white(), 0);
-    lv_obj_set_style_image_recolor_opa(status_wifi, LV_OPA_100, 0);
+    // WiFi: four bars (hidden while WiFi is not allowed).
+    status_wifi = crosspad_gui::ui_wifi_bars_create(cont);
     lv_obj_set_flex_grow(status_wifi, 0);
-    lv_obj_set_height(status_wifi, LV_SIZE_CONTENT);
 
     // Bluetooth
     status_bluetooth = lv_img_create(cont);
@@ -961,7 +957,6 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
-    s_lastWifi = !status.wifiConnected;
     s_lastChargeSlot = ChargeSlot::Unknown;
     s_lastBatteryPct = 0;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);

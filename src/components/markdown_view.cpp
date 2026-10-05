@@ -6,8 +6,7 @@
 #include "crosspad-gui/components/markdown_view.h"
 
 #include <cstdio>
-#include <fstream>
-#include <sstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,10 +26,17 @@ struct ParsedLine {
 static std::vector<ParsedLine> parseMarkdown(const std::string& markdown)
 {
     std::vector<ParsedLine> lines;
-    std::istringstream stream(markdown);
     std::string line;
 
-    while (std::getline(stream, line)) {
+    /* Lines as std::getline cut them: on '\n', a last line without one still
+     * counts, a trailing '\n' adds no empty line after it. */
+    size_t from = 0;
+    while (from < markdown.size()) {
+        size_t nl = markdown.find('\n', from);
+        if (nl == std::string::npos) nl = markdown.size();
+        line.assign(markdown, from, nl - from);
+        from = nl + 1;
+
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
 
@@ -150,19 +156,35 @@ void markdown_render(lv_obj_t* parent, const std::string& markdown)
     }
 }
 
+namespace {
+
+struct FileCloser {
+    void operator()(FILE* f) const { std::fclose(f); }
+};
+
+} // namespace
+
 void markdown_render_file(lv_obj_t* parent, const std::string& filepath)
 {
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
+    std::unique_ptr<FILE, FileCloser> file(std::fopen(filepath.c_str(), "r"));
+    if (!file) {
         lv_obj_clean(parent);
         lv_obj_t* lbl = lv_label_create(parent);
         lv_label_set_text(lbl, "File not found");
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xFF4444), 0);
         return;
     }
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    markdown_render(parent, ss.str());
+    std::string text;
+    constexpr size_t kChunk = 512;
+    for (;;) {
+        const size_t had = text.size();
+        text.resize(had + kChunk);
+        const size_t n = std::fread(&text[had], 1, kChunk, file.get());
+        text.resize(had + n);
+        if (n < kChunk) break;
+    }
+    file.reset();
+    markdown_render(parent, text);
 }
 
 } // namespace crosspad_gui
