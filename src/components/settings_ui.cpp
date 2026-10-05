@@ -1542,6 +1542,7 @@ static void stm_push_config(crosspad::CrosspadSettings* s) {
     plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,    s->stm.ccPanBase);
     plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
     plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
+    plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
     plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
     plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
     plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);
@@ -1706,6 +1707,7 @@ static void backup_import_pads_cb(lv_event_t *) {
             plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,   s->stm.ccPanBase);
             plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS, s->stm.analogMinMs);
             plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,  s->stm.analogDelta);
+            plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
         }
     }
 }
