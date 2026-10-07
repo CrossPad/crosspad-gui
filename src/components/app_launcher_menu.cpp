@@ -107,13 +107,46 @@ void refresh_header() {
                                         (unsigned)(s_sel + 1), (unsigned)s_rowCount);
 }
 
+/* How far past the edge to scroll when the focus leaves the viewport.
+ *
+ * Scrolling repaints the whole viewport; a focus change that stays inside it
+ * repaints two rows. Measured on the board, one encoder detent on the
+ * launcher list: 64 476 px flushed and **85 ms** of render when it scrolls,
+ * 25 436 px and **25 ms** when it does not. At ~1.3 us a pixel -- what this
+ * display stack costs, and already tuned (the IRAM blend was traded away for
+ * 67.8 kB of internal RAM and was worth 4 %) -- the only term left to cut is
+ * how *often* the viewport is repainted.
+ *
+ * `scroll_to_view` brings the row just inside the edge, so the next step is
+ * past it again and scrolls too: every step is the 85 ms kind. Landing two
+ * rows in means two of every three steps need no scroll at all. */
+constexpr int kScrollAheadRows = 2;
+
 /* Scrolled to at once: LVGL's own scroll-on-focus animates the list, and
  * every frame of that redraws all of it (the Settings list measured 3-4 full
  * screens per encoder step). */
+void scroll_focus_ahead(lv_obj_t* row) {
+    lv_obj_t* list = lv_obj_get_parent(row);
+    if (!list) return;
+    lv_area_t rc, lc;
+    lv_obj_get_coords(row, &rc);
+    lv_obj_get_content_coords(list, &lc);
+    const int32_t rowH  = lv_area_get_height(&rc);
+    const int32_t ahead = rowH * kScrollAheadRows;
+
+    /* Positive dy moves the content down, i.e. scrolls towards the top. */
+    int32_t dy;
+    if (rc.y1 < lc.y1)      dy =  (lc.y1 - rc.y1) + ahead;
+    else if (rc.y2 > lc.y2) dy = -((rc.y2 - lc.y2) + ahead);
+    else return;            /* already in view: two rows repaint, not the list */
+
+    lv_obj_scroll_by_bounded(list, 0, dy, LV_ANIM_OFF);
+}
+
 void row_focused_cb(lv_event_t* e) {
     s_sel = (size_t)(uintptr_t)lv_event_get_user_data(e);
     refresh_header();
-    lv_obj_scroll_to_view(lv_event_get_target_obj(e), LV_ANIM_OFF);
+    scroll_focus_ahead(lv_event_get_target_obj(e));
 }
 
 void row_clicked_cb(lv_event_t* e) {
