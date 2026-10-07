@@ -22,6 +22,24 @@ struct PerfStats {
     uint32_t stm32_mps;   // STM32 messages per second
 };
 
+/* What the sample engine is holding right now, for the status bar.
+ *
+ * Two ceilings, and the smaller one binds: a resident voice is arithmetic, a
+ * streaming one also has to be fed off the card and the card gives out first.
+ * Measured on a v2, 44.1 kHz stereo: sixteen resident voices fit a 1451 us
+ * block at 85 %, ten streaming ones at 78 %, and from twelve streaming the
+ * engine cannot feed them all. The engine fades its oldest streaming voice
+ * rather than letting several starve, so what the meter warns about is a
+ * *tail being cut*, never a hit being lost.
+ *
+ * `limit` is already the one that applies to what is playing, so the bar can
+ * print "active/limit" without knowing any of the above. */
+struct VoiceMeter {
+    uint8_t active    = 0;   // voices sounding
+    uint8_t streaming = 0;   // of those, how many are reading the card
+    uint8_t limit     = 0;   // 0 when no engine holds a kit: nothing to show
+};
+
 // What the USB Audio host records, and where each codec sends its output.
 // Codes match the firmware's audio-route wire format (see the ESP-IDF
 // audio_route_control.h): ADC 0=DIFF 1=LINE1 2=LINE2, DAC 1=LINE1 2=LINE2 3=ALL.
@@ -71,6 +89,11 @@ public:
     // Get performance statistics (FPS, CPU usage, memory, STM32 message rate).
     // Default returns zeros — override on platforms that can provide real data.
     virtual PerfStats getPerfStats() { return {}; }
+
+    /// Voices sounding and the ceiling that applies. Polled by the status
+    /// bar; a platform with no sample engine leaves `limit` at 0 and nothing
+    /// is drawn.
+    virtual VoiceMeter getVoiceMeter() { return {}; }
 
     // Called when the user interacts with the touchscreen.
     // Platform can trigger haptic feedback, reset inactivity timers, etc.

@@ -43,6 +43,7 @@ static bool s_ram_subjects_initialized = false;
 // timers
 static lv_timer_t * t_ramUpdate = NULL;
 static lv_timer_t * t_check_status = NULL;
+static lv_timer_t * t_voice_meter = NULL;
 
 // objects
 static lv_obj_t * openButton = NULL;
@@ -63,6 +64,12 @@ static lv_obj_t * status_bluetooth;
 static lv_obj_t * status_sd;
 static lv_obj_t * status_loading_arc;
 // perf stats: 3 independent vertical columns
+/* Voices sounding over the ceiling that applies -- "7/16", or "9/10" on a
+ * kit whose samples stream. Shown only while something sounds, so a quiet
+ * board has a clean bar, and turned to the warning colour on the step where
+ * the engine starts cutting tails to keep up. */
+static lv_obj_t * s_voice_meter = NULL;
+
 static lv_obj_t * s_perf_fps_col = NULL;   // FPS column
 static lv_obj_t * s_perf_cpu_col = NULL;   // CPU column
 static lv_obj_t * s_perf_mem_col = NULL;   // MEM column
@@ -307,6 +314,32 @@ static void PickCorrectBatteryIcon(uint8_t batteryPercent) {
 }
 
 // ── Perf stats ──────────────────────────────────────────────────────────────
+
+/* ── Voice meter ────────────────────────────────────────────────────────────
+ *
+ * Not a perf stat behind a developer flag: it is the one number that explains
+ * why a tail just stopped. The engine never drops the hit a player made --
+ * when the ceiling is reached it fades its oldest voice instead -- so this
+ * says "something is being let go", which is exactly what a player needs to
+ * see and cannot otherwise know.
+ */
+static void voice_meter_timer_cb(lv_timer_t * timer) {
+    (void)timer;
+    if (!s_voice_meter) return;
+    const crosspad_gui::VoiceMeter m = crosspad_gui::getGuiPlatform().getVoiceMeter();
+    if (m.limit == 0 || m.active == 0) {
+        lv_obj_add_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text_fmt(s_voice_meter, "%u/%u", (unsigned)m.active, (unsigned)m.limit);
+    /* At the ceiling the next hit costs an older voice, which is worth
+     * saying in a colour rather than in a number nobody is reading. */
+    const bool full = m.active >= m.limit;
+    lv_obj_set_style_text_color(s_voice_meter,
+        full ? lv_palette_main(LV_PALETTE_AMBER)
+             : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+}
 
 static void perf_stats_timer_cb(lv_timer_t * timer) {
     if (s_perf_flags == 0) return;
@@ -933,6 +966,19 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
         lv_label_set_text(lbl, "");
         return lbl;
     };
+    /* Before the perf columns, so it keeps its place when they are toggled. */
+    s_voice_meter = lv_label_create(s_app_icon_zone_right);
+    lv_obj_set_style_text_font(s_voice_meter, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(s_voice_meter,
+        lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+    lv_obj_set_style_text_align(s_voice_meter, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_voice_meter, "");
+    lv_obj_add_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+    if (t_voice_meter) { lv_timer_delete(t_voice_meter); t_voice_meter = NULL; }
+    /* 150 ms: fast enough to see a burst, slow enough that the label is not
+     * repainting the bar on every block. */
+    t_voice_meter = lv_timer_create(voice_meter_timer_cb, 150, NULL);
+
     s_perf_fps_col = make_perf_col(s_app_icon_zone_right);
     s_perf_cpu_col = make_perf_col(s_app_icon_zone_right);
     s_perf_mem_col = make_perf_col(s_app_icon_zone_right);
