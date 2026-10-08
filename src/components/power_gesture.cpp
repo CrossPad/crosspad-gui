@@ -2,7 +2,6 @@
 
 #include "crosspad-gui/components/power_gesture.h"
 #include "crosspad-gui/components/status_bar.h"
-#include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/components/transport_bar.h"
 #include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
@@ -54,6 +53,7 @@ const char* backResultName(BackResult r)
         case BackResult::Overlay:  return "overlay";
         case BackResult::Editing:  return "editing";
         case BackResult::Drawer:   return "drawer";
+        case BackResult::Transport: return "transport";
         case BackResult::App:      return "app";
         default:                   return "none";
     }
@@ -127,9 +127,9 @@ bool powerToggleQuickSettings()
 {
     /* The 0.5 s hold used to open the quick-settings drawer. The drawer is
      * off -- its five controls are all in Settings and the Mixer -- so the
-     * gesture reaches the transport instead: it hands the encoder to the top
-     * bar's keys, and a second hold gives it back. The drawer keeps the
-     * gesture if anything ever turns it on again. */
+     * gesture reaches the transport instead: it jumps the encoder's focus to
+     * the top bar's keys, and a second hold jumps it back. The drawer keeps
+     * the gesture if anything ever turns it on again. */
     if (statusbar_toggle_drawer()) return true;
     return transportbar_toggle_focus();
 }
@@ -168,25 +168,27 @@ BackResult powerBack()
         return BackResult::Drawer;
     }
 
-    /* 5. The running app: its own back hook first, then the framework's
-     *    return-to-launcher. */
-    /* getForegroundApp(), not getRunningApp(): an app started from the
-     * pre-launch hook (the sampler's kit-selector gate) owns the screen
-     * without ever becoming runningApp_, and that screen has no other way
-     * out. */
+    /* 4b. The encoder on the top bar's keys: back to the screen it left,
+     *     rather than out of the app behind it -- one step back, not two. */
+    if (transportbar_has_focus()) {
+        transportbar_toggle_focus();
+        return BackResult::Transport;
+    }
+
+    /* 5. The running app: its own back hook first, then close it. With
+     *    nothing left on screen the MODE map comes up as home on its own.
+     *    getForegroundApp(), not getRunningApp(): an app started from the
+     *    pre-launch hook (the sampler's kit-selector gate) owns the screen
+     *    without ever becoming runningApp_, and that screen has no other way
+     *    out. */
     ILvglApp* app = AppOrchestrator::getInstance().getForegroundApp();
     if (app) {
         if (app->handleBack()) return BackResult::App;
-        /* Home is where back stops. There is no screen behind it to go to --
-         * apps are switched with MODE and a pad, not by backing out of one
-         * (UX 2000 section 2) -- and tearing it down only to have the main
-         * screen start it again would blink the display for nothing. */
-        if (mode_overlay_app_is_home(app->getName())) return BackResult::None;
         app->destroyAppAsync();
         return BackResult::App;
     }
 
-    /* 6. Nothing is running -- deliberately nothing. */
+    /* 6. Home: back stops here -- deliberately nothing. */
     return BackResult::None;
 }
 

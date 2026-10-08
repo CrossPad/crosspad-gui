@@ -5,7 +5,7 @@
  *
  * One 30 px row in place of the status bar, the same in every app:
  *
- *   [MODE] [● REC] [DUB] [▶] [■]  BPM 120.0 | PLAY 002.3.08 | VOICES 5/10  [bat]
+ *   [MODE] [● REC] [DUB] [▶] [■] [metronome]  BPM 120.0 | PLAY 002.3.08 | VOICES 5/10  [bat]
  *
  * It paints from crosspad::transportState() / transportCaps() /
  * transportName() and sends its keys to transportPlay() / Stop() / Record() /
@@ -15,15 +15,28 @@
  * a stage.
  *
  * VOICES is IGuiPlatform::getVoiceMeter(): sounding / the ceiling that
- * applies, always on. At the ceiling it inverts, because the next hit steals
- * a voice and that is audible.
+ * applies, always on -- dim with nothing sounding, "--" with no kit. At the
+ * ceiling it inverts, because the next hit steals a voice and that is audible.
  *
- * The tempo and where the song is are not the transport's to know: the app
- * on screen installs an info provider. With none, both read "--".
+ * BPM and the position come from the claim holder (transportBpm(),
+ * transportPosition()); BPM reads "--" when it has no tempo of its own.
+ * Both are also values the encoder turns: BPM is the instrument's one tempo
+ * (transportSetTempo() while it turns, transportCommitTempo() when it is let
+ * go, refused while a host's MIDI clock drives it), the position moves where
+ * PLAY starts a bar a detent while stopped (transportLocate(), a holder with
+ * kTransportCanLocate -- Arrange).
+ *
+ * The metronome key is the click's one switch (transportClick(),
+ * transportSetClick()), lit while it clicks; the Sequencer's M is the same
+ * switch, and no transport command flips it.
  *
  * The status bar is still built, hidden, with its icons, loader and timers
  * running; tapping the battery swaps the two (the status bar's arrow swaps
- * back). The power button's 0.5 s hold hands the encoder to the keys.
+ * back), and its loader runs as a 2 px line along the bar's bottom edge.
+ *
+ * The keys sit in whatever group the encoder is on, appended, so turning one
+ * step past the end of any screen reaches MODE / REC / DUB / PLAY / STOP /
+ * metronome / BPM / position. The power button's 0.5 s hold is the shortcut there.
  *
  * All functions must be called from the LVGL task.
  */
@@ -36,21 +49,9 @@
 
 namespace crosspad_gui {
 
-/// What the app on screen tells the bar on each repaint.
-struct TransportBarInfo {
-    float bpm = 0.0f;            ///< <= 0 reads "--"
-    char  position[16] = "";     ///< "002.3.08", "00:03.4"; empty reads "--"
-};
-
-/// Return false to show "--" in both fields.
-using TransportInfoFn = bool (*)(TransportBarInfo& out);
-
 /// Build the bar as a child of @p parent, visible, and own it from here.
 /// @p status_bar is what a tap on the battery swaps to; nullptr disables it.
 lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar);
-
-/// Install the foreground app's tempo/position source; nullptr on teardown.
-void transportbar_set_info_provider(TransportInfoFn fn);
 
 /// Repaint from the core transport now rather than on the next tick.
 void transportbar_refresh();
@@ -83,20 +84,18 @@ struct TransportBarReadout {
 uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max);
 
 /// Jump the encoder's focus to the transport, and a second call back to
-/// where it came from -- what the power button's 0.5 s hold does, the gesture
-/// that used to open the quick-settings drawer.
+/// where it came from -- what the power button's 0.5 s hold does.
 ///
-/// This is a shortcut, not a way in: the keys sit in whatever group the
-/// encoder is on, appended, so rotating one step past the end of any screen
-/// reaches them anyway. LVGL skips hidden and LV_STATE_DISABLED objects when
-/// it navigates a group, so a hidden bar and a key the claim holder cannot
-/// honour drop out of the rotation on their own. BPM is left out of it: it is
-/// a readout and a press does nothing.
+/// A shortcut, not the way in: the keys are appended to the encoder's group,
+/// so turning past a screen's last field reaches them anyway. LVGL skips
+/// hidden and LV_STATE_DISABLED objects when it navigates, so a hidden bar and
+/// a key the claim holder cannot honour drop out of the rotation on their own.
+/// The jump lands on PLAY when stopped, STOP otherwise.
 ///
 /// False when there is no bar, or it is not the one on screen.
 bool transportbar_toggle_focus();
 
-/// True while the encoder's focus is on one of the bar's keys.
+/// True while the encoder's focus is on one of the bar's keys or values.
 bool transportbar_has_focus();
 
 } // namespace crosspad_gui

@@ -27,11 +27,10 @@ struct MainScreenConfig {
     bool transport_bar = false;
     /// Build the launcher into the app container.
     ///
-    /// UX 2000 has no launcher: the board opens on its home app and apps are
-    /// switched with MODE and a pad. A platform that names a home app
-    /// (mode_overlay_set_home) turns this off, and then pays nothing for a
-    /// grid of icons that home covers the moment it starts -- every one of
-    /// them a decoded image in the PSRAM the app itself has to live in.
+    /// UX 2000 has no launcher: home is the MODE map, and apps are switched
+    /// with MODE and a pad. A platform with the transport bar turns this off,
+    /// and then pays nothing for a grid of icons the map covers anyway --
+    /// every one of them a decoded image in the PSRAM the apps have to live in.
     bool launcher = true;
 };
 

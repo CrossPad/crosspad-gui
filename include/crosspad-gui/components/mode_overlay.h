@@ -11,11 +11,15 @@
  * The transport bar stays live above the map: you can stop, record or start
  * the loop while choosing where to go next.
  *
+ * The map is also home. The board opens on it, and closing the last app on
+ * screen brings it up: with nothing under it, MODE and the power button's
+ * click leave it where it is.
+ *
  * Pad numbering is the Sampler's: pad 1 bottom-left, pad 16 top-right
  * (PadManager index = pad - 1).
  *
- * All functions except mode_overlay_select_pad() must be called from the
- * LVGL task.
+ * All functions except mode_overlay_select_pad() and mode_overlay_is_open()
+ * must be called from the LVGL task.
  */
 #ifdef USE_LVGL
 #include "lvgl.h"
@@ -42,11 +46,11 @@ struct ModeEntry {
     bool (*isOn)();         ///< Optional: a toggle's state, to fill its cell
 };
 
-/// The UX 2000 map, all sixteen registered apps: Sampler / Sequencer / Song /
-/// Arrange, Recorder / Slicer / Looper / Clips, PitchPlay / PadMixer / Mixer /
-/// DawControl, KitSelector / Instructions / Firmware / Settings. A platform
-/// that wants switches (FULL LEVEL, NOTE REPEAT...) on a row passes its own
-/// table with ModeKind::Toggle entries.
+/// The UX 2000 map: Sampler / Sequencer / Song / Arrange, Recorder / Slicer
+/// (pads 7-8 empty), PitchPlay / PadMixer / Mixer / DawControl, KitSelector /
+/// Instructions / Firmware / Settings. A platform that wants switches (FULL
+/// LEVEL, NOTE REPEAT...) on a row passes its own table with ModeKind::Toggle
+/// entries.
 const ModeEntry* mode_overlay_default_map(size_t* count);
 
 /// Where apps are started (MainScreenResult::app_container) and what the map
@@ -65,22 +69,13 @@ void mode_overlay_toggle();
 bool mode_overlay_is_open();
 
 /// Act on pad @p padIdx (0..15) as if its cell were tapped. Safe from any
-/// task: the work is posted to the LVGL task with lv_async_call().
+/// task: the work is posted with IGuiPlatform::postToGui().
 void mode_overlay_select_pad(uint8_t padIdx);
 
-/// Open home -- what a long encoder press does everywhere, and what the board
-/// opens on. Closes the map if it is open.
+/// Go home -- what the board opens on: every app on screen is closed and the
+/// map comes up with nothing under it. Whatever holds the transport keeps
+/// playing.
 void mode_overlay_go_home();
-
-/// Name the home app. Without this it is the entry on pad 1, which in the
-/// UX 2000 map is the Sampler. A platform whose main place of work is
-/// somewhere else -- this firmware's is Arrange, where a song starts -- names
-/// it here instead of reordering the map, which pads 1-4 fix.
-void mode_overlay_set_home(const char* app);
-
-/// Is @p name the home app? Back stops there: there is no screen behind home,
-/// because apps are switched with MODE and a pad rather than by backing out.
-bool mode_overlay_app_is_home(const char* name);
 
 /// Open the app registered under @p name as if its pad had been hit: the same
 /// container, the same hand-over of the pads, the same transport-bar refresh.

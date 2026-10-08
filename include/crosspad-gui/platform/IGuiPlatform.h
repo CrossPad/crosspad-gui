@@ -179,6 +179,12 @@ public:
     // reset has just switched off). Called on the LVGL thread after the reset
     // settings are saved, so it must not block or write flash there itself.
     virtual void onFactoryReset() {}
+
+    // Run @p cb on the LVGL task, from any task. lv_async_call() edits LVGL's
+    // timer list and is only safe from the LVGL task itself (or under the
+    // display lock) when LVGL is built without an OS layer; a pad hit arrives
+    // on the pad task. Platforms with a display lock override this to take it.
+    virtual void postToGui(lv_async_cb_t cb, void * user_data) { lv_async_call(cb, user_data); }
 };
 
 // Set the platform implementation (call once at startup)

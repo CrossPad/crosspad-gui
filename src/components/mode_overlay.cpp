@@ -2,13 +2,17 @@
 
 #include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/components/app_orchestrator.h"
+#include "crosspad-gui/components/power_gesture.h"
 #include "crosspad-gui/components/transport_bar.h"
+#include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
+#include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/pad/IPadLogicHandler.hpp"
 #include "crosspad/song/ArrangeFocus.hpp"
 #include "crosspad/pad/PadManager.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -53,11 +57,19 @@ struct State {
     std::array<lv_obj_t*, kPads> cells{};
     bool padLogicPushed = false;
     bool registered = false;
-    /// Set by the platform; nullptr means the entry on pad 1.
-    const char* home = nullptr;
+    /// Open with nothing under it: the map is home, not a way out of an app.
+    bool asHome = false;
+    /// The map's own encoder group, and the one it took the encoder from.
+    lv_group_t* group = nullptr;
+    lv_group_t* priorGroup = nullptr;
+    uint32_t backToken = 0;
+    bool checkPending = false;
 };
 
 State s;
+/* Read from the pad and MIDI tasks (mode_overlay_is_open()), so not a member
+ * of the LVGL-only state above. */
+std::atomic<bool> s_open{false};
 
 /// Case-insensitive equality without <strings.h>, which MSVC (crosspad-pc) lacks.
 bool same_name(const char* a, const char* b)
@@ -93,10 +105,15 @@ std::shared_ptr<ILvglApp> find_app(const char* name)
     return nullptr;
 }
 
+ILvglApp* foreground()
+{
+    return AppOrchestrator::getInstance().getForegroundApp();
+}
+
 bool is_running(const ModeEntry& e)
 {
-    ILvglApp* run = AppOrchestrator::getInstance().getRunningApp();
-    return run && e.app && run->isStarted() && same_name(run->getName(), e.app);
+    ILvglApp* run = foreground();
+    return run && e.app && same_name(run->getName(), e.app);
 }
 
 // ── Pads ───────────────────────────────────────────────────────────────────
@@ -121,8 +138,12 @@ public:
     {
         for (uint8_t i = 0; i < kPads; ++i) pm.clearPadColor(i);
     }
-    void onPadPress(crosspad::PadManager&, uint8_t padIdx, uint8_t) override
+    void onPadPress(crosspad::PadManager& pm, uint8_t padIdx, uint8_t) override
     {
+        /* Only a finger chooses. The sequencer keeps pressing pads while the
+         * map is up -- the bar stays live -- and a host's MIDI notes arrive
+         * here too; either one used to pick an app on its own. */
+        if (pm.pressSource(padIdx) != crosspad::EventSource::PadManager) return;
         mode_overlay_select_pad(padIdx);   // pad task -> LVGL task
     }
     void onPadRelease(crosspad::PadManager&, uint8_t) override {}
@@ -132,6 +153,8 @@ public:
 // ── Acting on a choice ─────────────────────────────────────────────────────
 
 void paint_cells();
+void open_map(bool asHome);
+void schedule_check();
 
 void choose(uint8_t pad)
 {
@@ -154,6 +177,9 @@ void choose(uint8_t pad)
      * and that hand-over is exactly what sets the focus. */
     crosspad::arrangeFocus().clear();
     mode_overlay_open_app(e->app);
+    /* Chosen from home, the screen is empty until the app is up -- and stays
+     * empty if it never comes up. */
+    schedule_check();
 }
 
 void on_cell_clicked(lv_event_t* ev)
@@ -168,10 +194,47 @@ void async_select(void* p)
     if (mode_overlay_is_open()) choose(idx + 1);
 }
 
-void on_overlay_delete(lv_event_t*)
+/* Deleted asynchronously by mode_overlay_close(), which has already let go of
+ * it; this matters only when someone else wipes the screen under the map. */
+void on_overlay_delete(lv_event_t* ev)
 {
+    if (lv_event_get_target(ev) != s.overlay) return;
     s.overlay = nullptr;
     s.cells.fill(nullptr);
+    s_open.store(false);
+}
+
+/// Power click with the map up: back to the app under it. At home there is
+/// nothing under it, and the click goes on down the chain to nothing.
+bool on_back(void*)
+{
+    if (!foreground()) return false;
+    mode_overlay_close();
+    return true;
+}
+
+/// What is on screen after an app started or stopped: the map comes up as
+/// home when nothing is left, and a home map gives way to an app that came
+/// up some other way (the kit browser handing back the app it was opened for).
+void check_cb(void*)
+{
+    s.checkPending = false;
+    if (!s.appContainer) return;
+    if (!foreground()) {
+        if (!s.overlay) open_map(true);
+        else            s.asHome = true;
+    } else if (s.overlay && s.asHome) {
+        mode_overlay_close();
+    }
+}
+
+/// Runs on the LVGL task (or under the display lock): deferred, because the
+/// orchestrator calls it from inside start() and destroyApp().
+void schedule_check()
+{
+    if (s.checkPending) return;
+    s.checkPending = true;
+    lv_async_call(check_cb, nullptr);
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
@@ -206,6 +269,8 @@ void build_cell(lv_obj_t* parent, const ModeEntry& e, int32_t x, int32_t y, int3
     lv_obj_set_style_outline_color(c, lv_color_white(), 0);
     lv_obj_set_style_outline_width(c, 0, 0);
     lv_obj_set_style_outline_pad(c, 0, 0);
+    lv_obj_set_style_border_color(c, kText, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(c, 2, LV_STATE_FOCUS_KEY);
     lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(c, on_cell_clicked, LV_EVENT_CLICKED,
                         reinterpret_cast<void*>(static_cast<uintptr_t>(e.pad)));
@@ -319,6 +384,7 @@ void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t
     }
     ensure_pad_logic_registered();
     transportbar_set_mode_handler(mode_overlay_toggle);
+    AppOrchestrator::getInstance().setForegroundChangedHandler(schedule_check);
 }
 
 void mode_overlay_bind_toggle(uint8_t pad, void (*toggle)(), bool (*isOn)())
@@ -329,14 +395,46 @@ void mode_overlay_bind_toggle(uint8_t pad, void (*toggle)(), bool (*isOn)())
     if (s.overlay) paint_cells();
 }
 
-void mode_overlay_open()
+namespace {
+
+void open_map(bool asHome)
 {
     if (s.overlay) return;
     build_overlay();
+    s.asHome = asHome;
+    s_open.store(true);
     if (s.registered && !s.padLogicPushed) {
         crosspad::getPadManager().pushPadLogic(kPadLogicName);
         s.padLogicPushed = true;
     }
+
+    /* The encoder walks the cells in pad order and a click chooses; the app
+     * under the map must not be driven blind. */
+    lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
+    if (enc) {
+        s.group = lv_group_create();
+        lv_group_set_wrap(s.group, true);
+        lv_obj_t* first = nullptr;
+        for (int i = 0; i < kPads; ++i) {
+            lv_obj_t* c = s.cells[i];
+            if (!c) continue;
+            lv_group_add_obj(s.group, c);
+            const ModeEntry* e = entry_for_pad(i + 1);
+            if (!first || (e && is_running(*e))) first = c;
+        }
+        if (first) lv_group_focus_obj(first);
+        s.priorGroup = lv_indev_get_group(enc);
+        lv_indev_set_group(enc, s.group);
+    }
+    s.backToken = ui_back_push(on_back, nullptr);
+    transportbar_refresh();
+}
+
+} // namespace
+
+void mode_overlay_open()
+{
+    open_map(false);
 }
 
 void mode_overlay_close()
@@ -345,43 +443,59 @@ void mode_overlay_close()
         crosspad::getPadManager().popPadLogic();
         s.padLogicPushed = false;
     }
-    if (s.overlay) lv_obj_delete(s.overlay);   // on_overlay_delete clears s.overlay
+    ui_back_remove(s.backToken);
+    s.backToken = 0;
+    if (s.group) {
+        lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
+        if (enc && lv_indev_get_group(enc) == s.group) lv_indev_restore_group(enc, s.priorGroup);
+        /* Closed from a cell's CLICKED, the encoder's input read is still
+         * using this group; it goes once that read is over. */
+        lv_group_delete_deferred(s.group);
+        s.group = nullptr;
+        s.priorGroup = nullptr;
+    }
+    if (s.overlay) {
+        /* Same reason, for the cell being clicked: hidden now, gone after. */
+        lv_obj_add_flag(s.overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_delete_async(s.overlay);
+        s.overlay = nullptr;
+        s.cells.fill(nullptr);
+    }
+    s.asHome = false;
+    s_open.store(false);
+    transportbar_refresh();
 }
 
 void mode_overlay_toggle()
 {
-    if (s.overlay) mode_overlay_close();
-    else           mode_overlay_open();
+    if (!s.overlay)    mode_overlay_open();
+    else if (foreground()) mode_overlay_close();
+    /* Home: nothing under the map to go back to, so MODE leaves it up. */
 }
 
-bool mode_overlay_is_open() { return s.overlay != nullptr; }
+bool mode_overlay_is_open() { return s_open.load(); }
 
 void mode_overlay_select_pad(uint8_t padIdx)
 {
     if (padIdx >= kPads) return;
-    lv_async_call(async_select, reinterpret_cast<void*>(static_cast<uintptr_t>(padIdx)));
-}
-
-void mode_overlay_set_home(const char* app) { s.home = app; }
-
-bool mode_overlay_app_is_home(const char* name)
-{
-    if (!name) return false;
-    const ModeEntry* pad1 = entry_for_pad(1);
-    const char* home = s.home ? s.home : (pad1 ? pad1->app : nullptr);
-    return home && same_name(home, name);
+    getGuiPlatform().postToGui(async_select, reinterpret_cast<void*>(static_cast<uintptr_t>(padIdx)));
 }
 
 void mode_overlay_go_home()
 {
     mode_overlay_close();
-    const ModeEntry* pad1 = entry_for_pad(1);
-    const char* app = s.home ? s.home : (pad1 ? pad1->app : nullptr);
-    if (!app) return;
     /* Going home is also how a flow is left: whatever Arrange handed to the
      * Recorder or the sequencer is no longer being filled. */
     crosspad::arrangeFocus().clear();
-    mode_overlay_open_app(app);
+    /* Everything on screen goes, the kit browser over an app included. What
+     * holds the transport keeps playing: a claim outlives its screen. Bounded,
+     * because an app whose teardown fails would otherwise stay foreground. */
+    for (int i = 0; i < 4; ++i) {
+        ILvglApp* app = foreground();
+        if (!app) break;
+        app->destroyApp();
+    }
+    if (s.appContainer) open_map(true);
 }
 
 bool mode_overlay_open_app(const char* name)
