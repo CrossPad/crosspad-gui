@@ -98,6 +98,17 @@ void statusbar_hide_title();
 #define PERF_FLAG_MEM  (1 << 2)
 void statusbar_set_perf_level(uint8_t flags);
 
+// ── Arrow handler ────────────────────────────────────────────────────────────
+
+/* The arrow on the bar's right used to be the quick-settings drawer's open
+ * button. The drawer is off, and the arrow is now the way back to whatever
+ * replaced the bar: the transport bar installs transportbar_show(true) here.
+ *
+ * Installing a handler builds the arrow if the drawer had not already. With
+ * no handler and no drawer the arrow is not built at all, rather than sitting
+ * there doing nothing. */
+void statusbar_set_arrow_handler(void (*handler)());
+
 // ── Drawer (quick-settings) toggle ───────────────────────────────────────────
 
 // Enable/disable the status-bar drawer (header dropdown + arrow button).

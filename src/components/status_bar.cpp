@@ -34,6 +34,18 @@ extern lv_obj_t * status_c; // status bar container
 
 static bool quickSettingsPanelVisible = false;
 
+/* The arrow used to be the drawer's open button and nothing else; it is now
+ * the bar's mode switch, and the drawer is off by default. Everything that
+ * reached the drawer -- the power button's 0.5 s hold included -- goes
+ * through s_drawer_enabled, so the arrow survives the drawer being disabled
+ * instead of disappearing with it. */
+static bool s_drawer_enabled = false;
+/* What the arrow does instead of opening the drawer: the transport bar
+ * installs transportbar_show(true) here, so the icons are one tap from the
+ * row that replaced them. Nothing installed = the arrow does nothing, which
+ * is why it is only built when something has. */
+static void (*s_arrow_handler)() = NULL;
+
 // subjects
 static lv_subject_t s_loading;
 static lv_subject_t s_ramUsage;
@@ -404,6 +416,7 @@ void statusbar_close_drawer() {
 }
 
 bool statusbar_toggle_drawer() {
+    if (!s_drawer_enabled) return false;
     /* Mid-animation the overlay exists but is not yet "visible"; drawer_close()
      * refuses that state, so one toggle per animation is the natural result. */
     if (quickSettingsPanelVisible) { drawer_close(); return true; }
@@ -417,7 +430,8 @@ bool statusbar_toggle_drawer() {
 }
 
 void statusbar_arrow_hold_begin(uint32_t duration_ms) {
-    if (!openButton) return;                                    // drawer disabled
+    if (!s_drawer_enabled) return;   // the hold commits to nothing, so the arrow stays put
+    if (!openButton) return;
     if (quickSettingsPanelVisible || s_drawer_overlay) return;   // nothing to charge — already open/opening
 
     int32_t slide = lv_obj_get_width(openButton);
@@ -435,6 +449,7 @@ void statusbar_arrow_hold_begin(uint32_t duration_ms) {
 }
 
 void statusbar_arrow_hold_cancel() {
+    if (!s_drawer_enabled) return;
     if (!openButton) return;
     if (quickSettingsPanelVisible || s_drawer_overlay) return;   // not a charge in progress
 
@@ -455,12 +470,18 @@ void statusbar_set_drawer_enabled(bool enabled) {
 #if LV_HIDE_QUICK_SETTINGS
     enabled = false;
 #endif
-    if (enabled) {
-        if (!openButton) create_open_button();
-    } else {
-        // If drawer open, leave deletion to drawer_close_end_cb.
-        if (!quickSettingsPanelVisible) delete_open_button();
-    }
+    s_drawer_enabled = enabled;
+    /* The arrow is not the drawer's any more, so it is neither created nor
+     * deleted here: it switches the bar between status and transport whatever
+     * the drawer is doing. */
+    if (!enabled && quickSettingsPanelVisible) drawer_close();
+}
+
+// ── Arrow handler ────────────────────────────────────────────────
+
+void statusbar_set_arrow_handler(void (*handler)()) {
+    s_arrow_handler = handler;
+    if (handler && !openButton) create_open_button();
 }
 
 } // namespace crosspad_gui
@@ -554,8 +575,14 @@ static void check_status_timer_cb(lv_timer_t * timer) {
  * swaps the focus group mid-click, and the release half lands on whatever the
  * other group had focused — closing the drawer launched an app that way. */
 
+/* The arrow is the bar's mode switch now: status icons on one side of it,
+ * the four transport keys on the other. The drawer is off (its five controls
+ * all live in Settings and the Mixer) and, while it is off, has no touch
+ * entry point at all — only the power button's 0.5 s hold, which
+ * s_drawer_enabled turns away too. */
 static void drawer_open_event_cb(lv_event_t * e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    if (!s_drawer_enabled) { if (s_arrow_handler) s_arrow_handler(); return; }
     /* Tapping the arrow opens instantly — it never charged, so there is
      * nothing for drawer_open() to find but an unhidden, unmoved button. */
     drawer_open();
@@ -568,9 +595,9 @@ static void drawer_open_event_cb(lv_event_t * e) {
 static void drawer_open() {
     if (quickSettingsPanelVisible) return;
     if (s_drawer_overlay) return;
-    /* No arrow = the drawer is disabled in settings. Nothing to open, and the
-     * open path writes through openButton below. */
-    if (!openButton) return;
+    /* The open path writes through openButton below, and the drawer may be
+     * off independently of the arrow now that the arrow switches modes. */
+    if (!s_drawer_enabled || !openButton) return;
 
     lv_obj_t * parent = lv_obj_get_parent(status_c);
 
@@ -702,11 +729,10 @@ static void drawer_close_end_cb(lv_anim_t * a) {
      * the launcher had focused — which pressed it. */
     drawer_release_encoder();
     closeButton = NULL;
-    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
-#if LV_HIDE_QUICK_SETTINGS
-    drawer_enabled = false;
-#endif
-    if (drawer_enabled) {
+    /* The arrow always comes back: it is the bar's mode switch, not the
+     * drawer's button, and the drawer closing must not leave the bar with no
+     * way to reach the transport. */
+    {
         if (openButton) {
             // Reappear off to the right, then slide in — both close paths
             // (arrow tap and power-button hold) get the same re-entry.
@@ -722,8 +748,6 @@ static void drawer_close_end_cb(lv_anim_t * a) {
             lv_anim_set_path_cb(&anim_button_template, lv_anim_path_ease_out);
             lv_anim_start(&anim_button_template);
         }
-    } else {
-        delete_open_button();
     }
 }
 
@@ -812,14 +836,13 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
-    // Open button (drawer arrow) — only built when drawer enabled
-    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
-#if LV_HIDE_QUICK_SETTINGS
-    drawer_enabled = false;
-#endif
-    if (drawer_enabled) {
-        create_open_button();
-    }
+    /* The drawer is off, and the setting is left alone so it can come back
+     * without the user having to find it again: every control it held (both
+     * outputs, the speaker switch, pad RGB, screen brightness) is in Settings
+     * and the Mixer already. The arrow outlives it as the swap back to the
+     * transport bar, so it is built whenever either has something to do. */
+    s_drawer_enabled = false;
+    if (s_drawer_enabled || s_arrow_handler) create_open_button();
 
     // Init RAM subjects once (reused across open/close cycles)
     if (!s_ram_subjects_initialized) {

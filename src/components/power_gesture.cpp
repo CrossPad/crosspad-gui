@@ -2,6 +2,8 @@
 
 #include "crosspad-gui/components/power_gesture.h"
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/mode_overlay.h"
+#include "crosspad-gui/components/transport_bar.h"
 #include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 
@@ -123,7 +125,13 @@ void powerButtonRelease()
 
 bool powerToggleQuickSettings()
 {
-    return statusbar_toggle_drawer();
+    /* The 0.5 s hold used to open the quick-settings drawer. The drawer is
+     * off -- its five controls are all in Settings and the Mixer -- so the
+     * gesture reaches the transport instead: it hands the encoder to the top
+     * bar's keys, and a second hold gives it back. The drawer keeps the
+     * gesture if anything ever turns it on again. */
+    if (statusbar_toggle_drawer()) return true;
+    return transportbar_toggle_focus();
 }
 
 BackResult powerBack()
@@ -169,11 +177,16 @@ BackResult powerBack()
     ILvglApp* app = AppOrchestrator::getInstance().getForegroundApp();
     if (app) {
         if (app->handleBack()) return BackResult::App;
+        /* Home is where back stops. There is no screen behind it to go to --
+         * apps are switched with MODE and a pad, not by backing out of one
+         * (UX 2000 section 2) -- and tearing it down only to have the main
+         * screen start it again would blink the display for nothing. */
+        if (mode_overlay_app_is_home(app->getName())) return BackResult::None;
         app->destroyAppAsync();
         return BackResult::App;
     }
 
-    /* 6. Bare launcher — deliberately nothing. */
+    /* 6. Nothing is running -- deliberately nothing. */
     return BackResult::None;
 }
 
