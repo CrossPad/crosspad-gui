@@ -653,6 +653,7 @@ static void lcd_brightness_hw_cb(lv_event_t * e) {
 /* The launcher's style through the dropdown's uint8_t; the launcher is
  * rebuilt on the way back to it, which is when the new style shows. */
 static uint8_t s_launcherStyleIdx = 0;
+static uint8_t s_touchSensIdx = 0;
 
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
@@ -686,6 +687,15 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           &s_launcherStyleIdx,
                           [](lv_event_t *) {
                               get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
+                          });
+
+    s_touchSensIdx = (uint8_t)s->touchSensitivity;
+    settings_row_dropdown(parent, group, "Touch Sensitivity", "Low\nMedium\nHigh",
+                          &s_touchSensIdx,
+                          [](lv_event_t *) {
+                              get_settings()->touchSensitivity = (crosspad::TouchSensitivity)s_touchSensIdx;
+                              save_settings();
+                              crosspad_gui::getGuiPlatform().setTouchSensitivity(get_settings()->touchSensitivity);
                           });
 
     settings_row_switch(parent, group, "Quick Settings Drawer",
@@ -1640,6 +1650,7 @@ static crosspad::SettingsIoResult backup_import_all(const char* p) {
         save_settings();
         auto& plat = getGuiPlatform();
         plat.setLcdBrightness(s->LCDbrightness);
+        plat.setTouchSensitivity(s->touchSensitivity);
         plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
         plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
         crosspad::getPadLedController().setBrightness(s->RGBbrightness);
@@ -1829,6 +1840,7 @@ static void factory_reset_cb(lv_event_t * e) {
     s->RGBbrightness = 100;
     s->quickSettingsEnabled = true;
     s->launcherStyle = crosspad::LauncherStyle::Grid;
+    s->touchSensitivity = crosspad::TouchSensitivity::Low;
     s->AudioEngineEnabled = true;
     s->Kit = 0;
     for (int i = 0; i < crosspad::CROSSPAD_MAX_PADS; i++) {
@@ -1841,6 +1853,7 @@ static void factory_reset_cb(lv_event_t * e) {
     // the next reboot.
     auto& plat = getGuiPlatform();
     plat.setLcdBrightness(s->LCDbrightness);
+    plat.setTouchSensitivity(s->touchSensitivity);
     plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
     plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
     crosspad::getPadLedController().setBrightness(s->RGBbrightness);
