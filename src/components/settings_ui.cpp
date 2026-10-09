@@ -135,13 +135,45 @@ static void exit_row_cb(lv_event_t * e) {
 
 // ---- Row builder helper for a clickable button row ----
 
-/* Scroll the focused widget into view in one frame. LVGL's own
- * scroll-on-focus animates the list over 200-400 ms, and every frame of that
- * redraws the whole list: 3-4 full screens per encoder step measured. */
+/* Scroll the focused widget into view in one frame, and two rows past the
+ * edge rather than just inside it.
+ *
+ * LVGL's own scroll-on-focus animates the list over 200-400 ms and every
+ * frame of that redraws the whole list: 3-4 full screens per encoder step,
+ * measured. `LV_ANIM_OFF` fixed that, and left a cheaper version of the same
+ * shape -- `scroll_to_view` stops with the row *at* the edge, so the next
+ * step is past it again and scrolls too. Every step then pays a full viewport
+ * repaint: 64 476 px and 85 ms against 25 380 px and 24 ms for a step that
+ * stays inside. Landing two rows in means most steps need no scroll; over a
+ * full sweep of the launcher that took 116 ms a step down to 46.6. */
+static constexpr int kSettingsScrollAheadPx = 64;   /* two 32 px rows */
+
+static void scroll_focus_ahead(lv_obj_t * obj) {
+    /* The scrollable ancestor, which for a row inside a section is not the
+     * parent -- hence _recursive in the call this replaces. */
+    lv_obj_t * list = lv_obj_get_parent(obj);
+    while (list && !lv_obj_has_flag(list, LV_OBJ_FLAG_SCROLLABLE)) {
+        list = lv_obj_get_parent(list);
+    }
+    if (!list) { lv_obj_scroll_to_view_recursive(obj, LV_ANIM_OFF); return; }
+
+    lv_area_t rc, lc;
+    lv_obj_get_coords(obj, &rc);
+    lv_obj_get_content_coords(list, &lc);
+
+    /* Positive dy moves the content down, i.e. scrolls towards the top. */
+    int32_t dy;
+    if (rc.y1 < lc.y1)      dy =  (lc.y1 - rc.y1) + kSettingsScrollAheadPx;
+    else if (rc.y2 > lc.y2) dy = -((rc.y2 - lc.y2) + kSettingsScrollAheadPx);
+    else return;            /* in view already: the two rows repaint, not the list */
+
+    lv_obj_scroll_by_bounded(list, 0, dy, LV_ANIM_OFF);
+}
+
 static void focus_scroll_instant(lv_obj_t * obj) {
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(obj, [](lv_event_t * e) {
-        lv_obj_scroll_to_view_recursive(lv_event_get_target_obj(e), LV_ANIM_OFF);
+        scroll_focus_ahead(lv_event_get_target_obj(e));
     }, LV_EVENT_FOCUSED, nullptr);
 }
 

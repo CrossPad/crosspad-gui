@@ -26,6 +26,7 @@ enum class BackResult : uint8_t {
     Overlay,    ///< a modal on the overlay layer was cancelled
     Editing,    ///< the encoder group left edit mode
     Drawer,     ///< the quick-settings drawer was closed
+    Transport,  ///< the encoder's focus went back from the top bar to the screen
     App,        ///< the running app handled it, or was closed
 };
 

@@ -10,6 +10,7 @@
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
 #include "crosspad/pad/PadLedController.hpp"
+#include "crosspad/stm32/reg_map.h"
 #include "crosspad/platform/IClock.hpp"
 
 #if LV_USE_PERF_MONITOR && LV_VERSION_CHECK(9,4,0)
@@ -33,6 +34,18 @@ extern lv_obj_t * status_c; // status bar container
 
 static bool quickSettingsPanelVisible = false;
 
+/* The arrow used to be the drawer's open button and nothing else; it is now
+ * the bar's mode switch, and the drawer is off by default. Everything that
+ * reached the drawer -- the power button's 0.5 s hold included -- goes
+ * through s_drawer_enabled, so the arrow survives the drawer being disabled
+ * instead of disappearing with it. */
+static bool s_drawer_enabled = false;
+/* What the arrow does instead of opening the drawer: the transport bar
+ * installs transportbar_show(true) here, so the icons are one tap from the
+ * row that replaced them. Nothing installed = the arrow does nothing, which
+ * is why it is only built when something has. */
+static void (*s_arrow_handler)() = NULL;
+
 // subjects
 static lv_subject_t s_loading;
 static lv_subject_t s_ramUsage;
@@ -42,6 +55,7 @@ static bool s_ram_subjects_initialized = false;
 // timers
 static lv_timer_t * t_ramUpdate = NULL;
 static lv_timer_t * t_check_status = NULL;
+static lv_timer_t * t_voice_meter = NULL;
 
 // objects
 static lv_obj_t * openButton = NULL;
@@ -62,6 +76,12 @@ static lv_obj_t * status_bluetooth;
 static lv_obj_t * status_sd;
 static lv_obj_t * status_loading_arc;
 // perf stats: 3 independent vertical columns
+/* Voices sounding over the ceiling that applies -- "7/16", or "9/10" on a
+ * kit whose samples stream. Shown only while something sounds, so a quiet
+ * board has a clean bar, and turned to the warning colour on the step where
+ * the engine starts cutting tails to keep up. */
+static lv_obj_t * s_voice_meter = NULL;
+
 static lv_obj_t * s_perf_fps_col = NULL;   // FPS column
 static lv_obj_t * s_perf_cpu_col = NULL;   // CPU column
 static lv_obj_t * s_perf_mem_col = NULL;   // MEM column
@@ -313,6 +333,32 @@ static void PickCorrectBatteryIcon(uint8_t batteryPercent, bool low) {
 
 // ── Perf stats ──────────────────────────────────────────────────────────────
 
+/* ── Voice meter ────────────────────────────────────────────────────────────
+ *
+ * Not a perf stat behind a developer flag: it is the one number that explains
+ * why a tail just stopped. The engine never drops the hit a player made --
+ * when the ceiling is reached it fades its oldest voice instead -- so this
+ * says "something is being let go", which is exactly what a player needs to
+ * see and cannot otherwise know.
+ */
+static void voice_meter_timer_cb(lv_timer_t * timer) {
+    (void)timer;
+    if (!s_voice_meter) return;
+    const crosspad_gui::VoiceMeter m = crosspad_gui::getGuiPlatform().getVoiceMeter();
+    if (m.limit == 0 || m.active == 0) {
+        lv_obj_add_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text_fmt(s_voice_meter, "%u/%u", (unsigned)m.active, (unsigned)m.limit);
+    /* At the ceiling the next hit costs an older voice, which is worth
+     * saying in a colour rather than in a number nobody is reading. */
+    const bool full = m.active >= m.limit;
+    lv_obj_set_style_text_color(s_voice_meter,
+        full ? lv_palette_main(LV_PALETTE_AMBER)
+             : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+}
+
 static void perf_stats_timer_cb(lv_timer_t * timer) {
     if (s_perf_flags == 0) return;
 
@@ -376,6 +422,7 @@ void statusbar_close_drawer() {
 }
 
 bool statusbar_toggle_drawer() {
+    if (!s_drawer_enabled) return false;
     /* Mid-animation the overlay exists but is not yet "visible"; drawer_close()
      * refuses that state, so one toggle per animation is the natural result. */
     if (quickSettingsPanelVisible) { drawer_close(); return true; }
@@ -389,7 +436,8 @@ bool statusbar_toggle_drawer() {
 }
 
 void statusbar_arrow_hold_begin(uint32_t duration_ms) {
-    if (!openButton) return;                                    // drawer disabled
+    if (!s_drawer_enabled) return;   // the hold commits to nothing, so the arrow stays put
+    if (!openButton) return;
     if (quickSettingsPanelVisible || s_drawer_overlay) return;   // nothing to charge — already open/opening
 
     int32_t slide = lv_obj_get_width(openButton);
@@ -407,6 +455,7 @@ void statusbar_arrow_hold_begin(uint32_t duration_ms) {
 }
 
 void statusbar_arrow_hold_cancel() {
+    if (!s_drawer_enabled) return;
     if (!openButton) return;
     if (quickSettingsPanelVisible || s_drawer_overlay) return;   // not a charge in progress
 
@@ -427,12 +476,18 @@ void statusbar_set_drawer_enabled(bool enabled) {
 #if LV_HIDE_QUICK_SETTINGS
     enabled = false;
 #endif
-    if (enabled) {
-        if (!openButton) create_open_button();
-    } else {
-        // If drawer open, leave deletion to drawer_close_end_cb.
-        if (!quickSettingsPanelVisible) delete_open_button();
-    }
+    s_drawer_enabled = enabled;
+    /* The arrow is not the drawer's any more, so it is neither created nor
+     * deleted here: it switches the bar between status and transport whatever
+     * the drawer is doing. */
+    if (!enabled && quickSettingsPanelVisible) drawer_close();
+}
+
+// ── Arrow handler ────────────────────────────────────────────────
+
+void statusbar_set_arrow_handler(void (*handler)()) {
+    s_arrow_handler = handler;
+    if (handler && !openButton) create_open_button();
 }
 
 } // namespace crosspad_gui
@@ -532,8 +587,14 @@ static void check_status_timer_cb(lv_timer_t * timer) {
  * swaps the focus group mid-click, and the release half lands on whatever the
  * other group had focused — closing the drawer launched an app that way. */
 
+/* The arrow is the bar's mode switch now: status icons on one side of it,
+ * the four transport keys on the other. The drawer is off (its five controls
+ * all live in Settings and the Mixer) and, while it is off, has no touch
+ * entry point at all — only the power button's 0.5 s hold, which
+ * s_drawer_enabled turns away too. */
 static void drawer_open_event_cb(lv_event_t * e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    if (!s_drawer_enabled) { if (s_arrow_handler) s_arrow_handler(); return; }
     /* Tapping the arrow opens instantly — it never charged, so there is
      * nothing for drawer_open() to find but an unhidden, unmoved button. */
     drawer_open();
@@ -546,9 +607,9 @@ static void drawer_open_event_cb(lv_event_t * e) {
 static void drawer_open() {
     if (quickSettingsPanelVisible) return;
     if (s_drawer_overlay) return;
-    /* No arrow = the drawer is disabled in settings. Nothing to open, and the
-     * open path writes through openButton below. */
-    if (!openButton) return;
+    /* The open path writes through openButton below, and the drawer may be
+     * off independently of the arrow now that the arrow switches modes. */
+    if (!s_drawer_enabled || !openButton) return;
 
     lv_obj_t * parent = lv_obj_get_parent(status_c);
 
@@ -680,11 +741,10 @@ static void drawer_close_end_cb(lv_anim_t * a) {
      * the launcher had focused — which pressed it. */
     drawer_release_encoder();
     closeButton = NULL;
-    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
-#if LV_HIDE_QUICK_SETTINGS
-    drawer_enabled = false;
-#endif
-    if (drawer_enabled) {
+    /* The arrow always comes back: it is the bar's mode switch, not the
+     * drawer's button, and the drawer closing must not leave the bar with no
+     * way to reach the transport. */
+    {
         if (openButton) {
             // Reappear off to the right, then slide in — both close paths
             // (arrow tap and power-button hold) get the same re-entry.
@@ -700,8 +760,6 @@ static void drawer_close_end_cb(lv_anim_t * a) {
             lv_anim_set_path_cb(&anim_button_template, lv_anim_path_ease_out);
             lv_anim_start(&anim_button_template);
         }
-    } else {
-        delete_open_button();
     }
 }
 
@@ -790,14 +848,13 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
-    // Open button (drawer arrow) — only built when drawer enabled
-    bool drawer_enabled = settings ? settings->quickSettingsEnabled : true;
-#if LV_HIDE_QUICK_SETTINGS
-    drawer_enabled = false;
-#endif
-    if (drawer_enabled) {
-        create_open_button();
-    }
+    /* The drawer is off, and the setting is left alone so it can come back
+     * without the user having to find it again: every control it held (both
+     * outputs, the speaker switch, pad RGB, screen brightness) is in Settings
+     * and the Mixer already. The arrow outlives it as the swap back to the
+     * transport bar, so it is built whenever either has something to do. */
+    s_drawer_enabled = false;
+    if (s_drawer_enabled || s_arrow_handler) create_open_button();
 
     // Init RAM subjects once (reused across open/close cycles)
     if (!s_ram_subjects_initialized) {
@@ -944,6 +1001,19 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
         lv_label_set_text(lbl, "");
         return lbl;
     };
+    /* Before the perf columns, so it keeps its place when they are toggled. */
+    s_voice_meter = lv_label_create(s_app_icon_zone_right);
+    lv_obj_set_style_text_font(s_voice_meter, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(s_voice_meter,
+        lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+    lv_obj_set_style_text_align(s_voice_meter, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_voice_meter, "");
+    lv_obj_add_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
+    if (t_voice_meter) { lv_timer_delete(t_voice_meter); t_voice_meter = NULL; }
+    /* 150 ms: fast enough to see a burst, slow enough that the label is not
+     * repainting the bar on every block. */
+    t_voice_meter = lv_timer_create(voice_meter_timer_cb, 150, NULL);
+
     s_perf_fps_col = make_perf_col(s_app_icon_zone_right);
     s_perf_cpu_col = make_perf_col(s_app_icon_zone_right);
     s_perf_mem_col = make_perf_col(s_app_icon_zone_right);
@@ -1096,6 +1166,81 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, cons
     return row;
 }
 
+/* The speaker amp's gate, as a drawer row.
+ *
+ * The speakers have no volume of their own -- they ride output 1 -- so what
+ * belongs here is the STM's amp enable, the same field Settings -> Audio
+ * writes. ON only *permits* Stm32Manager's SpeakerAmpGate to raise
+ * REG_CTL_AUDIO_EN while the bus carries signal; OFF drops the amp at once,
+ * because waiting for the 100 ms maintenance poll is audible. */
+struct DrawerSwitchCtx { bool * setting; };
+
+static void drawer_switch_event_cb(lv_event_t * e)
+{
+    auto * ctx = static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
+    auto * sw = static_cast<lv_obj_t *>(lv_event_get_target(e));
+    if (!ctx || !ctx->setting || !settings) return;
+
+    const bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    *ctx->setting = on;
+    settings->stm.audioEn = on ? 1 : 0;
+    if (on) {
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+    } else {
+        crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_AUDIO_EN, 0);
+    }
+}
+
+static void drawer_switch_delete_cb(lv_event_t * e)
+{
+    delete static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
+}
+
+static lv_obj_t * lv_create_my_switch(lv_obj_t * parent, const char * icon, const char * txt,
+                                      bool * setting)
+{
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+    lv_obj_t * glyph = lv_label_create(row);
+    lv_obj_set_width(glyph, 20);
+    lv_obj_set_style_text_font(glyph, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(glyph, CROSSPAD_THEME_PRIMARY, 0);
+    lv_label_set_text(glyph, icon);
+
+    lv_obj_t * label = lv_label_create(row);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_label_set_text(label, txt);
+
+    lv_obj_t * spacer = lv_obj_create(row);
+    lv_obj_remove_style_all(spacer);
+    lv_obj_set_height(spacer, 1);
+    lv_obj_set_flex_grow(spacer, 1);
+    lv_obj_remove_flag(spacer, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * sw = lv_switch_create(row);
+    lv_obj_set_size(sw, 40, 20);
+    if (setting != NULL) {
+        if (*setting) lv_obj_add_state(sw, LV_STATE_CHECKED);
+        auto * ctx = new DrawerSwitchCtx{setting};
+        lv_obj_add_event_cb(sw, drawer_switch_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+        lv_obj_add_event_cb(sw, drawer_switch_delete_cb, LV_EVENT_DELETE, ctx);
+        if (s_drawer_group) lv_group_add_obj(s_drawer_group, sw);
+    } else {
+        lv_obj_set_state(sw, LV_STATE_DISABLED, 0);
+    }
+    lv_obj_set_ext_click_area(sw, 10);
+    return row;
+}
+
 static void initSliderStyle() {
     // Once: the drawer overlay is rebuilt on every open, and lv_style_init()
     // on an initialised style orphans its property array.
@@ -1145,7 +1290,22 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         lv_indev_set_group(nav, s_drawer_group);
     }
 
-    auto spk_apply = [](lv_event_t * e) {
+    /* Two outputs, because the board has two codecs -- and the jacks are
+     * numbered the other way round from the codecs:
+     *   Out 1, the line out, is codec 1  -> outVolumeCodec[1][0]
+     *   Out 2, the phones,   is codec 0  -> outVolumeCodec[0][0]
+     * The first index is the codec, the convention audio_control.cpp and
+     * audio_route_control.cpp already use; only the labels are the jacks'.
+     *
+     * The speakers are not a third volume. They hang off codec 0 beside the
+     * phones jack -- which is why moving one moved the other -- so their
+     * level is Out 2's, and what is theirs alone is the amp gate on the STM
+     * (REG_CTL_AUDIO_EN). Hence a switch below them, not a slider. */
+    auto line_apply = [](lv_event_t * e) {
+        (void)e;
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+    };
+    auto phones_apply = [](lv_event_t * e) {
         (void)e;
         crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
     };
@@ -1159,8 +1319,12 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
-    lv_create_my_slider(cont, LV_SYMBOL_VOLUME_MAX, "Speaker", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][0]), spk_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Out 1", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
+                        &(settings->masterFX.outVolumeCodec[0][0]), phones_apply);
+    lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
+                        &(settings->masterFX.speakersEnabled));
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
     lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
 
