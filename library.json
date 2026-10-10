@@ -1,6 +1,7 @@
 {
     "name": "crosspad-gui",
     "version": "1.23.1",
+    "license": "GPL-3.0-or-later",
     "description": "CrossPad shared LVGL GUI components",
     "keywords": ["crosspad", "lvgl", "gui", "embedded"],
     "frameworks": ["arduino", "espidf"],

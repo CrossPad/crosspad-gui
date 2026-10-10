@@ -156,3 +156,7 @@ git submodule add <url> crosspad-gui
 ```
 
 Requires [crosspad-core](https://github.com/CrossPad/crosspad-core) and LVGL v9.x.
+
+## License
+
+GPL-3.0-or-later — see [LICENSE](LICENSE).
