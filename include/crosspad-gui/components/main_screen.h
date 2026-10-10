@@ -15,7 +15,7 @@ namespace crosspad_gui {
  */
 struct MainScreenConfig {
     lv_indev_t* encoder = nullptr;       ///< Rotary encoder input device
-    crosspad::LauncherStyle style = crosspad::LauncherStyle::Grid;
+    crosspad::LauncherStyle style = crosspad::LauncherStyle::List;
     launcher_app_select_cb_t on_select = nullptr;
     launcher_close_popup_cb_t on_close = nullptr;
     int button_size  = 64;

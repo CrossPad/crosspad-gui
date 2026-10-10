@@ -240,7 +240,7 @@ static void factory_reset_apply() {
     s->perfStatsFlags = 0;
     s->RGBbrightness = 100;
     s->quickSettingsEnabled = true;
-    s->launcherStyle = crosspad::LauncherStyle::Grid;
+    s->launcherStyle = crosspad::LauncherStyle::List;
     s->touchSensitivity = crosspad::TouchSensitivity::Low;
     s->AudioEngineEnabled = true;
     s->Kit = 0;

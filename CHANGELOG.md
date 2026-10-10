@@ -42,6 +42,7 @@ described in their commits.
 - `freertos` from the ESP-IDF component's REQUIRES.
 
 ### Changed
+- The launcher defaults to the list; Factory Reset puts it back to the list.
 
 - `create_segment_meter()` and `kSegmentMeterW` moved from the global namespace
   into `crosspad_gui::`, like every other gui API.
