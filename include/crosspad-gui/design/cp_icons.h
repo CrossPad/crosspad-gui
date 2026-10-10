@@ -4,6 +4,10 @@
 /* 15 icons, 12x12, one bit of alpha each, from the V5 mockup. LVGL 9 spells
  * the descriptor `lv_image_dsc_t`; the bitmaps are the export's own. */
 
+#ifdef __cplusplus
+extern "C" {   /* defined in cp_icons.c; MSVC mangles C++ data names */
+#endif
+
 extern const lv_image_dsc_t cp_icon_note;
 extern const lv_image_dsc_t cp_icon_stack;
 extern const lv_image_dsc_t cp_icon_sliders;
@@ -19,3 +23,7 @@ extern const lv_image_dsc_t cp_icon_power;
 extern const lv_image_dsc_t cp_icon_dl;
 extern const lv_image_dsc_t cp_icon_wifi;
 extern const lv_image_dsc_t cp_icon_pulse;
+
+#ifdef __cplusplus
+}
+#endif
