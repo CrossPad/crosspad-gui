@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Generic settings app shell — creates the container, encoder group, and
 // delegates to settings_ui_create().  Platform-specific categories are
