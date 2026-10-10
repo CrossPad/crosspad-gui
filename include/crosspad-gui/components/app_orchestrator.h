@@ -94,6 +94,11 @@ public:
     void noteAppStarted(ILvglApp* app);
     void noteAppStopped(ILvglApp* app);
 
+    /// Told every time an app starts or stops, from inside start() or
+    /// destroyApp() -- so it must not start or destroy apps itself; defer.
+    /// The MODE map uses it to come up as home when nothing is left on screen.
+    void setForegroundChangedHandler(void (*fn)()) { onForegroundChanged_ = fn; }
+
     const std::vector<std::shared_ptr<ILvglApp>>& getApps() const { return apps_; }
     const std::vector<LauncherAppInfo>& getAppInfos() const { return infos_; }
 
@@ -102,8 +107,9 @@ private:
 
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
+    void (*onForegroundChanged_)() = nullptr;
 
-    std::vector<ILvglApp*> started_;                ///< Start order, newest last
+    std::vector<ILvglApp*> started_;               ///< Start order, newest last
     std::vector<std::shared_ptr<ILvglApp>> apps_;   ///< Owned App objects
     std::vector<LauncherAppInfo>           infos_;  ///< Parallel launcher descriptors
 };

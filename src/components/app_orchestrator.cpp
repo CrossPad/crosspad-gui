@@ -117,14 +117,16 @@ void AppOrchestrator::noteAppStarted(ILvglApp* app) {
     if (!app) return;
     noteAppStopped(app);          // one entry per app, newest position
     started_.push_back(app);
+    if (onForegroundChanged_) onForegroundChanged_();
 }
 
 void AppOrchestrator::noteAppStopped(ILvglApp* app) {
     for (size_t i = 0; i < started_.size(); i++) {
         if (started_[i] != app) continue;
         started_.erase(started_.begin() + (long)i);
-        return;
+        break;
     }
+    if (onForegroundChanged_) onForegroundChanged_();
 }
 
 ILvglApp* AppOrchestrator::getForegroundApp() const {

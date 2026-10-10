@@ -23,6 +23,24 @@ struct PerfStats {
     uint32_t stm32_mps;   // STM32 messages per second
 };
 
+/* What the sample engine is holding right now, for the status bar.
+ *
+ * Two ceilings, and the smaller one binds: a resident voice is arithmetic, a
+ * streaming one also has to be fed off the card and the card gives out first.
+ * Measured on a v2, 44.1 kHz stereo: sixteen resident voices fit a 1451 us
+ * block at 85 %, ten streaming ones at 78 %, and from twelve streaming the
+ * engine cannot feed them all. The engine fades its oldest streaming voice
+ * rather than letting several starve, so what the meter warns about is a
+ * *tail being cut*, never a hit being lost.
+ *
+ * `limit` is already the one that applies to what is playing, so the bar can
+ * print "active/limit" without knowing any of the above. */
+struct VoiceMeter {
+    uint8_t active    = 0;   // voices sounding
+    uint8_t streaming = 0;   // of those, how many are reading the card
+    uint8_t limit     = 0;   // 0 when no engine holds a kit: nothing to show
+};
+
 // What the USB Audio host records, and where each codec sends its output.
 // Codes match the firmware's audio-route wire format (see the ESP-IDF
 // audio_route_control.h): ADC 0=DIFF 1=LINE1 2=LINE2, DAC 1=LINE1 2=LINE2 3=ALL.
@@ -73,6 +91,11 @@ public:
     // Default returns zeros — override on platforms that can provide real data.
     virtual PerfStats getPerfStats() { return {}; }
 
+    /// Voices sounding and the ceiling that applies. Polled by the status
+    /// bar; a platform with no sample engine leaves `limit` at 0 and nothing
+    /// is drawn.
+    virtual VoiceMeter getVoiceMeter() { return {}; }
+
     // Called when the user interacts with the touchscreen.
     // Platform can trigger haptic feedback, reset inactivity timers, etc.
     virtual void onUserInteraction(InteractionEvent /*event*/) {}
@@ -81,11 +104,22 @@ public:
     // without backlight control.
     virtual void setLcdBrightness(uint8_t /*pct*/) {}
 
-    // Apply speaker codec output volume (0..100 codec range; callers may pass
-    // 0..127 — implementation should clamp).
+    /* The two output volumes (0..100 codec range; callers may pass 0..127 --
+     * implementation should clamp). An output is a whole codec, not an output
+     * pair of one, and the names below are older than the wiring they ended
+     * up describing -- on CrossPad hardware:
+     *
+     *   setSpeakerVolume()   -> codec 0 -> the jack marked **Out 2**, the
+     *                           phones, and the internal speakers beside
+     *                           them: one level for both, which is why the
+     *                           speakers' own control is a gate, not a fader.
+     *   setHeadphoneVolume() -> codec 1 -> the jack marked **Out 1**, the
+     *                           line out.
+     *
+     * Read the names as "output A" and "output B" and the mapping from the
+     * platform (IdfGuiPlatform). Renaming them is a MAJOR bump and a change
+     * in crosspad-pc too, so it waits for a release that can carry one. */
     virtual void setSpeakerVolume(uint8_t /*volume*/) {}
-
-    // Apply headphone codec output volume (0..100 codec range; same caveat).
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 
     // USB device profile. Boards that can re-enumerate between a data profile
@@ -150,6 +184,12 @@ public:
     // Touch controller threshold for a sensitivity level; applied at once,
     // no reboot. Called on the LVGL thread, the same one that reads touch.
     virtual void setTouchSensitivity(crosspad::TouchSensitivity /*level*/) {}
+
+    // Run @p cb on the LVGL task, from any task. lv_async_call() edits LVGL's
+    // timer list and is only safe from the LVGL task itself (or under the
+    // display lock) when LVGL is built without an OS layer; a pad hit arrives
+    // on the pad task. Platforms with a display lock override this to take it.
+    virtual void postToGui(lv_async_cb_t cb, void * user_data) { lv_async_call(cb, user_data); }
 };
 
 // Set the platform implementation (call once at startup)

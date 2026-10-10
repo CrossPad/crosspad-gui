@@ -1,7 +1,9 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/main_screen.h"
+#include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/transport_bar.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 
@@ -20,6 +22,9 @@ MainScreenResult build_main_screen(
 {
     MainScreenResult result;
 
+    /* The map lives on the overlay layer, not in parent: close it (and hand
+     * the pads back) before the screen under it is rebuilt. */
+    mode_overlay_close();
     lv_obj_clean(parent);
     lv_obj_set_size(parent, CP_LCD_HOR_RES, CP_LCD_VER_RES);
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -39,6 +44,13 @@ MainScreenResult build_main_screen(
     s_encoder_group = result.encoder_group;
 
     result.status_bar = lv_CreateStatusBar(parent);
+    if (config.transport_bar) {
+        lv_obj_add_flag(result.status_bar, LV_OBJ_FLAG_HIDDEN);
+        result.transport_bar = transportbar_create(parent, result.status_bar);
+        /* The swap goes both ways: the arrow on the transport bar reveals the
+         * icons, the arrow on the status bar brings the transport back. */
+        statusbar_set_arrow_handler([]() { transportbar_show(true); });
+    }
 
     lv_obj_t* app_c = lv_obj_create(parent);
     lv_obj_add_style(app_c, &styleAppContainer, 0);
@@ -52,6 +64,14 @@ MainScreenResult build_main_screen(
     lv_obj_set_style_clip_corner(app_c, true, 0);
     lv_obj_update_layout(app_c);
     result.app_container = app_c;
+
+    if (config.transport_bar) {
+        size_t n = 0;
+        const ModeEntry* map = mode_overlay_default_map(&n);
+        mode_overlay_init(app_c, map, n);
+    }
+
+    if (!config.launcher) return result;
 
     LauncherConfig lc = {};
     lc.encoder_group  = result.encoder_group;
