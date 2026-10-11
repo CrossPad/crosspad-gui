@@ -1,0 +1,37 @@
+name: Library release
+
+# Tags vX.Y.Z when library.json's version changes; the logic is CrossPad/.github's
+# reusable app-release.yml in library mode (a bare tag, no release, no post).
+# platform-idf's hourly bump reads the tags and moves gui when an app needs it.
+# Push only: this repo's runners never run pull_request code.
+on:
+  push:
+    branches: [master]
+    paths: [library.json, include/crosspad-gui/CrosspadGuiVersion.hpp]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lib-release
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    runs-on: ${{ vars.CROSSPAD_LIGHT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: python3 -I scripts/check_manifest.py
+
+  release:
+    needs: manifest
+    permissions:
+      contents: write
+    uses: CrossPad/.github/.github/workflows/app-release.yml@v2
+    with:
+      kind: library
+      runner: ${{ vars.CROSSPAD_LIGHT_RUNNER || 'ubuntu-latest' }}

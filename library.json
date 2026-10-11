@@ -7,7 +7,7 @@
     "frameworks": ["arduino", "espidf"],
     "platforms": ["espressif32", "native"],
     "dependencies": {
-        "crosspad-core": "*"
+        "crosspad-core": "^1.53.0"
     },
     "build": {
         "srcDir": "src",
