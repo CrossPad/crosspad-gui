@@ -39,6 +39,8 @@ include/crosspad-gui/
   virtual_device/ On-screen encoder, pad grid and power button
   widgets/        Low-level reusable controls
   bootstrap.h     Framework initialization
+  gui_start.h     One-call GUI start (gui_start(), GuiStartConfig)
+  CrosspadGuiVersion.hpp  Library version + the crosspad-core it requires
   crosspad_gui.h  Umbrella header
 ```
 
@@ -49,7 +51,7 @@ include/crosspad-gui/
 
 ```cpp
 auto result = crosspad_gui::build_main_screen(parent, apps, count, config);
-// result.status_bar, result.app_container, result.encoder_group,
+// result.status_bar, result.transport_bar (with config.transport_bar), result.app_container, result.encoder_group,
 // result.launcher_grid (grid style) or result.launcher_menu (list style)
 ```
 
@@ -121,7 +123,7 @@ Lifecycle: `start()` -> `pause()` / `resume()` -> `destroyApp()` (or `destroyApp
 
 | Interface | Purpose |
 |-----------|---------|
-| `IGuiPlatform` | Heap stats, millis, delay, asset path prefix, power off, navigation encoder, perf stats; optional LCD brightness, volume, USB audio, STM config and audio-route hooks |
+| `IGuiPlatform` | Heap stats, millis, delay, asset path prefix, power off, navigation encoder, perf stats; optional LCD brightness, volume, USB audio, STM config, audio-route, USB-transfer, factory-reset, touch-sensitivity, voice-meter, user-interaction, DAW gain and `postToGui` hooks (see the header) |
 | `IFileSystem` | Directory listing abstraction (`PosixFileSystem` provided) |
 
 Registered during bootstrap:
