@@ -1,4 +1,5 @@
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/kit_loader.h"
 #include "crosspad-gui/components/ui_wifi_bars.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
@@ -194,9 +195,8 @@ void statusbar_show_loader_message(const char * title, const char * message, boo
 void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg) {
     if (done) {
         statusbar_set_loading(-1);
-        if (error) {
-            statusbar_show_loader_message("Error", msg, true);
-        }
+        /* In the context row, where the load was shown -- not a box to close. */
+        if (error) kit_loader_error(msg);
     } else {
         statusbar_set_loading(progress);
     }
