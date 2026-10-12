@@ -228,6 +228,14 @@ void check_cb(void*)
     }
 }
 
+/// Every app start goes through the orchestrator, and this runs first there:
+/// the map's pad logic must be off the stack before the app under the map
+/// pops its own and the next one pushes its own.
+void close_before_launch()
+{
+    if (s.overlay || s.padLogicPushed) mode_overlay_close();
+}
+
 /// Runs on the LVGL task (or under the display lock): deferred, because the
 /// orchestrator calls it from inside start() and destroyApp().
 void schedule_check()
@@ -385,6 +393,7 @@ void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t
     ensure_pad_logic_registered();
     transportbar_set_mode_handler(mode_overlay_toggle);
     AppOrchestrator::getInstance().setForegroundChangedHandler(schedule_check);
+    AppOrchestrator::getInstance().setBeforeLaunchHandler(close_before_launch);
 }
 
 void mode_overlay_bind_toggle(uint8_t pad, void (*toggle)(), bool (*isOn)())

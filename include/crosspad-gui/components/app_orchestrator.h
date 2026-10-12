@@ -99,6 +99,14 @@ public:
     /// The MODE map uses it to come up as home when nothing is left on screen.
     void setForegroundChangedHandler(void (*fn)()) { onForegroundChanged_ = fn; }
 
+    /// Told by onAppSelected() before it does anything else, however the app
+    /// was asked for (the launcher, a MODE map cell, CDC APP_START, the
+    /// simulator's app_start, one app handing over to another). A screen that
+    /// holds the pads above every app -- the MODE map -- closes there, so the
+    /// previous app's teardown and the next one's start find their own entry
+    /// on top of the pad-logic stack.
+    void setBeforeLaunchHandler(void (*fn)()) { onBeforeLaunch_ = fn; }
+
     const std::vector<std::shared_ptr<ILvglApp>>& getApps() const { return apps_; }
     const std::vector<LauncherAppInfo>& getAppInfos() const { return infos_; }
 
@@ -108,6 +116,7 @@ private:
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
     void (*onForegroundChanged_)() = nullptr;
+    void (*onBeforeLaunch_)() = nullptr;
 
     std::vector<ILvglApp*> started_;               ///< Start order, newest last
     std::vector<std::shared_ptr<ILvglApp>> apps_;   ///< Owned App objects

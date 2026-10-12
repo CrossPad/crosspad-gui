@@ -87,6 +87,7 @@ void AppOrchestrator::onAppSelected(void* app_ptr, lv_obj_t* app_container) {
     if (!app) return;
 
     auto& self = getInstance();
+    if (self.onBeforeLaunch_) self.onBeforeLaunch_();
 
     // Destroy previous app if running
     auto* prev = self.runningApp_;

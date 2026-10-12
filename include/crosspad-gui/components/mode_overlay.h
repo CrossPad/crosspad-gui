@@ -55,8 +55,9 @@ const ModeEntry* mode_overlay_default_map(size_t* count);
 
 /// Where apps are started (MainScreenResult::app_container) and what the map
 /// shows. @p entries are copied, so a stack table is fine. Registers the
-/// "ModeOverlay" pad logic and installs mode_overlay_toggle() as the
-/// transport bar's MODE handler.
+/// "ModeOverlay" pad logic, installs mode_overlay_toggle() as the transport
+/// bar's MODE handler, and has the orchestrator close the map before any app
+/// starts, whoever started it.
 void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t count);
 
 /// Bind a switch's action and state to the entry with that pad number.
