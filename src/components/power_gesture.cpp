@@ -85,21 +85,31 @@ bool ui_back_has_overlay() { return s_slotCount > 0; }
 
 namespace {
 lv_timer_t* s_holdTimer = nullptr;
-bool        s_holdFired = false;
+
+/* An emulated button is never the one that woke the device and has no sleep
+ * to come out of: it starts released, awake, with the GUI up. */
+PowerGesture feedEmulated(bool pressed)
+{
+    static PowerButtonClassifier s_classifier = [] {
+        PowerButtonClassifier c;
+        c.feed(PowerButtonClassifier::Sample{false, true, false, true, lv_tick_get()});
+        return c;
+    }();
+    return s_classifier.feed(PowerButtonClassifier::Sample{pressed, true, false, true, lv_tick_get()}).gesture;
+}
 
 void hold_timer_cb(lv_timer_t* t)
 {
     (void)t;
     s_holdTimer = nullptr;   // repeat_count 1: LVGL deletes it after this call
-    s_holdFired = true;
-    powerToggleQuickSettings();
+    if (feedEmulated(true) == PowerGesture::Hold) powerToggleQuickSettings();
 }
 } // namespace
 
 void powerButtonPress()
 {
     if (s_holdTimer) { lv_timer_delete(s_holdTimer); s_holdTimer = nullptr; }
-    s_holdFired = false;
+    feedEmulated(true);
     s_holdTimer = lv_timer_create(hold_timer_cb, kPowerHoldMs, nullptr);
     lv_timer_set_repeat_count(s_holdTimer, 1);
     /* Visual feedback for the same threshold the timer above is counting
@@ -111,14 +121,13 @@ void powerButtonPress()
 void powerButtonRelease()
 {
     if (s_holdTimer) { lv_timer_delete(s_holdTimer); s_holdTimer = nullptr; }
-    if (!s_holdFired) {
+    if (feedEmulated(false) == PowerGesture::Click) {
         /* Released before the threshold: the charge animation (if any)
          * eases back rather than snapping, then the click is handled as
          * the ordinary contextual back. */
         statusbar_arrow_hold_cancel();
         powerBack();
     }
-    s_holdFired = false;
 }
 
 // ── Gestures ─────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@
 #ifdef USE_LVGL
 
 #include "lvgl.h"
+#include "crosspad-gui/components/power_button_classifier.h"
 #include <cstdint>
 
 namespace crosspad_gui {
@@ -63,13 +64,10 @@ bool ui_back_has_overlay();
  */
 BackResult powerBack();
 
-/// The hold threshold both platforms use, and the STM32's own
-/// LONG_PRESS_SLEEP_MS: under it a press is a click, at it the hold fires.
-constexpr uint32_t kPowerHoldMs = 500;
-
 /// Press / release of an *emulated* power button (the simulator's on-screen
-/// button, a keyboard key, a control-port verb). Does the same click-vs-hold
-/// split the firmware does from its register poll, on an LVGL timer.
+/// button, a keyboard key, a control-port verb). The same
+/// PowerButtonClassifier the firmware feeds from its register poll splits
+/// click from hold; an LVGL timer takes the sample at kPowerHoldMs.
 void powerButtonPress();
 void powerButtonRelease();
 
