@@ -88,3 +88,11 @@ TEST_CASE("An empty list says so and picks nothing", "[mode_more]")
 
     lv_obj_delete(scr);
 }
+
+TEST_CASE("More never lists launcher-only actions", "[mode_more]")
+{
+    // "Power OFF" is registered for the launcher grid; one encoder click on a
+    // More row would power the board off. The power button already offers it.
+    const std::vector<const char*> reg{"Power OFF", "HelloScreen", "power off"};
+    REQUIRE(strings(mode_more_apps(kMap, 3, reg)) == std::vector<std::string>{"HelloScreen"});
+}

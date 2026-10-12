@@ -126,7 +126,7 @@ void launcher_register_power_off() {
              getGuiPlatform().assetPathPrefix());
 
     registry.registerApp({
-        "Power OFF",
+        kPowerOffAppName,
         icon_path,
         PowerOffFactory,
         nullptr,  // no destroy

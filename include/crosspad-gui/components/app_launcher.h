@@ -33,6 +33,9 @@ struct LauncherConfig {
     bool show_names = true;                        // Show app name labels under icons
 };
 
+// Registry name of the Power OFF app (launcher-only action; see mode_more.h).
+inline constexpr const char* kPowerOffAppName = "Power OFF";
+
 // Register the Power OFF app in AppRegistry.
 // Uses getGuiPlatform().assetPathPrefix() to build the icon path.
 void launcher_register_power_off();

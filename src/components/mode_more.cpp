@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/mode_more.h"
+#include "crosspad-gui/components/app_launcher.h"
 
 namespace crosspad_gui {
 
@@ -32,6 +33,13 @@ bool on_map(const ModeEntry* map, size_t count, const char* name)
     return false;
 }
 
+/// Launcher-only actions never appear in More: one encoder click on a row
+/// would run them (Power OFF powers the board off); the power button offers it.
+bool launcher_only(const char* name)
+{
+    return same_name(name, kPowerOffAppName);
+}
+
 void on_row_clicked(lv_event_t* e)
 {
     auto pick = reinterpret_cast<ModeMorePickFn>(lv_event_get_user_data(e));
@@ -47,7 +55,7 @@ std::vector<const char*> mode_more_apps(const ModeEntry* map, size_t count,
 {
     std::vector<const char*> out;
     for (const char* name : registered) {
-        if (name && !on_map(map, count, name)) out.push_back(name);
+        if (name && !launcher_only(name) && !on_map(map, count, name)) out.push_back(name);
     }
     return out;
 }

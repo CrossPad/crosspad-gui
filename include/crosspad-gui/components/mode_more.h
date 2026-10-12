@@ -20,7 +20,8 @@ namespace crosspad_gui {
 
 /// The names in @p registered (registry order) that no entry of @p map opens.
 /// Compared case-insensitively, like the map's own lookup. Null names are
-/// skipped; the pointers are returned, not copied.
+/// skipped, and so are launcher-only actions (Power OFF); the pointers are
+/// returned, not copied.
 std::vector<const char*> mode_more_apps(const ModeEntry* map, size_t count,
                                         const std::vector<const char*>& registered);
 
