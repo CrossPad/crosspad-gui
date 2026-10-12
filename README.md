@@ -191,7 +191,10 @@ crosspad-core's `PlatformServices`, so a platform implements nothing for it.
 Lifecycle: `start()` -> `pause()` / `resume()` -> `destroyApp()`. An app that
 declares a pad logic name gets `pushPadLogic()` on start and `popPadLogic()` on
 destroy; a root deleted by someone else (a launcher rebuild) rolls the app back
-to not-started through its `LV_EVENT_DELETE` hook.
+to not-started through its `LV_EVENT_DELETE` hook and calls the app's destroy
+function with `nullptr`: release timers, subscriptions and groups, delete
+nothing. A destroy function therefore deletes its root only when it gets one
+(`if (root) lv_obj_delete_async(root);`).
 
 ## Platform Interfaces
 

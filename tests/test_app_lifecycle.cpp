@@ -28,6 +28,7 @@ public:
 struct Counts {
     int created = 0;
     int destroyed = 0;
+    int destroyedWithoutRoot = 0;
     lv_group_t* appGroup = nullptr;
 };
 Counts g_counts;
@@ -46,8 +47,9 @@ lv_obj_t* create_app(lv_obj_t* parent, App* a)
 void destroy_app(lv_obj_t* root)
 {
     g_counts.destroyed++;
+    if (!root) g_counts.destroyedWithoutRoot++;
     if (g_counts.appGroup) { lv_group_delete(g_counts.appGroup); g_counts.appGroup = nullptr; }
-    lv_obj_delete_async(root);
+    if (root) lv_obj_delete_async(root);
 }
 
 lv_obj_t* create_nothing(lv_obj_t*, App*)
@@ -119,13 +121,18 @@ TEST_CASE("App: a root deleted behind its back rolls the app back", "[app]")
     REQUIRE(f.padManager.getActivePadLogic() == kAppLogic);
 
     lv_obj_clean(f.screen);   // a launcher rebuild takes the app's tree with it
-    lv_group_delete(g_counts.appGroup);   // and installs a group of its own
-    g_counts.appGroup = nullptr;
-    lv_indev_set_group(f.gui.encoder, f.group);
+    lv_indev_set_group(f.gui.encoder, f.group);   // and installs a group of its own
     CHECK_FALSE(app.isStarted());
-    CHECK(g_counts.destroyed == 0);
     CHECK(f.padManager.getActivePadLogic() == kBase);
     CHECK(AppOrchestrator::getInstance().getForegroundApp() == nullptr);
+
+    // The app's teardown ran, without a root to delete: its group is gone.
+    CHECK(g_counts.destroyed == 1);
+    CHECK(g_counts.destroyedWithoutRoot == 1);
+    CHECK(g_counts.appGroup == nullptr);
+    f.advance(1);   // nothing was queued against the freed root
+    app.destroyApp();   // and there is nothing left to destroy
+    CHECK(g_counts.destroyed == 1);
 
     app.start(f.screen);   // and it can start again
     CHECK(app.isStarted());

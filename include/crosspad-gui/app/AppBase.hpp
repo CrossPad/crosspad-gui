@@ -39,6 +39,13 @@ class AppBase : public ILvglApp {
 public:
     using AppFlags = crosspad::AppFlags;
     using CreateFn  = lv_obj_t* (*)(lv_obj_t* parent, Derived* a);
+    /// The app's teardown, called once for every start() that built a root.
+    /// From destroyApp() it gets the root and deletes it
+    /// (lv_obj_delete_async()). When someone else deleted the root -- a
+    /// launcher rebuild's lv_obj_clean() -- it is called with nullptr from
+    /// inside that deletion: release what the app owns (timers, event-bus
+    /// subscriptions, its encoder group, pointers into the tree) and delete
+    /// nothing, the tree is already going.
     using DestroyFn = void (*)(lv_obj_t* app);
     using ShowFn    = void (*)(lv_obj_t* app);
     using HideFn    = void (*)(lv_obj_t* app);
@@ -260,8 +267,9 @@ public:
 
 private:
     /// The root was deleted by someone other than destroyApp(). Roll the app
-    /// back to the not-started state so the next start() rebuilds it. The LVGL
-    /// teardown has already happened, so destroy_ must not run.
+    /// back to the not-started state so the next start() rebuilds it, and let
+    /// the app release what it owns: destroy_(nullptr), since LVGL is deleting
+    /// the root already.
     void onRootDeleted() {
         if (!started_ && !visible_) return;   // destroyApp() is doing this
 
@@ -281,6 +289,8 @@ private:
         // rebuilding the screen and installs its own group, and the group we
         // remembered is usually part of that same teardown.
         priorEncoderGroup_ = nullptr;
+
+        if (destroy_) destroy_(nullptr);
     }
 
     static void rootDeletedCb(lv_event_t* e) {
