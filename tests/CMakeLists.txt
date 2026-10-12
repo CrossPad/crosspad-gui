@@ -48,6 +48,7 @@ add_executable(crosspad_gui_tests
     ${TEST_SOURCES}
     lvgl_headless.cpp
     gui_test_platform.cpp
+    fw_fake_service.cpp
     png_write.cpp
     ${GUI_SOURCES}
 )

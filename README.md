@@ -24,6 +24,7 @@ include/crosspad-gui/
   app/             App, AppBase CRTP template, ILvglApp (app lifecycle)
   components/      Screens and building blocks: launcher, bars, settings, dialogs, ...
   design/          Pixel fonts and 1-bit icons of the design language
+  fw/              The Firmware app: Library, Store and Updates views, kit card, actions
   platform/        IGuiPlatform, IFileSystem, GuiServices (what the platform provides)
   styles/          Global LVGL style objects
   theme/           Color palette, LCD resolution, per-project overrides
@@ -128,6 +129,24 @@ Row builders: `settings_row_switch`, `settings_row_slider`, `settings_row_info`,
   feeds it from its STM32 poll, `powerButtonPress()` / `powerButtonRelease()`
   from an emulated button.
 
+### Firmware App
+
+The firmware launcher: **Library** (packages on the card, the two slots),
+**Store** (the cached catalog, Official then Community) and **Updates** tabs,
+a full-screen **kit card** whose buttons come from `fwCardPlan()`
+(`fw/FwCardActions.hpp`), and the questions before an install. Everything the
+views need from the platform goes through `IFwViewService`: storage requests
+whose answers move in on `dataPoll()`, the slots and their install/switch
+flows, the updater's jobs, the WiFi lease, the network-mode offer and the
+FW_UI fields a test reads. The platform registers the app (`REGISTER_APP_PL`,
+pad logic `"Firmware"`) around `fw_app_create()` / `fw_app_destroy()` and may
+end the Updates tab with a block of its own (`FwAppHooks`).
+
+```cpp
+crosspad_gui::setFwViewService(&myService);          // once, after bootstrap()
+lv_obj_t* create(lv_obj_t* parent, App* a) { return crosspad_gui::fw_app_create(parent, a, kHooks); }
+```
+
 ### Other Components
 
 | Component | Purpose |
@@ -181,6 +200,8 @@ to not-started through its `LV_EVENT_DELETE` hook.
 | `IGuiPlatform` | Heap stats, millis, asset path prefix, navigation encoder, perf stats, power off, volumes, STM config, audio routing, ... |
 | `IFileSystem` | Directory listing (`PosixFileSystem` is the POSIX one) |
 | `GuiServices` | `platformSettings()` / `platformStatus()`: the settings and status in `PlatformServices` |
+| `IFwViewService` | The Firmware app's card, slots, updater, WiFi lease and network mode (`fw/IFwViewService.h`); only for a platform that hosts it |
+| `CROSSPAD_GUI_PSRAM_BSS` | Static state placed in external RAM (`platform/psram_placement.h`): `EXT_RAM_BSS_ATTR` under ESP-IDF, empty elsewhere |
 
 ## Porting to a New Platform
 
