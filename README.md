@@ -133,6 +133,7 @@ Row builders: `settings_row_switch`, `settings_row_slider`, `settings_row_info`,
 | Component | Purpose |
 |-----------|---------|
 | **transport_bar** | The top transport row (MODE, REC, play/stop, BPM, position, voices, battery) |
+| **boot_splash** | The cold-boot animation: pads light up, logo rises in, backlight and pad LEDs fade along; objects and a compiled-in 6 kB alpha logo, no decoded picture |
 | **mode_overlay** | MODE + pad: a 4x4 map of apps and switches, also the home screen |
 | **ui_modal** | Confirm, choice and selection dialogs, closed by the power button's back |
 | **ui_toast** | Temporary info/success/warning/error messages |
