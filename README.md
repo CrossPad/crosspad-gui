@@ -84,7 +84,6 @@ crosspad_gui::vu_set_levels(left_db, right_db);
 
 | Component | Purpose |
 |-----------|---------|
-| **radial_menu** | Circular menu with encoder navigation |
 | **file_explorer** | Filesystem browser with file type filters and preview |
 | **dfu_panel** | Firmware update info screen |
 | **ui_modal** | Confirmation and selection dialogs |

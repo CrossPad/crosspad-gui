@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**crosspad-gui** — shared LVGL UI component library for CrossPad. Provides theme, styles, launcher, status bar, AppBase CRTP template, and reusable widgets (keypad buttons, spinbox, radial menu, VU meter, file explorer, DFU panel, modals/toasts). Used as a submodule by ESP32-S3, 2playerCrosspad, and crosspad-pc projects.
+**crosspad-gui** — shared LVGL UI component library for CrossPad. Provides theme, styles, launcher, status bar, AppBase CRTP template, and reusable widgets (keypad buttons, spinbox, VU meter, file explorer, DFU panel, modals/toasts). Used as a submodule by ESP32-S3, 2playerCrosspad, and crosspad-pc projects.
 
 ## CrossPad Manifesto
 
