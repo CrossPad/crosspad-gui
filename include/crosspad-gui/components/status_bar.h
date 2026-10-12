@@ -141,10 +141,8 @@ void statusbar_arrow_hold_cancel();
 
 } // namespace crosspad_gui
 
-// Create the status bar as a child of the given parent.
-// Requires: extern CrosspadSettings * settings;
-//           extern CrosspadStatus status;
-//           extern lv_obj_t * status_c;
+// Create the status bar as a child of the given parent. It shows the
+// settings and status in crosspad::PlatformServices (crosspad-gui/platform/GuiServices.h).
 // @param parent  Parent object (typically the main screen flex column)
 // @return The created status bar container
 lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent);

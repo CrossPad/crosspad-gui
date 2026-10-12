@@ -4,6 +4,7 @@
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 
 #include "crosspad/net/WifiTypes.hpp"
@@ -29,9 +30,10 @@ using namespace crosspad;
 // Maximum drawer height = parent content height minus status bar (cap so it doesn't exceed screen)
 #define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(status_c)) - lv_obj_get_height(status_c))
 
-extern CrosspadSettings * settings;
-extern CrosspadStatus status;
-extern lv_obj_t * status_c; // status bar container
+using crosspad_gui::platformSettings;
+using crosspad_gui::platformStatus;
+
+static lv_obj_t * status_c = NULL; // status bar container
 
 static bool quickSettingsPanelVisible = false;
 
@@ -507,6 +509,7 @@ static int16_t s_lastBatteryPct = kBatteryUnknown;
 static bool s_lastBatteryLow = false;
 
 static void check_status_timer_cb(lv_timer_t * timer) {
+    const CrosspadStatus & status = platformStatus();
     // SD card — ESP filesystem mount state is authoritative; STM32 detect is fallback
     bool sd = status.sdCardDetected;
     if (sd != s_lastSd) {
@@ -828,6 +831,7 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     }
 
     lv_obj_t * cont = lv_obj_create(parent);
+    status_c = cont;
     lv_obj_set_width(cont, LV_PCT(100));
     lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT);
     lv_obj_add_style(cont, &styleStatusBar, 0);
@@ -1026,7 +1030,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     t_perf_stats = lv_timer_create(perf_stats_timer_cb, 500, NULL);
 
     // Apply initial flags from settings
-    uint8_t perf_flags = settings ? settings->perfStatsFlags : 0;
+    uint8_t perf_flags = platformSettings().perfStatsFlags;
     crosspad_gui::statusbar_set_perf_level(perf_flags);
 
     // Status check timer — delete previous if status bar is being re-created
@@ -1035,6 +1039,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
         t_check_status = NULL;
     }
     // Reset cached values so icons are refreshed on first tick
+    const CrosspadStatus & status = platformStatus();
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
@@ -1179,13 +1184,13 @@ static void drawer_switch_event_cb(lv_event_t * e)
 {
     auto * ctx = static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
     auto * sw = static_cast<lv_obj_t *>(lv_event_get_target(e));
-    if (!ctx || !ctx->setting || !settings) return;
+    if (!ctx || !ctx->setting) return;
 
     const bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
     *ctx->setting = on;
-    settings->stm.audioEn = on ? 1 : 0;
+    platformSettings().stm.audioEn = on ? 1 : 0;
     if (on) {
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
     } else {
         crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_AUDIO_EN, 0);
     }
@@ -1303,30 +1308,30 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
      * (REG_CTL_AUDIO_EN). Hence a switch below them, not a slider. */
     auto line_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(platformSettings().masterFX.outVolumeCodec[1][0]);
     };
     auto phones_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad::getPadLedController().setBrightness(settings->RGBbrightness);
+        crosspad::getPadLedController().setBrightness(platformSettings().RGBbrightness);
     };
     auto lcd_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setLcdBrightness(settings->LCDbrightness);
+        crosspad_gui::getGuiPlatform().setLcdBrightness(platformSettings().LCDbrightness);
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
     lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Out 1", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
+                        &(platformSettings().masterFX.outVolumeCodec[1][0]), line_apply);
     lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][0]), phones_apply);
+                        &(platformSettings().masterFX.outVolumeCodec[0][0]), phones_apply);
     lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
-                        &(settings->masterFX.speakersEnabled));
-    lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
-    lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
+                        &(platformSettings().masterFX.speakersEnabled));
+    lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(platformSettings().RGBbrightness), rgb_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(platformSettings().LCDbrightness), lcd_apply);
 
     /* Memory, small and dim, and the way back up. */
     lv_obj_t * footer = lv_obj_create(cont);

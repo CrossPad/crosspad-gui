@@ -1,6 +1,10 @@
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/platform/IFileSystem.h"
+#include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
+#include "crosspad/platform/PlatformServices.hpp"
+#include "crosspad/settings/CrosspadSettings.hpp"
+#include "crosspad/status/CrosspadStatus.hpp"
 #include <cassert>
 
 namespace crosspad_gui {
@@ -33,6 +37,17 @@ void setOverlayParent(lv_obj_t * parent) {
 
 lv_obj_t * getOverlayParent() {
     return s_overlayParent ? s_overlayParent : lv_layer_top();
+}
+
+crosspad::CrosspadSettings & platformSettings() {
+    crosspad::CrosspadSettings * s = crosspad::getPlatformServices().settings;
+    return s ? *s : *crosspad::CrosspadSettings::getInstance();
+}
+
+crosspad::CrosspadStatus & platformStatus() {
+    static crosspad::CrosspadStatus s_beforeInit;
+    crosspad::CrosspadStatus * s = crosspad::getPlatformServices().status;
+    return s ? *s : s_beforeInit;
 }
 
 } // namespace crosspad_gui

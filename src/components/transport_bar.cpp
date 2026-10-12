@@ -7,6 +7,7 @@
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 
 #include "crosspad/status/CrosspadStatus.hpp"
@@ -15,8 +16,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-
-extern crosspad::CrosspadStatus status;
 
 namespace crosspad_gui {
 
@@ -436,7 +435,7 @@ void paint_readouts()
     lv_obj_set_style_bg_opa(T.vox, full ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_obj_set_style_text_color(T.vox, full ? bar_color() : INK, 0);
 
-    uint8_t pct = status.batteryPct;
+    uint8_t pct = platformStatus().batteryPct;
     if (pct > 100) pct = 100;
     int32_t w = (14 * (int32_t)pct) / 100;
     if (w < 1) w = 1;
