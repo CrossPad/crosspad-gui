@@ -121,6 +121,7 @@ Fade        s_fade = Fade::In;
 uint8_t     s_padLevel = 0;       ///< the pads' brightness a Reveal brings them to
 uint8_t     s_padCap = 0;         ///< the controller's own cap, back once it is there
 uint8_t     s_padDim = 255;       ///< the splash's colours on the pads, as the user set them
+crosspad::PadAnimator::AnimToken s_padAnim = crosspad::PadAnimator::kNoAnim;  ///< the splash's frame on the pads
 void (*s_fadeDone)() = nullptr;
 
 // ── the backlight ──────────────────────────────────────────────────────────
@@ -163,7 +164,9 @@ void show_pads(int step, crosspad::RgbColor all = crosspad::RgbColor(), float li
         frame[n - 1] = dim_keep_hue(uniform ? all : n < step ? kLedPurple : n == step ? kLedLime : crosspad::RgbColor(),
                                     (float)s_padDim * light);
     }
-    crosspad::getPadAnimator().showFrame(frame);
+    auto& anim = crosspad::getPadAnimator();
+    if (s_padAnim == crosspad::PadAnimator::kNoAnim) s_padAnim = anim.showFrame(frame);
+    else anim.updateFrame(s_padAnim, frame);
 }
 
 float ease_in_out_quad(float t)
@@ -480,6 +483,7 @@ void boot_splash_start(lv_obj_t* parent, uint8_t level, boot_splash_backlight_fn
     lv_obj_set_pos(s_logo, (kW - (int32_t)boot_splash_logo.header.w) / 2, kLogoY + 8);
 
     s_active = true;
+    s_padAnim = crosspad::PadAnimator::kNoAnim;
     show_pads(0);
     fade(Fade::In, nullptr);
     s_stepTimer = lv_timer_create(step_cb, kStepMs, nullptr);
@@ -501,7 +505,8 @@ void boot_splash_reveal(void)
     s_padCap = leds.getBrightness();
     s_padLevel = pad_level();
     leds.setBrightness(0);
-    crosspad::getPadAnimator().stop();
+    crosspad::getPadAnimator().stop(s_padAnim);
+    s_padAnim = crosspad::PadAnimator::kNoAnim;
     fade(Fade::Reveal, nullptr);
 }
 

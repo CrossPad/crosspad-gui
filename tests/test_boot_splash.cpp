@@ -44,6 +44,19 @@ TEST_CASE("boot splash: standalone, it plays, fades and leaves nothing behind", 
     CHECK(lv_obj_get_child_count(f.screen) == 0);
     CHECK(s_backlight.back() == 80);
     CHECK(f.padLedController.getBrightness() == 200);
+    CHECK_FALSE(f.padAnimator.isActive());
+}
+
+TEST_CASE("boot splash: the reveal leaves an animation that took the pads over", "[boot_splash]")
+{
+    guitest::GuiFixture f;
+    boot_splash_start(f.screen, 100, nullptr, false);
+    run_for(f, 100);
+    const auto ota = f.padAnimator.startProgress();
+
+    run_for(f, kLongerThanTheSplashMs);
+    boot_splash_reveal();
+    CHECK(f.padAnimator.owns(ota));
 }
 
 TEST_CASE("boot splash: at boot, the caller builds the next screen and reveals it", "[boot_splash]")
