@@ -32,8 +32,32 @@ include/crosspad-gui/
   bootstrap.h      Framework initialization
   gui_start.h      One-call GUI start (bootstrap + styles + orchestrator + main screen)
   crosspad_gui.h   Umbrella header
+src/fonts/         Montserrat 10-24 with European diacritics (replaces LVGL's copies)
+cmake/             crosspad_gui_fonts.cmake: takes LVGL's Montserrat out of its build
+tools/fonts/       The font generator, its TTF/WOFF sources and their licences
 tests/             Host tests (Catch2 + headless LVGL)
 ```
+
+## Fonts
+
+LVGL ships Montserrat as ASCII plus the FontAwesome symbols. `src/fonts/`
+carries the same fonts under the same symbol names (`lv_font_montserrat_10`,
+`_12`, `_14`, `_16`, `_18`, `_24`: same TTF, same bpp, same `LV_SYMBOL_*`
+list) plus Latin-1 Supplement and Latin Extended-A, so names with diacritics
+draw on every platform without a call site naming a special font. A size LVGL's
+configuration leaves off compiles to nothing. LVGL's own copies of those sizes
+have to leave the build:
+
+```cmake
+include(<crosspad-gui>/cmake/crosspad_gui_fonts.cmake)
+crosspad_gui_replace_lvgl_fonts(<your LVGL target>)
+```
+
+The ESP-IDF component does it for `lvgl__lvgl` and forces each enabled size
+into the link from this component. Regenerate with
+`python3 tools/fonts/generate.py` (needs node; fetches lv_font_conv through
+npx). The range and why it has holes are in the generator; the font licences
+are in `tools/fonts/font_license/`.
 
 ## Components
 
@@ -167,7 +191,8 @@ A platform provides:
 2. an `IGuiPlatform` and an `IFileSystem` implementation;
 3. `crosspad_gui::gui_start()` (or `bootstrap()` + `initStyles()` + the
    orchestrator by hand), then its own LVGL loop;
-4. LVGL 9.3 with Montserrat 10, 14, 16, 18 and 24.
+4. LVGL 9.3 with Montserrat 10, 14, 16, 18 and 24 enabled, and LVGL's own
+   copies taken out of its build ([Fonts](#fonts)).
 
 Nothing else: no global `settings`, `status` or `status_c`, no `App`
 accessors (crosspad-gui defines them; a second definition is a duplicate
@@ -206,7 +231,8 @@ git submodule add <url> components/crosspad-gui
 
 # Desktop (CMake)
 git submodule add <url> lib/crosspad-gui
-# Then GLOB_RECURSE lib/crosspad-gui/src/*.cpp and *.c in CMakeLists.txt
+# Then GLOB_RECURSE lib/crosspad-gui/src/*.cpp and *.c in CMakeLists.txt,
+# and crosspad_gui_replace_lvgl_fonts() on the LVGL target (see Fonts)
 ```
 
 ## Tests

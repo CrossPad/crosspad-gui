@@ -25,6 +25,9 @@ add_library(lvgl_host STATIC ${LVGL_SOURCES})
 # src/ too: gui reaches a few private LVGL headers by their path under it.
 target_include_directories(lvgl_host PUBLIC ${lvgl_SOURCE_DIR} ${lvgl_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(lvgl_host PUBLIC LV_CONF_INCLUDE_SIMPLE)
+# Montserrat comes from src/fonts/, as on every platform.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/crosspad_gui_fonts.cmake)
+crosspad_gui_replace_lvgl_fonts(lvgl_host)
 
 # crosspad-core beside this repository, as every platform checks it out, or
 # wherever CROSSPAD_CORE_DIR points. Its FreeRTOS / ESP-IDF adapters are left
