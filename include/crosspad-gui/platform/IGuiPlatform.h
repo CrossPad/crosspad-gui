@@ -189,7 +189,10 @@ public:
     // Run @p cb on the LVGL task, from any task. lv_async_call() edits LVGL's
     // timer list and is only safe from the LVGL task itself (or under the
     // display lock) when LVGL is built without an OS layer; a pad hit arrives
-    // on the pad task. Platforms with a display lock override this to take it.
+    // on the pad task. Platforms with a display lock override this to hand the
+    // call to a task that takes it: postToGui() itself never waits for that
+    // lock, since its callers (pad-logic callbacks, event-bus handlers) may be
+    // what the LVGL thread is waiting for.
     virtual void postToGui(lv_async_cb_t cb, void * user_data) { lv_async_call(cb, user_data); }
 
     // Where @p path, as the file explorer is handed it (a card path such as
