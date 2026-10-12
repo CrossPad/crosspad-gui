@@ -1,31 +1,77 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+/**
+ * @file midi_ble_panel.h
+ * @brief The Settings "BLE MIDI" page, the same on every platform.
+ *
+ * BLE MIDI: Enabled, Role, Send transpose, Receive transpose.
+ * Status:   State, Peer, Find devices (Scan), Connection (Disconnect), and the
+ *           devices the last scan found, each with Connect.
+ * MIDI monitor: the last message in and out.
+ *
+ * The radio stacks differ (NimBLE on the board, SimpleBLE + RtMidi on the
+ * desktop), and so does what they can do: a row whose callback is null is not
+ * shown (the device rows need both `startScan` and `scanResults`). Rows that
+ * change a setting store it in CrosspadSettings::wireless
+ * first, then call the platform, then save the settings.
+ *
+ * LVGL thread only. While the page is open an LVGL timer polls the status
+ * callbacks, so no BLE thread ever touches LVGL: the getters are called on the
+ * LVGL thread and must be safe there and quick. An action that blocks (a
+ * connect that waits for the link) runs on the platform's own thread behind
+ * `connect`, and `stateName` says so meanwhile. The page stops polling when
+ * its objects are deleted.
+ */
+
 #ifdef USE_LVGL
 
 #include <lvgl.h>
 
-class App;
+#include "crosspad/midi/IBleMidi.hpp"
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
 
 namespace crosspad_gui {
 
-/// Platform callbacks for BLE MIDI operations.
+/// What the page needs from the platform's BLE MIDI stack.
 struct MidiBleCallbacks {
-    bool (*isConnected)()     = nullptr;
-    void (*setEnabled)(bool)  = nullptr;
+    // ── Settings rows ── called after the row stored the new value.
+    /// "Enabled": wireless.enableBLE changed; start or stop the stack.
+    void (*setEnabled)(bool on) = nullptr;
+    /// "Role": wireless.bleMidiMode changed (0 host / central, 1 server / peripheral).
+    void (*setMode)(uint8_t mode) = nullptr;
+    /// "Send transpose": wireless.bleMidiTxOffset changed (an index into
+    /// crosspad/midi/BleMidiOffsets.hpp).
+    void (*applyTxOffset)() = nullptr;
+    /// "Receive transpose": wireless.bleMidiNoteOffset changed (semitones).
+    void (*applyRxOffset)() = nullptr;
+
+    // ── Status, polled ──
+    /// A word or two for the State row: "off", "scanning", "connected", ...
+    const char* (*stateName)() = nullptr;
+    /// The peer of the current link; an empty address when there is none.
+    crosspad::BleMidiDevice (*connectedDevice)() = nullptr;
+    /// The devices the last scan found.
+    std::vector<crosspad::BleMidiDevice> (*scanResults)() = nullptr;
+    /// The last message received and sent, formatted ("90 24 7F").
+    void (*lastMessages)(char* in, size_t inLen, char* out, size_t outLen) = nullptr;
+
+    // ── Actions ──
+    void (*startScan)() = nullptr;
+    void (*connect)(const std::string& address) = nullptr;
+    void (*disconnect)() = nullptr;
 };
 
-/// Register platform BLE callbacks. Must be called before creating the panel.
+/// The platform's callbacks; set before the page is opened.
 void midi_ble_set_callbacks(const MidiBleCallbacks& cb);
 
-/// Retrieve the currently registered BLE callbacks.
-const MidiBleCallbacks& midi_ble_get_callbacks();
-
-/// Create the MIDI BLE settings panel.
-lv_obj_t* lv_CreateMidiBLE(lv_obj_t* parent, App* app);
-
-/// Destroy the MIDI BLE settings panel.
-void lv_MidiBLE_destroy(lv_obj_t* obj);
+/// SettingsCategory::build of the page:
+/// settings_ui_add_category({"BLE MIDI", LV_SYMBOL_BLUETOOTH, midi_ble_settings_build}).
+void midi_ble_settings_build(lv_obj_t* parent, lv_group_t* group);
 
 } // namespace crosspad_gui
 

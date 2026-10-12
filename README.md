@@ -146,7 +146,7 @@ Row builders: `settings_row_switch`, `settings_row_slider`, `settings_row_info`,
 | **vu_meter** | Stereo levels with logarithmic scaling and peak hold |
 | **volume_overlay** | Output volume with Out 1 / Out 2 cycling |
 | **dfu_panel** | Firmware update info screen |
-| **midi_ble_panel** | BLE MIDI connection panel over platform callbacks |
+| **midi_ble_panel** | The Settings "BLE MIDI" page (role, transposes, state, scan, devices, connect, monitor) over `MidiBleCallbacks`; rows without a callback are not shown |
 | **stm_pad_editor** | Per-pad analog tuning (logic + screen) |
 | **touch_gesture** | Screen-wide swipes, recognised beneath LVGL's object layer |
 | **app_icon** | Icon path resolution against the platform's asset prefix |
