@@ -50,7 +50,20 @@ void destroy_app(lv_obj_t* root)
     lv_obj_delete_async(root);
 }
 
-lv_obj_t* create_nothing(lv_obj_t*, App*) { return nullptr; }
+lv_obj_t* create_nothing(lv_obj_t*, App*)
+{
+    g_counts.created++;
+    return nullptr;
+}
+
+/// A create that took the encoder over, then failed.
+lv_obj_t* create_nothing_after_group(lv_obj_t*, App*)
+{
+    g_counts.created++;
+    g_counts.appGroup = lv_group_create();
+    lv_indev_set_group(getGuiPlatform().getNavigationEncoder(), g_counts.appGroup);
+    return nullptr;
+}
 
 struct AppFixture : guitest::GuiFixture {
     AppFixture()
@@ -136,17 +149,34 @@ TEST_CASE("App: a restart before the old root's async delete keeps the new insta
     CHECK(f.padManager.getActivePadLogic() == kBase);
 }
 
-TEST_CASE("App: a create that fails pushes nothing", "[app]")
+TEST_CASE("App: a create that returns no root leaves the app not started", "[app]")
 {
     AppFixture f;
     App app(f.screen, "Test", nullptr, create_nothing, destroy_app);
     app.setPadLogicName(kAppLogic);
-    app.setOnShow(nullptr);   // the default show asserts on the missing root
-    app.start(f.screen);
+    app.start(f.screen);   // the default show (which asserts on a null root) is not reached
+    CHECK_FALSE(app.isStarted());
+    CHECK(g_counts.created == 1);
     CHECK(f.padManager.getActivePadLogic() == kBase);
+    CHECK(AppOrchestrator::getInstance().getForegroundApp() == nullptr);
+
     app.destroyApp();
+    CHECK(g_counts.destroyed == 0);
     CHECK(f.padManager.getActivePadLogic() == kBase);
-    AppOrchestrator::getInstance().noteAppStopped(&app);
+
+    app.start(f.screen);   // a later start tries again rather than being refused
+    CHECK(g_counts.created == 2);
+    CHECK_FALSE(app.isStarted());
+}
+
+TEST_CASE("App: a failed create hands the encoder back", "[app]")
+{
+    AppFixture f;
+    App app(f.screen, "Test", nullptr, create_nothing_after_group, destroy_app);
+    app.start(f.screen);
+    CHECK_FALSE(app.isStarted());
+    CHECK(lv_indev_get_group(f.gui.encoder) == f.group);
+    lv_group_delete(g_counts.appGroup);
 }
 
 TEST_CASE("App: the accessors are the platform's objects", "[app]")

@@ -104,6 +104,14 @@ public:
         priorEncoderGroup_ = enc ? lv_indev_get_group(enc) : nullptr;
 
         app = create_(parent, static_cast<Derived*>(this));
+        if (!app) {
+            // Nothing to show, hook or tear down: the app stays not started,
+            // no pad logic is pushed, and whatever group the create put on
+            // the encoder goes back to its owner.
+            LV_LOG_ERROR("App %s: create returned no root, not started", name_ ? name_ : "?");
+            restoreEncoderGroup();
+            return;
+        }
         this->app_c = parent;
         LV_LOG_TRACE("App created");
 
@@ -114,9 +122,7 @@ public:
         // the pre-launch hook and never becomes runningApp_. Without this hook
         // started_ outlives the tree it describes, and every later start() is
         // refused with "App already started" against a dangling root.
-        if (app) {
-            lv_obj_add_event_cb(app, rootDeletedCb, LV_EVENT_DELETE, this);
-        }
+        lv_obj_add_event_cb(app, rootDeletedCb, LV_EVENT_DELETE, this);
 
         started_ = true;
         /* Whatever started this app — the launcher, or a pre-launch gate that
@@ -128,10 +134,7 @@ public:
             visible_ = true;
         }
 
-        // Guard on `app`: a failed create_() (returns nullptr) must not push —
-        // destroyApp()'s `if (app == nullptr) return;` guard would make the
-        // matching pop unreachable, leaking a stack frame forever.
-        if (app && padLogicName_ && padLogicName_[0] != '\0') {
+        if (padLogicName_ && padLogicName_[0] != '\0') {
             crosspad::getPadManager().pushPadLogic(padLogicName_);
         }
 
