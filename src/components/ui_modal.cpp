@@ -265,17 +265,8 @@ static void select_item_cb(lv_event_t * e) {
     SelectCtx * ctx = (SelectCtx *)lv_event_get_user_data(e);
     lv_obj_t * btn = (lv_obj_t *)lv_event_get_target(e);
 
-    lv_obj_t * list = lv_obj_get_parent(btn);
-    int idx = 0;
-    uint32_t count = lv_obj_get_child_count(list);
-    for (uint32_t i = 0; i < count; i++) {
-        if (lv_obj_get_child(list, i) == btn) {
-            idx = (int)i;
-            break;
-        }
-    }
-
-    select_close(ctx, idx, false);
+    // The option's own index: the panel's children also hold the title.
+    select_close(ctx, (int)(intptr_t)lv_obj_get_user_data(btn), false);
 }
 
 static void select_cancel_cb(lv_event_t * e) {
@@ -337,6 +328,7 @@ lv_obj_t * ui_modal_selection(
     lv_obj_t * focus_obj = NULL;
     for (int i = 0; options[i] != NULL; i++) {
         lv_obj_t * btn = lv_button_create(panel);
+        lv_obj_set_user_data(btn, (void *)(intptr_t)i);
         lv_obj_set_size(btn, LV_PCT(100), 30);
         lv_obj_set_style_radius(btn, 6, 0);
         lv_obj_set_style_pad_hor(btn, 8, 0);

@@ -148,3 +148,16 @@ TEST_CASE("ui_modal_selection: the current option has the encoder", "[modal]")
     CHECK(lv_indev_get_group(f.gui.encoder) == f.group);
     CHECK_FALSE(ui_back_has_overlay());
 }
+
+TEST_CASE("ui_modal_selection: a title does not shift the picked index", "[modal]")
+{
+    guitest::GuiFixture f;
+    const char* options[] = {"Low", "Medium", "High", nullptr};
+    Answer a;
+    ui_modal_selection("Quality", options, 2, on_select, &a, f.group);
+    click_focused(f.gui.encoder);
+    CHECK(a.calls == 1);
+    CHECK(a.index == 2);
+    CHECK_FALSE(a.flag);
+    CHECK_FALSE(ui_back_has_overlay());
+}
