@@ -41,8 +41,10 @@ public:
     void delayMs(uint32_t) override {}
     void sendPowerOff() override {}
     lv_indev_t* getNavigationEncoder() override { return encoder; }
+    std::string storagePath(const std::string& path) override { return storageRoot + path; }
 
     lv_indev_t* encoder = nullptr;
+    std::string storageRoot;   ///< in front of every path the file explorer lists
 };
 
 /// One per test case: a fresh screen with an encoder on its own group, the

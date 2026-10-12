@@ -25,7 +25,7 @@ include/crosspad-gui/
   components/      Screens and building blocks: launcher, bars, settings, dialogs, ...
   design/          Pixel fonts and 1-bit icons of the design language
   fw/              The Firmware app: Library, Store and Updates views, kit card, actions
-  platform/        IGuiPlatform, IFileSystem, GuiServices (what the platform provides)
+  platform/        IGuiPlatform, GuiServices (what the platform provides)
   styles/          Global LVGL style objects
   theme/           Color palette, LCD resolution, per-project overrides
   virtual_device/  Software-rendered encoder, pad grid and power button
@@ -201,7 +201,7 @@ nothing. A destroy function therefore deletes its root only when it gets one
 | Interface | Purpose |
 |-----------|---------|
 | `IGuiPlatform` | Heap stats, millis, asset path prefix, navigation encoder, perf stats, power off, volumes, STM config, audio routing, ... |
-| `IFileSystem` | Directory listing (`PosixFileSystem` is the POSIX one) |
+| `crosspad::IFileSystem` | Directory listing for the file explorer: crosspad-core's, from `PlatformServices` (`PosixFileSystem` by default); `IGuiPlatform::storagePath()` maps the explorer's card paths onto it |
 | `GuiServices` | `platformSettings()` / `platformStatus()`: the settings and status in `PlatformServices` |
 | `IFwViewService` | The Firmware app's card, slots, updater, WiFi lease and network mode (`fw/IFwViewService.h`); only for a platform that hosts it |
 | `CROSSPAD_GUI_PSRAM_BSS` | Static state placed in external RAM (`platform/psram_placement.h`): `EXT_RAM_BSS_ATTR` under ESP-IDF, empty elsewhere |
@@ -213,7 +213,8 @@ A platform provides:
 1. crosspad-core initialised -- `crosspad_platform_init()` with its event bus,
    clock, LED strip, MIDI output, pad objects, and the `CrosspadSettings` /
    `CrosspadStatus` the GUI is to show -- before the GUI starts;
-2. an `IGuiPlatform` and an `IFileSystem` implementation;
+2. an `IGuiPlatform` implementation (and a `crosspad::IFileSystem` only where
+   POSIX does not reach the files);
 3. `crosspad_gui::gui_start()` (or `bootstrap()` + `initStyles()` + the
    orchestrator by hand), then its own LVGL loop;
 4. LVGL 9.3 with Montserrat 10, 14, 16, 18 and 24 enabled, and LVGL's own

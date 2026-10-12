@@ -5,12 +5,13 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/widgets/footer_button.h"
-#include "crosspad-gui/platform/IFileSystem.h"
 #include "crosspad-gui/components/power_gesture.h"
+#include "crosspad/platform/IFileSystem.hpp"
 
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 #include "crosspad-gui/platform/IGuiPlatform.h"
 
@@ -84,6 +85,28 @@ static void SchedulePreview(const char * path) {
 static void UpdateFileList();
 static void FocusPane(int pane);
 
+/* @p path's entries, hidden ones left out, each named by @p path plus its
+ * name: the platform's storagePath() is where the listing is read, never what
+ * a row says. Out of memory halfway it is an empty listing, so the directory
+ * is closed and nothing unwinds into LVGL. False when it cannot be read. */
+static bool ListDirectory(const std::string & path, std::vector<crosspad_gui::FileItem> & out) {
+    const bool slash = !path.empty() && path.back() == '/';
+    try {
+        return crosspad::getFileSystem().forEach(
+            crosspad_gui::getGuiPlatform().storagePath(path), [&](const char * name, bool isDir) {
+                if (name[0] == '.') return;
+                crosspad_gui::FileItem item;
+                item.name = name;
+                item.path = slash ? path + name : path + "/" + name;
+                item.isFolder = isDir;
+                out.push_back(std::move(item));
+            });
+    } catch (const std::bad_alloc &) {
+        out.clear();
+        return false;
+    }
+}
+
 /* A row is not cheap -- seven widgets, their styles, an entry in the encoder
  * group -- and a directory of seventy of them held the LVGL thread long enough
  * for the task watchdog to fire. They go up a chunk at a time now: the first
@@ -104,7 +127,7 @@ static void SubScanTimer_cb(lv_timer_t * t) {
     if (!s_subWanted[0]) return;
     subFolderPath = s_subWanted;
     subEntries.clear();
-    crosspad_gui::getFileSystem().listDirectory(subFolderPath, subEntries);
+    ListDirectory(subFolderPath, subEntries);
     UpdateFileList();
 }
 
@@ -384,13 +407,13 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     return cont;
 }
 
-// ── Directory scanning via IFileSystem ──────────────────────────────────────
+// ── Directory scanning ──────────────────────────────────────────────────────
 
 static bool IndexDirectory(const std::string & path) {
     if (s_beforeScanCb) s_beforeScanCb();
 
     entries.clear();
-    bool ok = crosspad_gui::getFileSystem().listDirectory(path, entries);
+    bool ok = ListDirectory(path, entries);
 
     if (s_afterScanCb) s_afterScanCb();
     return ok;
@@ -669,7 +692,7 @@ static void ItemSelected_cb(lv_event_t * e) {
                 if (subFolderPath != item->path) {
                     subFolderPath = item->path;
                     subEntries.clear();
-                    crosspad_gui::getFileSystem().listDirectory(subFolderPath, subEntries);
+                    ListDirectory(subFolderPath, subEntries);
                     UpdateFileList();
                 }
                 FocusPane(1);

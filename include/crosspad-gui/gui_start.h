@@ -8,15 +8,13 @@
 namespace crosspad_gui {
 
 class IGuiPlatform;
-class IFileSystem;
 
 /**
  * @brief Configuration for gui_start() — one-call GUI initialization.
  */
 struct GuiStartConfig {
-    // Platform adapters (required)
-    IGuiPlatform* platform   = nullptr;
-    IFileSystem*  filesystem = nullptr;
+    // Platform adapter (required)
+    IGuiPlatform* platform = nullptr;
 
     // App orchestrator hooks
     OrchestratorConfig orchestrator;

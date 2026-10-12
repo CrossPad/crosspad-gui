@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include "lvgl.h"
 #include "crosspad/stm32/Stm32ConfigSync.hpp"  // crosspad::Stm32PadLive
 #include "crosspad/settings/CrosspadSettings.hpp" // crosspad::TouchSensitivity
@@ -190,6 +191,11 @@ public:
     // display lock) when LVGL is built without an OS layer; a pad hit arrives
     // on the pad task. Platforms with a display lock override this to take it.
     virtual void postToGui(lv_async_cb_t cb, void * user_data) { lv_async_call(cb, user_data); }
+
+    // Where @p path, as the file explorer is handed it (a card path such as
+    // /crosspad/kits), is on crosspad::getFileSystem(); the path itself by
+    // default. The explorer's rows keep the path it was handed.
+    virtual std::string storagePath(const std::string & path) { return path; }
 };
 
 // Set the platform implementation (call once at startup)

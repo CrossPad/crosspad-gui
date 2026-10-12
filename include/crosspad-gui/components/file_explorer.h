@@ -2,8 +2,19 @@
 
 #ifdef USE_LVGL
 #include "lvgl.h"
-#include "crosspad-gui/platform/IFileSystem.h"
 #include <string>
+
+namespace crosspad_gui {
+
+/// One row of the explorer: a path as the explorer was given it (the folder it
+/// lists, plus the name), never the platform's file system path.
+struct FileItem {
+    std::string path;
+    std::string name;
+    bool isFolder;
+};
+
+} // namespace crosspad_gui
 
 // File type filter
 enum FileFilter {
