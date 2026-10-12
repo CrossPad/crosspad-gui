@@ -24,14 +24,14 @@ namespace crosspad_gui {
  *                  Needed so that function-pointer types use the right
  *                  App* type (e.g. `lv_obj_t* (*create)(lv_obj_t*, App*)`).
  *
- * Platform subclass example:
+ * crosspad-gui's own App (crosspad-gui/app/App.hpp) is the subclass every
+ * platform uses:
  * @code
  * class App : public crosspad_gui::AppBase<App> {
  * public:
  *     using AppBase::AppBase;          // inherit constructors
- *     Sequencer& sequencer();          // platform-specific accessor
+ *     crosspad::PadManager& padManager();
  * };
- * // Use crosspad::getPadManager() etc. directly from PlatformServices.
  * @endcode
  */
 template<typename Derived>
