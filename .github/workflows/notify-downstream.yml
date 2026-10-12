@@ -25,6 +25,10 @@ jobs:
     # (Actions billing) set the repository variable CI_SECRETS_RUNNER to
     # `self-hosted`, and unset it again after.
     runs-on: ${{ vars.CI_SECRETS_RUNNER || 'ubuntu-latest' }}
+    # A fork has no DOWNSTREAM_PAT: the job then says so and does nothing,
+    # rather than failing on an empty token.
+    env:
+      DOWNSTREAM_PAT: ${{ secrets.DOWNSTREAM_PAT }}
 
     strategy:
       fail-fast: false
@@ -35,7 +39,12 @@ jobs:
           - repo: matixan/2playerCrosspad
 
     steps:
+      - name: No DOWNSTREAM_PAT -- nothing to notify
+        if: env.DOWNSTREAM_PAT == ''
+        run: echo "::notice::DOWNSTREAM_PAT is not set in this repository; ${{ matrix.downstream.repo }} is not notified."
+
       - name: Determine ref label
+        if: env.DOWNSTREAM_PAT != ''
         id: label
         run: |
           REF="${{ github.ref }}"
@@ -51,9 +60,10 @@ jobs:
           echo "ref=$REF" >> $GITHUB_OUTPUT
 
       - name: Dispatch to ${{ matrix.downstream.repo }}
+        if: env.DOWNSTREAM_PAT != ''
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0   # v3.0.0
         with:
-          token: ${{ secrets.DOWNSTREAM_PAT }}
+          token: ${{ env.DOWNSTREAM_PAT }}
           repository: ${{ matrix.downstream.repo }}
           event-type: submodule-update
           client-payload: >
