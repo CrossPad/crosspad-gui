@@ -204,7 +204,6 @@ TEST_CASE("BLE MIDI page: a row without its callback is not there", "[midi_ble]"
     CHECK(find_label(page, "Enabled") == nullptr);
     CHECK(find_label(page, "Disconnect") == nullptr);
     CHECK(find_label(page, "Send transpose") == nullptr);
-    CHECK(find_label(page, "MIDI monitor") == nullptr);
     CHECK(find_label(page, "Role") != nullptr);
     CHECK(find_label(page, "Scan") != nullptr);
 }

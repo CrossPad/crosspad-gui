@@ -5,16 +5,17 @@
  * @file midi_ble_panel.h
  * @brief The Settings "BLE MIDI" page, the same on every platform.
  *
- * BLE MIDI: Enabled, Role, Send transpose, Receive transpose.
+ * BLE MIDI: Enabled, Role, Send transpose.
  * Status:   State, Peer, Find devices (Scan), Connection (Disconnect), and the
  *           devices the last scan found, each with Connect.
- * MIDI monitor: the last message in and out.
  *
  * The radio stacks differ (NimBLE on the board, SimpleBLE + RtMidi on the
  * desktop), and so does what they can do: a row whose callback is null is not
- * shown (the device rows need both `startScan` and `scanResults`). Rows that
- * change a setting store it in CrosspadSettings::wireless
- * first, then call the platform, then save the settings.
+ * shown (the device rows need both `startScan` and `scanResults`). A platform
+ * with rows of its own registers a builder that calls
+ * midi_ble_settings_build() and adds them after it. Rows that change a
+ * setting store it in CrosspadSettings::wireless first, then call the
+ * platform, then save the settings.
  *
  * LVGL thread only. While the page is open an LVGL timer polls the status
  * callbacks, so no BLE thread ever touches LVGL: the getters are called on the
@@ -30,7 +31,6 @@
 
 #include "crosspad/midi/IBleMidi.hpp"
 
-#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -47,8 +47,6 @@ struct MidiBleCallbacks {
     /// "Send transpose": wireless.bleMidiTxOffset changed (an index into
     /// crosspad/midi/BleMidiOffsets.hpp).
     void (*applyTxOffset)() = nullptr;
-    /// "Receive transpose": wireless.bleMidiNoteOffset changed (semitones).
-    void (*applyRxOffset)() = nullptr;
 
     // ── Status, polled ──
     /// A word or two for the State row: "off", "scanning", "connected", ...
@@ -57,8 +55,6 @@ struct MidiBleCallbacks {
     crosspad::BleMidiDevice (*connectedDevice)() = nullptr;
     /// The devices the last scan found.
     std::vector<crosspad::BleMidiDevice> (*scanResults)() = nullptr;
-    /// The last message received and sent, formatted ("90 24 7F").
-    void (*lastMessages)(char* in, size_t inLen, char* out, size_t outLen) = nullptr;
 
     // ── Actions ──
     void (*startScan)() = nullptr;

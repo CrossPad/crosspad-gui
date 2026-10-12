@@ -22,17 +22,6 @@ using namespace settings_detail;
 namespace {
 
 constexpr uint32_t kPollMs = 300;
-constexpr uint32_t kNoDevices = 0;
-constexpr uint32_t kFnvOffsetBasis = 2166136261u;
-constexpr uint32_t kFnvPrime = 16777619u;
-constexpr size_t   kMonitorLen = 48;
-
-/// Receive transpose, whole octaves either way.
-constexpr int8_t kRxOffsets[] = {-48, -36, -24, -12, 0, 12, 24, 36, 48};
-constexpr const char* kRxOffsetOptions = "-48\n-36\n-24\n-12\n0\n+12\n+24\n+36\n+48";
-constexpr uint8_t kRxOffsetCount = (uint8_t)(sizeof(kRxOffsets) / sizeof(kRxOffsets[0]));
-constexpr uint8_t kRxNoOffset = 4;
-static_assert(kRxOffsets[kRxNoOffset] == 0, "the default receive transpose is none");
 
 MidiBleCallbacks s_cb;
 
@@ -42,16 +31,13 @@ struct Page {
     lv_obj_t*   state = nullptr;
     lv_obj_t*   peer = nullptr;
     lv_obj_t*   devices = nullptr;
-    lv_obj_t*   midiIn = nullptr;
-    lv_obj_t*   midiOut = nullptr;
     /* The Scan button, to find the encoder group by when the device rows are
      * rebuilt: the group can be deleted before the page is (Settings
      * closing), and LVGL then clears it from its members, so a rebuild never
      * adds to a freed one. */
     lv_obj_t*   scanButton = nullptr;
     lv_timer_t* timer = nullptr;
-    uint32_t    shownDevices = kNoDevices;   ///< devices_key() of the rows shown
-    uint8_t     rxIndex = kRxNoOffset;
+    std::vector<crosspad::BleMidiDevice> shown;   ///< the devices the rows show, in order
 };
 Page s_page;
 
@@ -66,39 +52,34 @@ void set_text(lv_obj_t* label, const char* text)
     if (label && strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
 }
 
-/* Which devices, in which order (FNV-1a over the addresses): the rows are
- * rebuilt when it changes, and a Connect press finds its address by row
- * index only while it has not. */
-uint32_t devices_key(const std::vector<crosspad::BleMidiDevice>& found)
+bool same_devices(const std::vector<crosspad::BleMidiDevice>& a, const std::vector<crosspad::BleMidiDevice>& b)
 {
-    if (found.empty()) return kNoDevices;
-    uint32_t h = kFnvOffsetBasis;
-    for (const auto& d : found) {
-        for (const char c : d.address) h = (h ^ (uint8_t)c) * kFnvPrime;
-        h = (h ^ '\n') * kFnvPrime;
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].address != b[i].address) return false;
     }
-    return h == kNoDevices ? kNoDevices + 1 : h;
+    return true;
 }
 
 void connect_cb(lv_event_t* e);
 
-void show_devices(const std::vector<crosspad::BleMidiDevice>& found)
+void show_devices(std::vector<crosspad::BleMidiDevice> found)
 {
-    const uint32_t key = devices_key(found);
-    if (key == s_page.shownDevices) return;
-    s_page.shownDevices = key;
+    if (same_devices(found, s_page.shown)) return;
+    s_page.shown = std::move(found);
+    const auto& shown = s_page.shown;
 
     lv_obj_clean(s_page.devices);
-    if (found.empty()) {
+    if (shown.empty()) {
         lv_obj_add_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
         return;
     }
     lv_obj_remove_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
     lv_group_t* group = lv_obj_get_group(s_page.scanButton);
     settings_section_header(s_page.devices, "Devices found");
-    for (size_t i = 0; i < found.size(); ++i) {
+    for (size_t i = 0; i < shown.size(); ++i) {
         char label[64];
-        snprintf(label, sizeof(label), "%s (%d dBm)", found[i].name.c_str(), (int)found[i].rssi);
+        snprintf(label, sizeof(label), "%s (%d dBm)", shown[i].name.c_str(), (int)shown[i].rssi);
         settings_row_action(s_page.devices, group, label, "Connect", connect_cb, (void*)(intptr_t)i);
     }
 }
@@ -119,12 +100,6 @@ void poll(lv_timer_t*)
 {
     show_status();
     if (s_cb.scanResults && s_page.scanButton) show_devices(s_cb.scanResults());
-    if (s_cb.lastMessages && s_page.midiIn) {
-        char in[kMonitorLen] = "", out[kMonitorLen] = "";
-        s_cb.lastMessages(in, sizeof(in), out, sizeof(out));
-        set_text(s_page.midiIn, in);
-        set_text(s_page.midiOut, out);
-    }
 }
 
 void page_deleted_cb(lv_event_t* e)
@@ -158,15 +133,6 @@ void tx_offset_cb(lv_event_t*)
     save_settings();
 }
 
-void rx_offset_cb(lv_event_t*)
-{
-    auto* s = crosspad::CrosspadSettings::getInstance();
-    if (!s || s_page.rxIndex >= kRxOffsetCount) return;
-    s->wireless.bleMidiNoteOffset = kRxOffsets[s_page.rxIndex];
-    s_cb.applyRxOffset();
-    save_settings();
-}
-
 void scan_cb(lv_event_t*)
 {
     s_cb.startScan();
@@ -182,9 +148,8 @@ void disconnect_cb(lv_event_t*)
 void connect_cb(lv_event_t* e)
 {
     const size_t i = (size_t)(intptr_t)lv_event_get_user_data(e);
-    const std::vector<crosspad::BleMidiDevice> found = s_cb.scanResults();
-    if (devices_key(found) != s_page.shownDevices || i >= found.size()) return;   // the rows are stale
-    s_cb.connect(found[i].address);
+    if (i >= s_page.shown.size()) return;
+    s_cb.connect(s_page.shown[i].address);
     show_status();
 }
 
@@ -204,14 +169,6 @@ const char* tx_offset_options()
         len += nameLen;
     }
     return options;
-}
-
-uint8_t rx_offset_index(int8_t semitones)
-{
-    for (uint8_t i = 0; i < kRxOffsetCount; ++i) {
-        if (kRxOffsets[i] == semitones) return i;
-    }
-    return kRxNoOffset;
 }
 
 } // namespace
@@ -238,11 +195,6 @@ void midi_ble_settings_build(lv_obj_t* parent, lv_group_t* group)
         settings_row_dropdown(parent, group, "Send transpose", tx_offset_options(),
                               &s->wireless.bleMidiTxOffset, tx_offset_cb);
     }
-    if (s_cb.applyRxOffset) {
-        s_page.rxIndex = rx_offset_index(s->wireless.bleMidiNoteOffset);
-        settings_row_dropdown(parent, group, "Receive transpose", kRxOffsetOptions, &s_page.rxIndex,
-                              rx_offset_cb);
-    }
 
     settings_section_header(parent, "Status");
     if (s_cb.stateName) s_page.state = value_label(settings_row_info(parent, "State", ""));
@@ -265,12 +217,6 @@ void midi_ble_settings_build(lv_obj_t* parent, lv_group_t* group)
     lv_obj_remove_flag(s_page.devices, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(s_page.devices, page_deleted_cb, LV_EVENT_DELETE, nullptr);
-
-    if (s_cb.lastMessages) {
-        settings_section_header(parent, "MIDI monitor");
-        s_page.midiIn = value_label(settings_row_info(parent, "In", ""));
-        s_page.midiOut = value_label(settings_row_info(parent, "Out", ""));
-    }
 
     poll(nullptr);
     s_page.timer = lv_timer_create(poll, kPollMs, nullptr);
