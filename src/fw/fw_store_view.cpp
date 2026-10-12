@@ -203,6 +203,23 @@ static void rebuild(void) {
     window_cb(nullptr);
 }
 
+/* The view lets go of everything it holds: icons, the selection, the lease. */
+static void forget(void) {
+    fw_views_tab_closed(kFwNetTabStore);
+    fw_tile_icons_release(s.grid);
+    s = StoreView{};
+    publish();
+    fw_views_want_store(false);
+    fw_views_release();
+}
+
+/* A host that deletes the parent without fw_store_view_close() (the Firmware
+ * app's root deleted with the screen) leaves no dangling root. */
+static void root_deleted_cb(lv_event_t* e) {
+    if (lv_event_get_target(e) != s.root) return;   // close() let it go already
+    forget();
+}
+
 void fw_store_view_build(lv_obj_t* parent, lv_group_t* group) {
     if (s.root) return;
     fw_views_acquire();
@@ -215,6 +232,7 @@ void fw_store_view_build(lv_obj_t* parent, lv_group_t* group) {
     lv_obj_set_flex_flow(s.root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s.root, kFwPad, 0);
     lv_obj_remove_flag(s.root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s.root, root_deleted_cb, LV_EVENT_DELETE, nullptr);
     s.status = lv_label_create(s.root);
     lv_obj_add_style(s.status, fw_views_text_style(), 0);
     lv_obj_set_size(s.status, LV_PCT(100), kStatusH);
@@ -266,14 +284,10 @@ void fw_store_view_refresh(void) {
 
 void fw_store_view_close(void) {
     if (!s.root) return;
-    fw_views_tab_closed(kFwNetTabStore);
-    fw_tile_icons_release(s.grid);
-    lv_obj_add_flag(s.root, LV_OBJ_FLAG_HIDDEN);   // nothing draws it again before it goes
-    lv_obj_delete_async(s.root);
-    s = StoreView{};
-    publish();
-    fw_views_want_store(false);
-    fw_views_release();
+    lv_obj_t* root = s.root;
+    forget();
+    lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);   // nothing draws it again before it goes
+    lv_obj_delete_async(root);
 }
 
 #endif // USE_LVGL

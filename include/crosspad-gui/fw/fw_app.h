@@ -26,8 +26,10 @@ struct FwAppHooks {
     /// its focusables added to `group` in screen order and written to `tail`;
     /// returns how many (at most `cap`). They stay behind the update rows.
     size_t (*buildUpdatesTail)(lv_obj_t* page, lv_group_t* group, lv_obj_t** tail, size_t cap);
-    /// The Updates tab closes: the block goes too.
-    void (*closeUpdatesTail)();
+    /// The Updates tab closes: the block goes too. `deleteBlock` false: the
+    /// app's root is being deleted with the screen, block included -- forget
+    /// it, delete nothing.
+    void (*closeUpdatesTail)(bool deleteBlock);
     /// The app is shown again.
     void (*shown)();
     /// The launcher's encoder group, given back when the app hides or goes.
@@ -38,6 +40,9 @@ struct FwAppHooks {
 lv_obj_t* fw_app_create(lv_obj_t* parent, App* a, const FwAppHooks& hooks);
 
 /// Tears the app down: an open confirm and a kit card first, then the tab.
+/// `app` nullptr (AppBase: the root was deleted elsewhere, a launcher
+/// rebuild): what the app holds is released and nothing is deleted, the views
+/// having forgotten their own roots as those went.
 void fw_app_destroy(lv_obj_t* app);
 
 /// The container the running Firmware app was started in, where it opens the

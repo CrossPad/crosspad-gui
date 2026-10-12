@@ -67,6 +67,7 @@ void FakeFwService::setSlot(int i, crosspad::FwSlotState st, bool running, const
 }
 
 void FakeFwService::dataClose() {
+    ++closes;
     open_ = false;
     libReady_ = storeLoaded_ = detailReady_ = false;
     scanWanted_ = storeWanted_ = detailWanted_ = false;

@@ -48,6 +48,7 @@ public:
 
     // ── What the views did ───────────────────────────────────────────────
     int opens = 0;
+    int closes = 0;
     int checks = 0;
     int leases = 0;
     std::vector<std::string> downloads;   ///< "kit@version[+install]"

@@ -262,6 +262,22 @@ static void clicked_cb(uint32_t index, void*) {
     fw_kit_card_open(t, kFwNetTabStore);   // a refused download from here offers network mode on the Store
 }
 
+/* The view lets go of everything it holds: icons, the selection, the lease. */
+static void forget(void) {
+    fw_tile_icons_release(s.grid);
+    s = LibraryView{};
+    fwViewService().uiSel(-1, nullptr, nullptr);
+    fwViewService().uiItems(0);
+    fw_views_release();
+}
+
+/* A host that deletes the parent without fw_library_view_close() (the
+ * Firmware app's root deleted with the screen) leaves no dangling root. */
+static void root_deleted_cb(lv_event_t* e) {
+    if (lv_event_get_target(e) != s.root) return;   // close() let it go already
+    forget();
+}
+
 void fw_library_view_build(lv_obj_t* parent, lv_group_t* group) {
     if (s.root) return;
     fw_views_acquire();
@@ -273,6 +289,7 @@ void fw_library_view_build(lv_obj_t* parent, lv_group_t* group) {
     lv_obj_set_flex_flow(s.root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s.root, kFwPad, 0);
     lv_obj_remove_flag(s.root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s.root, root_deleted_cb, LV_EVENT_DELETE, nullptr);
     s.status = lv_label_create(s.root);
     lv_obj_add_style(s.status, fw_views_text_style(), 0);
     lv_obj_set_height(s.status, kStatusH);
@@ -337,13 +354,10 @@ void fw_library_view_refresh(void) {
 
 void fw_library_view_close(void) {
     if (!s.root) return;
-    fw_tile_icons_release(s.grid);
-    lv_obj_add_flag(s.root, LV_OBJ_FLAG_HIDDEN);   // nothing draws it again before it goes
-    lv_obj_delete_async(s.root);
-    s = LibraryView{};
-    fwViewService().uiSel(-1, nullptr, nullptr);
-    fwViewService().uiItems(0);
-    fw_views_release();
+    lv_obj_t* root = s.root;
+    forget();
+    lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);   // nothing draws it again before it goes
+    lv_obj_delete_async(root);
 }
 
 #endif // USE_LVGL

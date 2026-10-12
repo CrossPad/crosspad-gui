@@ -409,3 +409,66 @@ TEST_CASE("fw app: a tab button's click builds that page and closes the one left
     CHECK(crosspad_gui::fw_app_container() == nullptr);
     CHECK(lv_indev_get_group(f.gui.encoder) == f.group);
 }
+
+TEST_CASE("fw app: a root deleted with the screen tears the app down and frees nothing twice", "[fw_views]") {
+    FwFixture f;
+    f.svc.iconsValid = true;
+    f.svc.addPackage("sampler", "1.1.0", "Sampler");
+    auto& k = f.svc.addStoreKit("sampler", "Sampler", FwTier::Official);
+    f.svc.addStoreVersion(k, "1.2.0", FwChannel::Stable, FwTier::Official);
+    static lv_group_t* s_home;
+    static int s_tailsBuilt, s_tailsDeleted, s_tailsForgotten;
+    s_home = f.group;
+    s_tailsBuilt = s_tailsDeleted = s_tailsForgotten = 0;
+    static const crosspad_gui::FwAppHooks hooks = {
+        [](lv_obj_t* page, lv_group_t* group, lv_obj_t** tail, size_t cap) -> size_t {
+            ++s_tailsBuilt;
+            lv_obj_t* close = lv_button_create(page);
+            lv_group_add_obj(group, close);
+            if (cap) tail[0] = close;
+            return cap ? 1 : 0;
+        },
+        [](bool deleteBlock) { ++(deleteBlock ? s_tailsDeleted : s_tailsForgotten); },
+        nullptr, [] { return s_home; }};
+    App app(f.screen, "Firmware", nullptr,
+            [](lv_obj_t* parent, App* a) { return crosspad_gui::fw_app_create(parent, a, hooks); },
+            crosspad_gui::fw_app_destroy);
+
+    // Each tab in turn, the root lost while that tab is up.
+    for (int tab = 0; tab < 3; ++tab) {
+        app.start(f.screen);
+        lv_obj_t* tabs = lv_obj_get_child(app.getAppContainer(), 0);
+        if (tab > 0) lv_obj_send_event(lv_obj_get_child(lv_tabview_get_tab_bar(tabs), tab), LV_EVENT_CLICKED, nullptr);
+        f.advance(kTickMs);
+        f.advance(kTickMs);   // the scan and the catalog land, icons are asked and arrive
+        REQUIRE(f.svc.opens > f.svc.closes);
+
+        lv_obj_clean(f.screen);   // a launcher rebuild takes the app's tree with it
+        CHECK_FALSE(app.isStarted());
+        CHECK(f.svc.opens == f.svc.closes);   // every view let go of the data
+        CHECK(f.svc.leases == 0);
+        CHECK(f.svc.iconsHeld == 0);
+        CHECK(f.svc.uiTabV == "-");
+        CHECK(crosspad_gui::fw_app_container() == nullptr);
+        CHECK(lv_indev_get_group(f.gui.encoder) == f.group);
+
+        // Nothing points into the freed tree: the views' refreshes and the
+        // app's timer find no root, and async deletes queued for it are gone.
+        fw_library_view_refresh();
+        fw_store_view_refresh();
+        fw_updates_view_refresh();
+        f.advance(kTickMs);
+        f.page = nullptr;
+    }
+    CHECK(s_tailsBuilt == 1);
+    CHECK(s_tailsForgotten == 3);   // every root-less teardown forgets the block, built or not
+    CHECK(s_tailsDeleted == 0);
+
+    app.start(f.screen);   // and it starts again as new
+    f.advance(kTickMs);
+    CHECK(f.svc.uiTabV == "library");
+    CHECK(f.svc.uiItemsV == 1);
+    app.destroyApp();
+    f.advance(kTickMs);
+    CHECK(f.svc.opens == f.svc.closes);
+}

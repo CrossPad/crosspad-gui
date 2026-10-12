@@ -60,7 +60,7 @@ static void updates_tab_close(void) {
         lv_obj_delete_async(s_updatesBox);
     }
     s_updatesBox = nullptr;
-    if (s_hooks->closeUpdatesTail) s_hooks->closeUpdatesTail();
+    if (s_hooks->closeUpdatesTail) s_hooks->closeUpdatesTail(true);
 }
 
 static void store_tab_build(lv_obj_t * page, lv_group_t * group) {
@@ -209,7 +209,14 @@ void fw_app_destroy(lv_obj_t * app) {
     // A flow overlay in progress is unaffected -- it owns its widgets and tasks.
     fw_actions_forget();   // first: an open confirm hands the encoder back to the card it came from
     fw_kit_card_close();   // its encoder group sits on top of ours
-    if (s_shownTab >= 0) kAppTabs[s_shownTab].close();
+    if (app && s_shownTab >= 0) {
+        kAppTabs[s_shownTab].close();
+    } else {
+        // The root is being deleted with the screen: every view forgets
+        // itself as its own root goes, and nothing here may delete into it.
+        s_updatesBox = nullptr;
+        if (s_hooks && s_hooks->closeUpdatesTail) s_hooks->closeUpdatesTail(false);
+    }
     s_shownTab = -1;
     s_tabs = nullptr;
 
@@ -221,7 +228,7 @@ void fw_app_destroy(lv_obj_t * app) {
     fwViewService().uiReset();
     s_app = nullptr;
 
-    lv_obj_delete_async(app);
+    if (app) lv_obj_delete_async(app);
 }
 
 lv_obj_t * fw_app_container() { return s_app ? s_app->app_c : nullptr; }
