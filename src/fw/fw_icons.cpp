@@ -8,6 +8,7 @@
 #include "crosspad/fw/FwCatalog.hpp"
 #include "src/misc/cache/instance/lv_image_cache.h"   // lv_image_cache_drop(): lvgl.h stopped exporting it in 9.4
 #include "crosspad-gui/platform/psram_placement.h"
+#include "fw_text.h"
 
 /* The budget's bound: 6 tiles in view, a card's header and one slack. */
 static constexpr size_t kIconsMax = 8;
@@ -59,9 +60,9 @@ static uint32_t fnv1a(const uint8_t* p, size_t n) {
 }
 
 static void key_set(Key& k, const char* pkg, const char* kit, const char* version) {
-    strlcpy(k.pkg, pkg ? pkg : "", sizeof k.pkg);
-    strlcpy(k.kit, kit ? kit : "", sizeof k.kit);
-    strlcpy(k.version, version ? version : "", sizeof k.version);
+    crosspad_gui::fw_text::copy(k.pkg, pkg ? pkg : "", sizeof k.pkg);
+    crosspad_gui::fw_text::copy(k.kit, kit ? kit : "", sizeof k.kit);
+    crosspad_gui::fw_text::copy(k.version, version ? version : "", sizeof k.version);
 }
 
 static bool key_eq(const Key& a, const Key& b) {

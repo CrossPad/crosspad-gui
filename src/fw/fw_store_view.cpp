@@ -13,6 +13,7 @@
 #include "crosspad-gui/platform/psram_placement.h"
 #include "crosspad/fw/FwStore.hpp"
 #include "crosspad/fw/Semver.hpp"
+#include "fw_text.h"
 
 using crosspad_gui::FwLibrarySnap;
 using crosspad_gui::FwUpdaterState;
@@ -99,8 +100,8 @@ static bool icon_for(uint32_t index, FwIconKey* key) {
     const bool card = on_card(k->kit, v->version);
     if (!v->hasIcon && !card) return false;
     if (card) crosspad::fwPackageName(k->kit, v->version, key->pkg, sizeof key->pkg);
-    strlcpy(key->kit, k->kit, sizeof key->kit);
-    strlcpy(key->version, v->version, sizeof key->version);
+    crosspad_gui::fw_text::copy(key->kit, k->kit, sizeof key->kit);
+    crosspad_gui::fw_text::copy(key->version, v->version, sizeof key->version);
     return true;
 }
 
@@ -129,8 +130,8 @@ static void clicked_cb(uint32_t index, void*) {
     const crosspad::FwStoreKit* k = kit_at(index, &v);
     if (!k) return;
     FwTarget t{};
-    strlcpy(t.kit, k->kit, sizeof t.kit);
-    strlcpy(t.version, v->version, sizeof t.version);
+    crosspad_gui::fw_text::copy(t.kit, k->kit, sizeof t.kit);
+    crosspad_gui::fw_text::copy(t.version, v->version, sizeof t.version);
     t.community = v->tier == crosspad::FwTier::Community;   // the version's tier, not the kit's newest
     fw_kit_card_open(t, kFwNetTabStore);
 }

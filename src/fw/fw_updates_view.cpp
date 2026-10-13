@@ -14,6 +14,7 @@
 #include "crosspad-gui/fw/fw_views_common.h"
 #include "crosspad-gui/platform/psram_placement.h"
 #include "crosspad/fw/FwStore.hpp"
+#include "fw_text.h"
 
 using crosspad_gui::FwLibItem;
 using crosspad_gui::FwLibrarySnap;
@@ -178,16 +179,16 @@ static size_t owned_kits(crosspad::FwOwned* out, size_t cap) {
         for (size_t i = 0; i < lib->count && n < cap; ++i) {
             const FwLibItem& it = lib->items[i];
             if (!it.complete || !it.kit[0]) continue;
-            strlcpy(out[n].kit, it.kit, sizeof out[n].kit);
-            strlcpy(out[n].version, it.version, sizeof out[n].version);
+            crosspad_gui::fw_text::copy(out[n].kit, it.kit, sizeof out[n].kit);
+            crosspad_gui::fw_text::copy(out[n].version, it.version, sizeof out[n].version);
             ++n;
         }
     }
     const crosspad::FwSlotInfo* slots = fw_views_slots();   // a board flashed over USB has its kit in a slot only
     for (size_t i = 0; i < kSlotCount && n < cap; ++i) {
         if (slots[i].state == crosspad::FwSlotState::Empty || !slots[i].kit[0]) continue;
-        strlcpy(out[n].kit, slots[i].kit, sizeof out[n].kit);
-        strlcpy(out[n].version, fw_strip_v(slots[i].version), sizeof out[n].version);
+        crosspad_gui::fw_text::copy(out[n].kit, slots[i].kit, sizeof out[n].kit);
+        crosspad_gui::fw_text::copy(out[n].version, fw_strip_v(slots[i].version), sizeof out[n].version);
         ++n;
     }
     return n;
@@ -202,8 +203,8 @@ static void update_cb(lv_event_t* e) {
     if (row.kit >= store->kitCount || row.version >= store->kits[row.kit].count) return;
     const crosspad::FwStoreKit& k = store->kits[row.kit];
     FwTarget t{};
-    strlcpy(t.kit, k.kit, sizeof t.kit);
-    strlcpy(t.version, k.versions[row.version].version, sizeof t.version);
+    crosspad_gui::fw_text::copy(t.kit, k.kit, sizeof t.kit);
+    crosspad_gui::fw_text::copy(t.version, k.versions[row.version].version, sizeof t.version);
     t.community = k.versions[row.version].tier == crosspad::FwTier::Community;
     fw_action_start(crosspad_gui::kFwActInstall, t, kFwNetTabUpdates, s.group);
 }

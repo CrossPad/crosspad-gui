@@ -15,6 +15,7 @@
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/fw/FwStore.hpp"
 #include "crosspad/fw/Semver.hpp"
+#include "fw_text.h"
 
 using crosspad_gui::FwLibItem;
 using crosspad_gui::FwLibrarySnap;
@@ -118,8 +119,8 @@ static void track(Pending kind, FwNetTab tab) {
     s_pending.kind = kind;
     s_pending.gen = fw_views_updater_gen();
     s_pending.tab = tab;
-    strlcpy(s_pending.kit, kind == Pending::Check ? "" : s_target.kit, sizeof s_pending.kit);
-    strlcpy(s_pending.version, kind == Pending::Check ? "" : s_target.version, sizeof s_pending.version);
+    crosspad_gui::fw_text::copy(s_pending.kit, kind == Pending::Check ? "" : s_target.kit, sizeof s_pending.kit);
+    crosspad_gui::fw_text::copy(s_pending.version, kind == Pending::Check ? "" : s_target.version, sizeof s_pending.version);
     fw_views_job_started();
 }
 
@@ -257,14 +258,14 @@ static void newest_known(const char* kit, char* out, size_t n) {
         if (const crosspad::FwStoreKit* k = crosspad::fwStoreFind(*store, kit)) {
             const auto channel = fwViewService().channelBeta(kit) ? crosspad::FwChannel::Beta : crosspad::FwChannel::Stable;
             const int v = crosspad::fwShownVersion(*k, channel);
-            if (v >= 0) strlcpy(out, k->versions[v].version, n);
+            if (v >= 0) crosspad_gui::fw_text::copy(out, k->versions[v].version, n);
         }
     }
     if (const FwLibrarySnap* lib = fwViewService().library()) {
         for (size_t i = 0; i < lib->count; ++i) {
             const FwLibItem& it = lib->items[i];
             if (strcmp(it.kit, kit) == 0 && crosspad::compareVersionText(it.version, out) > 0)
-                strlcpy(out, it.version, n);
+                crosspad_gui::fw_text::copy(out, it.version, n);
         }
     }
 }

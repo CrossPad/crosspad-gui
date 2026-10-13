@@ -6,13 +6,12 @@
 #include <cstdio>
 #include <cstring>
 
-#include <strings.h>
-
 #include "crosspad-gui/fw/fw_actions.h"
 #include "crosspad-gui/fw/fw_kit_card.h"
 #include "crosspad-gui/fw/fw_views_common.h"
 #include "crosspad-gui/platform/psram_placement.h"
 #include "crosspad/fw/Semver.hpp"
+#include "fw_text.h"
 
 using crosspad_gui::FwIconSrc;
 using crosspad_gui::FwLibItem;
@@ -142,9 +141,9 @@ static void fill_cb(lv_obj_t* tile, uint32_t index, void*) {
 static bool icon_for(uint32_t index, FwIconKey* key) {
     const FwLibItem* it = item_at(index);
     if (!it || it->icon == FwIconSrc::None) return false;
-    if (it->icon == FwIconSrc::Package) strlcpy(key->pkg, it->name, sizeof key->pkg);
-    strlcpy(key->kit, it->kit, sizeof key->kit);
-    strlcpy(key->version, it->version, sizeof key->version);
+    if (it->icon == FwIconSrc::Package) crosspad_gui::fw_text::copy(key->pkg, it->name, sizeof key->pkg);
+    crosspad_gui::fw_text::copy(key->kit, it->kit, sizeof key->kit);
+    crosspad_gui::fw_text::copy(key->version, it->version, sizeof key->version);
     return true;
 }
 
@@ -169,7 +168,7 @@ static void merge_slots(FwLibrarySnap& lib) {
         bool onCard = false;
         // FATFS names compare case-insensitively, as the cleanup compares them.
         for (size_t i = 0; i < lib.count && sl.package[0]; ++i) {
-            if (strcasecmp(lib.items[i].name, sl.package) != 0) continue;
+            if (crosspad_gui::fw_text::casecmp(lib.items[i].name, sl.package) != 0) continue;
             lib.items[i].slot = sl.label;
             lib.items[i].running = sl.running;
             lib.items[i].slotState = sl.state;
@@ -180,8 +179,8 @@ static void merge_slots(FwLibrarySnap& lib) {
         it = FwLibItem{};
         s.order[s.count++] = static_cast<uint8_t>(kSlotOnly + n);
         ++n;
-        strlcpy(it.kit, sl.kit, sizeof it.kit);
-        strlcpy(it.version, fw_strip_v(sl.version), sizeof it.version);
+        crosspad_gui::fw_text::copy(it.kit, sl.kit, sizeof it.kit);
+        crosspad_gui::fw_text::copy(it.version, fw_strip_v(sl.version), sizeof it.version);
         if (it.kit[0]) {
             crosspad::fwCopyText(it.displayName, sizeof it.displayName, it.kit);
             it.icon = FwIconSrc::Cache;   // the Store's cached icon of that version, if the card has it
@@ -252,9 +251,9 @@ static void clicked_cb(uint32_t index, void*) {
     const FwLibItem* it = item_at(index);
     if (!it) return;
     FwTarget t{};
-    strlcpy(t.kit, it->kit, sizeof t.kit);
-    strlcpy(t.version, it->version, sizeof t.version);
-    strlcpy(t.pkg, it->name, sizeof t.pkg);
+    crosspad_gui::fw_text::copy(t.kit, it->kit, sizeof t.kit);
+    crosspad_gui::fw_text::copy(t.version, it->version, sizeof t.version);
+    crosspad_gui::fw_text::copy(t.pkg, it->name, sizeof t.pkg);
     if (!it->onCard) t.slot = it->slot;   // a slot image only: the card finds it by its slot
     t.community = it->community;
     t.unknownBuild = it->verdict == crosspad::FwPkgVerdict::UnknownBuild;

@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include <strings.h>
 
 #include "crosspad-gui/fw/fw_actions.h"
 #include "crosspad-gui/fw/fw_icons.h"
@@ -15,6 +14,7 @@
 #include "crosspad-gui/fw/fw_updates_view.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad/net/WifiTypes.hpp"
+#include "fw_text.h"
 
 using crosspad_gui::FwNetTab;
 using crosspad_gui::FwUpdaterState;
@@ -323,7 +323,7 @@ char fw_views_slot_of(const char* pkg, bool* running) {
     if (!pkg || !pkg[0]) return 0;
     const crosspad::FwSlotInfo* slots = fw_views_slots();
     for (int i = 0; i < 2; ++i) {
-        if (strcasecmp(slots[i].package, pkg) != 0) continue;   // FATFS names: case-insensitive
+        if (crosspad_gui::fw_text::casecmp(slots[i].package, pkg) != 0) continue;   // FATFS names: case-insensitive
         if (running) *running = slots[i].running;
         return slots[i].label;
     }
@@ -354,7 +354,7 @@ static bool take_lease(void) {
     if (s_lease) {
         s_leaseFail[0] = '\0';
     } else {
-        strlcpy(s_leaseFail, crosspad::wifiFailName(fwViewService().wifiFail()),
+        crosspad_gui::fw_text::copy(s_leaseFail, crosspad::wifiFailName(fwViewService().wifiFail()),
                 sizeof s_leaseFail);
     }
     return s_lease;

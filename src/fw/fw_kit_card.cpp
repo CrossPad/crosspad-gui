@@ -19,6 +19,7 @@
 #include "crosspad/fw/FwStore.hpp"
 #include "crosspad/fw/Semver.hpp"
 #include "src/misc/cache/instance/lv_image_cache.h"   // lv_image_cache_drop(): lvgl.h stopped exporting it in 9.4
+#include "fw_text.h"
 
 using crosspad_gui::FwLibItem;
 using crosspad_gui::FwLibrarySnap;
@@ -350,7 +351,7 @@ static void icon_done(const lv_image_dsc_t * icon, void *) {
 static void action_cb(lv_event_t * e) {
     const auto act = static_cast<crosspad_gui::FwCardAct>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
     FwTarget t = s.target;
-    strlcpy(t.pkg, s.pkg, sizeof t.pkg);
+    crosspad_gui::fw_text::copy(t.pkg, s.pkg, sizeof t.pkg);
     if (const FwLibItem * it = library_item()) {   // what the card holds now, not what the tile knew
         t.unknownBuild = it->verdict == crosspad::FwPkgVerdict::UnknownBuild;
         t.stmProtoOlder = it->stmProtoOlder;
@@ -363,8 +364,8 @@ static void older_row_cb(lv_event_t * e) {
     const crosspad::FwStoreKit * k = store_kit(nullptr);
     if (!k || vi >= k->count) return;
     FwTarget t{};
-    strlcpy(t.kit, k->kit, sizeof t.kit);
-    strlcpy(t.version, k->versions[vi].version, sizeof t.version);
+    crosspad_gui::fw_text::copy(t.kit, k->kit, sizeof t.kit);
+    crosspad_gui::fw_text::copy(t.version, k->versions[vi].version, sizeof t.version);
     t.community = k->versions[vi].tier == crosspad::FwTier::Community;
     fw_kit_card_open(t, s.tab);
 }
@@ -520,14 +521,14 @@ static void open_async(void *) {
     s = Card{};
     s.target = s_opening;
     s.tab = s_openingTab;
-    if (s.target.pkg[0]) strlcpy(s.pkg, s.target.pkg, sizeof s.pkg);
+    if (s.target.pkg[0]) crosspad_gui::fw_text::copy(s.pkg, s.target.pkg, sizeof s.pkg);
     else if (s.target.kit[0]) crosspad::fwPackageName(s.target.kit, s.target.version, s.pkg, sizeof s.pkg);
     lv_indev_t * nav = crosspad_gui::getGuiPlatform().getNavigationEncoder();
     s.prevGroup = nav ? lv_indev_get_group(nav) : nullptr;
     s.group = lv_group_create();
     build();
     char name[kNameMax];
-    if (s.target.kit[0]) strlcpy(name, s.target.kit, sizeof name);
+    if (s.target.kit[0]) crosspad_gui::fw_text::copy(name, s.target.kit, sizeof name);
     else snprintf(name, sizeof name, "Slot %c", s.target.slot ? s.target.slot : '?');
     char letter[kLetterMax];
     fw_letter_of(name, letter, sizeof letter);
