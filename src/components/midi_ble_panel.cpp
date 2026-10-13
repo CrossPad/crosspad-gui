@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // MIDI BLE settings panel — shared LVGL UI.
 // Platform-specific BLE operations go through MidiBleCallbacks.

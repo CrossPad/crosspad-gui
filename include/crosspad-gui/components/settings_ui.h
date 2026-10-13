@@ -30,6 +30,10 @@ void settings_ui_destroy();
 // returns to let the framework close Settings instead.
 bool settings_ui_back();
 
+/// The next settings_ui_create() opens this category's page instead of the
+/// list (Back still leads to the list). Matched by name; consumed once.
+void settings_ui_open_next(const char* category);
+
 /// Register an extra platform-specific category (call before settings_ui_create).
 /// Maximum 8 extra categories. Returns false if full.
 bool settings_ui_add_category(const SettingsCategory& cat);

@@ -1,2 +1,4 @@
 docs/generated/
 docs/doxygen/
+tests/build/
+.DS_Store

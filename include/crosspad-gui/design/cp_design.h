@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 /**
@@ -21,8 +21,16 @@
 #include "lvgl.h"
 #include "crosspad-gui/design/cp_icons.h"
 
+/* The faces are C files: without C linkage MSVC looks for a mangled C++ name
+ * and the link fails (GCC does not mangle data, so it never showed there). */
+#ifdef __cplusplus
+extern "C" {
+#endif
 LV_FONT_DECLARE(cp_font_pixel_8)   /* labels, headlines */
 LV_FONT_DECLARE(cp_font_body_8)    /* descriptions */
+#ifdef __cplusplus
+}
+#endif
 
 #define CP_FONT_PIXEL  (&cp_font_pixel_8)
 #define CP_FONT_BODY   (&cp_font_body_8)

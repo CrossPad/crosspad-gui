@@ -34,6 +34,11 @@ static lv_obj_t *  s_content  = nullptr;
 static lv_group_t* s_group    = nullptr;
 static int         s_current_category = -1;
 
+/* A category a caller asked Settings to open on (the Firmware app's shortcut to
+ * "Updates"); "" for the list. */
+static constexpr size_t kOpenNextMax = 32;
+static char s_open_next[kOpenNextMax];
+
 // Extra platform-registered categories
 static constexpr int MAX_EXTRA_CATEGORIES = 8;
 static SettingsCategory s_extra_cats[MAX_EXTRA_CATEGORIES];
@@ -682,6 +687,7 @@ static void lcd_brightness_hw_cb(lv_event_t * e) {
 /* The launcher's style through the dropdown's uint8_t; the launcher is
  * rebuilt on the way back to it, which is when the new style shows. */
 static uint8_t s_launcherStyleIdx = 0;
+static uint8_t s_touchSensIdx = 0;
 
 static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
@@ -715,6 +721,15 @@ static void cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           &s_launcherStyleIdx,
                           [](lv_event_t *) {
                               get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
+                          });
+
+    s_touchSensIdx = (uint8_t)s->touchSensitivity;
+    settings_row_dropdown(parent, group, "Touch Sensitivity", "Low\nMedium\nHigh",
+                          &s_touchSensIdx,
+                          [](lv_event_t *) {
+                              get_settings()->touchSensitivity = (crosspad::TouchSensitivity)s_touchSensIdx;
+                              save_settings();
+                              crosspad_gui::getGuiPlatform().setTouchSensitivity(get_settings()->touchSensitivity);
                           });
 
     settings_row_switch(parent, group, "Quick Settings Drawer",
@@ -1542,9 +1557,10 @@ static const uint8_t kUsbSuspSecs[] = { 0, 15, 30, 60, 120 };   // 0 = never
 static const char* kUsbSuspOpts = "Never\n15s\n30s\n1m\n2m";
 static uint8_t s_usbSuspIdx = 2;   // default 30 s
 
-// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms).
-static constexpr uint16_t kLongPressMs[] = { 500, 1000, 1500, 2000, 3000, 4000 };
-static const char* kLongPressOpts = "0.5s\n1s\n1.5s\n2s\n3s\n4s";
+// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms), so
+// a 0.5 s option was shown but never applied — the hold was always 1 s.
+static constexpr uint16_t kLongPressMs[] = { 1000, 1500, 2000, 3000, 4000 };
+static const char* kLongPressOpts = "1s\n1.5s\n2s\n3s\n4s";
 static constexpr uint8_t kLongPressN = sizeof(kLongPressMs) / sizeof(kLongPressMs[0]);
 static constexpr uint16_t kLongPressDefaultMs = 4000;
 static constexpr uint8_t kLongPressDefaultIdx =
@@ -1605,6 +1621,7 @@ static void stm_push_config(crosspad::CrosspadSettings* s) {
     plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,    s->stm.ccPanBase);
     plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
     plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
+    plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
     plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
     plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
     plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);
@@ -1702,6 +1719,7 @@ static crosspad::SettingsIoResult backup_import_all(const char* p) {
         save_settings();
         auto& plat = getGuiPlatform();
         plat.setLcdBrightness(s->LCDbrightness);
+        plat.setTouchSensitivity(s->touchSensitivity);
         apply_output_volumes(s);
         crosspad::getPadLedController().setBrightness(s->RGBbrightness);
         crosspad::getVibration().applySettings(s->vibration);
@@ -1768,6 +1786,7 @@ static void backup_import_pads_cb(lv_event_t *) {
             plat.writeStmConfig8(REG_CTL_CC_PAN_BASE,   s->stm.ccPanBase);
             plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS, s->stm.analogMinMs);
             plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,  s->stm.analogDelta);
+            plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
         }
     }
 }
@@ -1889,6 +1908,7 @@ static void factory_reset_cb(lv_event_t * e) {
     s->RGBbrightness = 100;
     s->quickSettingsEnabled = true;
     s->launcherStyle = crosspad::LauncherStyle::Grid;
+    s->touchSensitivity = crosspad::TouchSensitivity::Low;
     s->AudioEngineEnabled = true;
     s->Kit = 0;
     for (int i = 0; i < crosspad::CROSSPAD_MAX_PADS; i++) {
@@ -1901,6 +1921,7 @@ static void factory_reset_cb(lv_event_t * e) {
     // the next reboot.
     auto& plat = getGuiPlatform();
     plat.setLcdBrightness(s->LCDbrightness);
+    plat.setTouchSensitivity(s->touchSensitivity);
     apply_output_volumes(s);
     crosspad::getPadLedController().setBrightness(s->RGBbrightness);
     crosspad::getVibration().applySettings(s->vibration);
@@ -1951,7 +1972,9 @@ static void cat_build_system(lv_obj_t * parent, lv_group_t * group) {
         }
         settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
         settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
-        s_longPressIdx = idx_for_u16(kLongPressMs, kLongPressN, s->stm.longPressMs, kLongPressDefaultIdx);
+        // A saved 0.5 s behaved as 1 s on the STM; show it as what it was.
+        const uint16_t lpMs = s->stm.longPressMs < 1000 ? 1000 : s->stm.longPressMs;
+        s_longPressIdx = idx_for_u16(kLongPressMs, kLongPressN, lpMs, kLongPressDefaultIdx);
         settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
         // Host-suspend grace before the STM drops to soft-off. Was reachable only
         // over I2C — a device on a sleeping host powered itself down after 30 s
@@ -1974,6 +1997,20 @@ void settings_ui_create(lv_obj_t * content_area, lv_group_t * group) {
     s_current_category = -1;
 
     show_categories();
+    if (!s_open_next[0]) return;
+    const int total = total_category_count();
+    for (int i = 0; i < total; i++) {
+        const SettingsCategory * cat = get_category(i);
+        if (cat && strcmp(cat->name, s_open_next) == 0) {
+            show_detail(i);
+            break;
+        }
+    }
+    s_open_next[0] = '\0';
+}
+
+void settings_ui_open_next(const char * category) {
+    snprintf(s_open_next, sizeof(s_open_next), "%s", category ? category : "");
 }
 
 bool settings_ui_back() {

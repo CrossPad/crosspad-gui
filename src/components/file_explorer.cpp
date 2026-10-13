@@ -280,6 +280,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
             lv_timer_delete(s_previewTimer);
             s_previewTimer = nullptr;
         }
+        /* An audition outlives no browser: no path means stop. */
+        if (s_previewCb) s_previewCb(nullptr);
         if (s_subTimer) {
             lv_timer_delete(s_subTimer);
             s_subTimer = nullptr;

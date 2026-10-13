@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "lvgl.h"
 #include "crosspad/stm32/Stm32ConfigSync.hpp"  // crosspad::Stm32PadLive
+#include "crosspad/settings/CrosspadSettings.hpp" // crosspad::TouchSensitivity
 
 namespace crosspad_gui {
 
@@ -179,6 +180,10 @@ public:
     // reset has just switched off). Called on the LVGL thread after the reset
     // settings are saved, so it must not block or write flash there itself.
     virtual void onFactoryReset() {}
+
+    // Touch controller threshold for a sensitivity level; applied at once,
+    // no reboot. Called on the LVGL thread, the same one that reads touch.
+    virtual void setTouchSensitivity(crosspad::TouchSensitivity /*level*/) {}
 
     // Run @p cb on the LVGL task, from any task. lv_async_call() edits LVGL's
     // timer list and is only safe from the LVGL task itself (or under the

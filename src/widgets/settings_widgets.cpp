@@ -2,6 +2,10 @@
 
 #include "crosspad-gui/widgets/settings_widgets.h"
 
+/* lv_menu rows. Nothing in the firmware calls these any more, and the board
+ * builds LVGL without lv_menu (1.8 kB of image); a build with it keeps them. */
+#if LV_USE_MENU
+
 // Standard lv_menu item builder (used by both Arduino and IDF projects)
 lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char * txt, int builder_variant)
 {
@@ -88,5 +92,7 @@ lv_obj_t * create_settings_slider(lv_obj_t * parent, const char * icon, const ch
 
     return slider;
 }
+
+#endif // LV_USE_MENU
 
 #endif // USE_LVGL

@@ -32,7 +32,8 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
                                   lv_event_cb_t cb, void * user_data = nullptr);
 
 // Optional: set a callback to preview files on focus (e.g. audio playback)
-// @param cb Called with the full file path when a file is focused/clicked
+// @param cb Called with the full file path when a file is focused/clicked,
+//           and with nullptr when the explorer closes (stop the audition)
 typedef void (*file_preview_cb_t)(const char * path);
 void file_explorer_set_preview_callback(file_preview_cb_t cb);
 

@@ -315,10 +315,16 @@ void statusbar_clear_all_icons() {
 
 // ── Battery icon helper ─────────────────────────────────────────────────────
 
-static void PickCorrectBatteryIcon(uint8_t batteryPercent) {
-    if (batteryPercent < 5) lv_obj_add_flag(status_battery, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(status_battery, LV_OBJ_FLAG_HIDDEN);
-    if (batteryPercent < 25) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_EMPTY);
+// An empty battery stays visible (it used to vanish below 5 %, just when it
+// matters); low = the STM's low-battery flag, drawn red.
+static void PickCorrectBatteryIcon(uint8_t batteryPercent, bool low) {
+    lv_obj_remove_flag(status_battery, LV_OBJ_FLAG_HIDDEN);
+    if (low) {
+        lv_obj_set_style_text_color(status_battery, lv_palette_main(LV_PALETTE_RED), 0);
+    } else {
+        lv_obj_remove_local_style_prop(status_battery, LV_STYLE_TEXT_COLOR, 0);
+    }
+    if (low || batteryPercent < 25) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_EMPTY);
     else if (batteryPercent < 40) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_1);
     else if (batteryPercent < 55) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_2);
     else if (batteryPercent < 70) lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_3);
@@ -494,7 +500,11 @@ static bool s_lastBt = false;
 static bool s_lastBtActive = false;
 enum class ChargeSlot : uint8_t { Unknown, Hidden, Charging, Host, HostUpdate };
 static ChargeSlot s_lastChargeSlot = ChargeSlot::Unknown;
-static uint8_t s_lastBatteryPct = 0;
+// Out of range on purpose: the first tick always picks an icon, even when the
+// real level is 0..2 % (inside the hysteresis of a 0 start value).
+static constexpr int16_t kBatteryUnknown = -100;
+static int16_t s_lastBatteryPct = kBatteryUnknown;
+static bool s_lastBatteryLow = false;
 
 static void check_status_timer_cb(lv_timer_t * timer) {
     // SD card — ESP filesystem mount state is authoritative; STM32 detect is fallback
@@ -540,7 +550,7 @@ static void check_status_timer_cb(lv_timer_t * timer) {
             lv_obj_remove_local_style_prop(status_charging, LV_STYLE_TEXT_COLOR, 0);
         }
     }
-    // Battery level — negative pct means STM32 reports no battery (VBAT < 3200 mV).
+    // Battery level — negative pct means the STM reports no battery fitted.
     // Blink empty/full to signal it.
     static bool s_batMissing = false;
     static uint8_t s_batBlinkPhase = 0xFF;
@@ -550,20 +560,22 @@ static void check_status_timer_cb(lv_timer_t * timer) {
             s_batMissing = true;
             s_batBlinkPhase = phase;
             lv_obj_remove_flag(status_battery, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_local_style_prop(status_battery, LV_STYLE_TEXT_COLOR, 0);
             lv_image_set_src(status_battery,
                 phase ? LV_SYMBOL_BATTERY_FULL : LV_SYMBOL_BATTERY_EMPTY);
             lv_obj_invalidate(status_battery);
         }
-        s_lastBatteryPct = 0; // force re-pick when battery returns
+        s_lastBatteryPct = kBatteryUnknown; // force re-pick when battery returns
     } else {
         const int bat_hist = 2;
-        if (s_batMissing ||
+        if (s_batMissing || s_lastBatteryLow != status.batteryLow ||
             s_lastBatteryPct > status.batteryPct + bat_hist ||
             s_lastBatteryPct < status.batteryPct - bat_hist) {
             s_batMissing = false;
             s_batBlinkPhase = 0xFF;
             s_lastBatteryPct = status.batteryPct;
-            PickCorrectBatteryIcon(s_lastBatteryPct);
+            s_lastBatteryLow = status.batteryLow;
+            PickCorrectBatteryIcon((uint8_t)s_lastBatteryPct, s_lastBatteryLow);
             lv_obj_invalidate(status_battery);
         }
     }
@@ -1027,7 +1039,8 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
     s_lastChargeSlot = ChargeSlot::Unknown;
-    s_lastBatteryPct = 0;
+    s_lastBatteryPct = kBatteryUnknown;
+    s_lastBatteryLow = false;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);
     return cont;
 }
