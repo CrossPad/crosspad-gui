@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/kit_loader.h"
 #include "crosspad-gui/components/ui_wifi_bars.h"

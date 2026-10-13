@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "crosspad-gui/CrosspadGuiVersion.hpp"
 
 #define CROSSPAD_REQ_HAVE_MAJOR CROSSPAD_CORE_VERSION_MAJOR

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/widgets/gui_helpers.h"

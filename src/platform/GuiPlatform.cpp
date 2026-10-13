@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
