@@ -3,6 +3,7 @@
 
 #include <cctype>
 #include <cstddef>
+#include <ctime>
 
 namespace crosspad_gui::fw_text {
 
@@ -24,6 +25,15 @@ inline int casecmp(const char* a, const char* b) {
         const int cb = std::tolower(static_cast<unsigned char>(*b));
         if (ca != cb || ca == 0) return ca - cb;
     }
+}
+
+// gmtime_r() is POSIX; MSVC has gmtime_s() with the arguments swapped.
+inline bool utc(time_t t, std::tm* out) {
+#if defined(_WIN32)
+    return gmtime_s(out, &t) == 0;
+#else
+    return gmtime_r(&t, out) != nullptr;
+#endif
 }
 
 }  // namespace crosspad_gui::fw_text

@@ -302,7 +302,10 @@ void fw_format_date(int64_t unixSeconds, char* out, size_t n) {
     }
     const time_t t = static_cast<time_t>(unixSeconds);
     struct tm tm;
-    gmtime_r(&t, &tm);
+    if (!crosspad_gui::fw_text::utc(t, &tm)) {
+        snprintf(out, n, "-");
+        return;
+    }
     strftime(out, n, "%Y-%m-%d", &tm);
 }
 
