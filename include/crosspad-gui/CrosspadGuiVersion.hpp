@@ -14,7 +14,7 @@
 #include "crosspad/CrosspadCoreVersion.hpp"
 
 #define CROSSPAD_GUI_VERSION_MAJOR 1
-#define CROSSPAD_GUI_VERSION_MINOR 22
+#define CROSSPAD_GUI_VERSION_MINOR 23
 #define CROSSPAD_GUI_VERSION_PATCH 0
 
 /* Built from the triple, never written out: the literal had drifted two bumps
@@ -27,7 +27,7 @@
     CROSSPAD_GUI_VERSION_MAJOR, CROSSPAD_GUI_VERSION_MINOR, CROSSPAD_GUI_VERSION_PATCH)
 
 #define CROSSPAD_GUI_REQUIRES_CORE_MAJOR 1
-#define CROSSPAD_GUI_REQUIRES_CORE_MINOR 59
+#define CROSSPAD_GUI_REQUIRES_CORE_MINOR 62
 #define CROSSPAD_GUI_REQUIRES_CORE_PATCH 0
 
 namespace crosspad_gui {

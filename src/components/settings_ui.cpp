@@ -16,6 +16,8 @@
 #include "crosspad/pad/PadLedController.hpp"
 #include "crosspad/stm32/reg_map.h"
 #include "crosspad/platform/IVibration.hpp"
+#include "crosspad/platform/PlatformServices.hpp"
+#include "crosspad/audio/IOutputLevels.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -792,6 +794,33 @@ static void usb_mode_cb(lv_event_t * e) {
     show_detail(s_current_category);
 }
 
+/* The output volumes back into the hardware from the settings fields: one
+ * per physical output where the platform names them (IOutputLevels), the
+ * speaker and headphone pair everywhere else. */
+static void apply_output_volumes(crosspad::CrosspadSettings* s) {
+    if (crosspad::IOutputLevels* ol = crosspad::getPlatformServices().outputLevels) {
+        for (int i = 0; i < ol->outputs(); ++i) ol->setLevel(i, ol->level(i));
+        return;
+    }
+    auto& plat = crosspad_gui::getGuiPlatform();
+    plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
+    plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+}
+
+/* One slider per IOutputLevels output; the row helper writes a uint8_t, so
+ * each has a shadow here and the callback hands on the one that moved. */
+static constexpr int kMaxOutputSliders = 8;
+static uint8_t s_outputLevels[kMaxOutputSliders];
+
+static void output_level_cb(lv_event_t * e) {
+    (void)e;
+    crosspad::IOutputLevels* ol = crosspad::getPlatformServices().outputLevels;
+    if (!ol) return;
+    for (int i = 0; i < ol->outputs() && i < kMaxOutputSliders; ++i) {
+        if (s_outputLevels[i] != ol->level(i)) ol->setLevel(i, s_outputLevels[i]);
+    }
+}
+
 static void speaker_volume_cb(lv_event_t * e) {
     (void)e;
     auto* s = get_settings();
@@ -1031,6 +1060,14 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     // volume overlay drive the same fields). masterFX.inVolume/outVolume and the
     // per-effect bypass flags have no consumer on any platform — they are not
     // exposed here so the panel cannot promise what the firmware does not do.
+    if (crosspad::IOutputLevels* ol = crosspad::getPlatformServices().outputLevels) {
+        for (int i = 0; i < ol->outputs() && i < kMaxOutputSliders; ++i) {
+            s_outputLevels[i] = (uint8_t)ol->level(i);
+            settings_row_slider(parent, group, ol->name(i), 0, 100, &s_outputLevels[i], output_level_cb);
+        }
+        return;
+    }
+
     settings_row_slider(parent, group, "Speakers", 0, 100,
                         &s->masterFX.outVolumeCodec[0][0], speaker_volume_cb);
 
@@ -1665,8 +1702,7 @@ static crosspad::SettingsIoResult backup_import_all(const char* p) {
         save_settings();
         auto& plat = getGuiPlatform();
         plat.setLcdBrightness(s->LCDbrightness);
-        plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
-        plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+        apply_output_volumes(s);
         crosspad::getPadLedController().setBrightness(s->RGBbrightness);
         crosspad::getVibration().applySettings(s->vibration);
         if (stm_config_available()) stm_push_config(s);
@@ -1865,8 +1901,7 @@ static void factory_reset_cb(lv_event_t * e) {
     // the next reboot.
     auto& plat = getGuiPlatform();
     plat.setLcdBrightness(s->LCDbrightness);
-    plat.setSpeakerVolume(s->masterFX.outVolumeCodec[0][0]);
-    plat.setHeadphoneVolume(s->masterFX.outVolumeCodec[1][0]);
+    apply_output_volumes(s);
     crosspad::getPadLedController().setBrightness(s->RGBbrightness);
     crosspad::getVibration().applySettings(s->vibration);
     if (stm_config_available()) stm_push_config(s);
