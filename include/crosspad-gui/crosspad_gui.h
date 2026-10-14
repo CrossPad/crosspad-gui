@@ -26,6 +26,7 @@
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/components/vu_meter.h"
+#include "crosspad-gui/components/segment_meter.h"
 #include "crosspad-gui/components/radial_menu.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/file_explorer.h"

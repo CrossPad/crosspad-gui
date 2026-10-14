@@ -3,15 +3,29 @@
 #include "crosspad-gui/components/vu_meter.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include <atomic>
 #include <cmath>
 
 // ── Audio level storage (set via crosspad_gui::vu_set_levels) ────────────────
 static int16_t s_audio_max[2] = {0, 0};
+/* The loudest since the last vu_take_peaks(): a meter that ticks slower than
+ * the audio blocks arrive would miss a hit between two ticks. 32-bit, a load
+ * and a store on the audio side -- no read-modify-write there. */
+static std::atomic<int32_t> s_audio_peak[2] = {{0}, {0}};
 
 namespace crosspad_gui {
 void vu_set_levels(int16_t left, int16_t right) {
     s_audio_max[0] = left;
     s_audio_max[1] = right;
+    if (left > s_audio_peak[0].load(std::memory_order_relaxed))
+        s_audio_peak[0].store(left, std::memory_order_relaxed);
+    if (right > s_audio_peak[1].load(std::memory_order_relaxed))
+        s_audio_peak[1].store(right, std::memory_order_relaxed);
+}
+
+void vu_take_peaks(int16_t& left, int16_t& right) {
+    left  = static_cast<int16_t>(s_audio_peak[0].exchange(0, std::memory_order_relaxed));
+    right = static_cast<int16_t>(s_audio_peak[1].exchange(0, std::memory_order_relaxed));
 }
 } // namespace crosspad_gui
 

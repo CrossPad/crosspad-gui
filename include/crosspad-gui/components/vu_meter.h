@@ -10,6 +10,10 @@ namespace crosspad_gui {
 // Values are int16 amplitude (0-32767)
 void vu_set_levels(int16_t left, int16_t right);
 
+// The loudest levels given to vu_set_levels() since the last call, and start
+// again from zero (LVGL thread). One reader: two would split the peaks.
+void vu_take_peaks(int16_t& left, int16_t& right);
+
 } // namespace crosspad_gui
 
 // Convert int16 audio level (0-32767) to dB-like logarithmic scale
