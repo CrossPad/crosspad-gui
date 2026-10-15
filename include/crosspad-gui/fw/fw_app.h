@@ -9,8 +9,7 @@
  *        pin, delete. A tab's page exists only while it is shown. The
  *        platform registers the app (REGISTER_APP_PL, pad logic "Firmware")
  *        around these two calls and may end the Updates tab with a block of
- *        its own (the board's Over USB block). docs/subsystems/firmware-app.md
- *        (platform-idf). LVGL thread only.
+ *        its own (the board's Over USB block). LVGL thread only.
  */
 
 #ifdef USE_LVGL

@@ -45,9 +45,9 @@ struct SwipeConfig {
 /// up); calling twice is a no-op.
 void touch_gesture_attach(lv_indev_t* indev, const SwipeConfig& cfg = SwipeConfig{});
 
-/// What the last recognised swipe was, and how many have been acted on — the
-/// only way a bench can tell "the gesture was not recognised" from "it was
-/// recognised and the action did nothing".
+/// What the last recognised swipe was, and how many have been acted on -- so
+/// a test can tell "the gesture was not recognised" from "it was recognised
+/// and the action had no effect".
 SwipeDir touch_gesture_last();
 uint32_t touch_gesture_count();
 const char* swipeDirName(SwipeDir d);

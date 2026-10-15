@@ -2,7 +2,7 @@
 #pragma once
 /**
  * @file transport_bar.h
- * @brief The transport, always at the top of the screen (UX 2000).
+ * @brief The transport, always at the top of the screen.
  *
  * One 30 px row in place of the status bar, the same in every app:
  *
@@ -66,22 +66,20 @@ void transportbar_set_mode_handler(void (*handler)());
 /// Swap with the status bar. show=false reveals the icons, show=true brings
 /// the transport back. No-op without a status bar to swap with.
 void transportbar_show(bool show);
+/// True while the transport bar (not the status bar) is the one shown.
 bool transportbar_shown();
 
 /// One of the bar's readouts, for measuring the layout from the host.
 struct TransportBarReadout {
     const char * id;     ///< "bpm", "pos" or "vox"
-    int32_t      x, y, w, h;
+    int32_t      x, y, w, h;   ///< the label's area on screen, in pixels
     const char * text;   ///< the label's own buffer; valid until the next repaint
 };
 
-/// Fill up to @p max readouts and return how many were written.
-///
-/// These labels sit in no encoder group, so `ui snapshot` cannot see them,
-/// and SCREENSHOT needs 230 kB of contiguous PSRAM this board does not have
-/// with a kit loaded. Without it every claim about the row's geometry is an
-/// argument rather than a measurement -- and the first one was wrong: the
-/// voice counter wrapped onto a second line.
+/// Fill up to @p max readouts and return how many were written: where each
+/// label sits and what it shows, for checking the row's layout from the
+/// host. These labels sit in no encoder group, so a UI snapshot does not
+/// list them.
 uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max);
 
 /// Jump the encoder's focus to the transport, and a second call back to

@@ -12,7 +12,7 @@
  *        first install, "older version?" before installing one, "replace the
  *        other firmware?" when the other slot holds another kit, the install
  *        and switch confirmations, and "run the new version now?" after a
- *        download-and-install. docs/subsystems/firmware-app.md. LVGL thread only.
+ *        download-and-install. LVGL thread only.
  */
 
 struct FwTarget {

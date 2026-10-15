@@ -22,14 +22,14 @@ struct MainScreenConfig {
     int button_spacing = 10;
     bool show_names  = true;
     lv_color_t bg_color = lv_color_make(26, 26, 46);
-    /// UX 2000: the transport bar on top in place of the status bar, and
-    /// MODE + pad to switch apps. The status bar is still built -- its drawer,
+    /// The transport bar on top in place of the status bar, and MODE + pad
+    /// to switch apps. The status bar is still built -- its drawer,
     /// loader and timers keep working -- but hidden.
     bool transport_bar = false;
     /// Build the launcher into the app container.
     ///
-    /// UX 2000 has no launcher: home is the MODE map, and apps are switched
-    /// with MODE and a pad. A platform with the transport bar turns this off,
+    /// With the transport bar there is no launcher: home is the MODE map, and
+    /// apps are switched with MODE and a pad. A platform with the transport bar turns this off,
     /// and then pays nothing for a grid of icons the map covers anyway --
     /// every one of them a decoded image in the PSRAM the apps have to live in.
     bool launcher = true;

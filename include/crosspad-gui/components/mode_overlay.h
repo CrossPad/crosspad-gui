@@ -2,7 +2,7 @@
 #pragma once
 /**
  * @file mode_overlay.h
- * @brief MODE + pad: switch apps the way the MPC 2000 does (UX 2000).
+ * @brief MODE + pad: switch apps from the pads.
  *
  * The MODE button on the transport bar opens a 4×4 map of the pads under the
  * bar. Hitting a pad -- or tapping its cell -- opens that app, flips that
@@ -37,22 +37,24 @@ enum class ModeKind : uint8_t {
     More,    ///< Opens the list of every app no pad names (pad 8 on the default map).
 };
 
+/// One cell of the map: the pad it sits on and what hitting it does.
 struct ModeEntry {
     uint8_t     pad;        ///< 1..16
     const char* label;      ///< On the cell, <= 8 chars, Title Case
     const char* hint;       ///< Bottom line, <= 8 chars, may be ""
     uint32_t    color;      ///< 0xRRGGBB -- cell accent and pad LED
-    ModeKind    kind;
+    ModeKind    kind;       ///< what the cell is, and how it is drawn
     const char* app;        ///< App name as registered (IApp::getName()); nullptr for toggles
     void (*toggle)();       ///< Called for ModeKind::Toggle
     bool (*isOn)();         ///< Optional: a toggle's state, to fill its cell
 };
 
-/// The UX 2000 map: Sampler / Sequencer / Song / Arrange, Recorder / Slicer / (pad 7 empty) / More,
-/// PitchPlay / PadMixer / Mixer / DawControl, KitSelector / Instructions /
-/// Firmware / Settings. A platform that wants switches (FULL
-/// LEVEL, NOTE REPEAT...) on a row passes its own table with ModeKind::Toggle
-/// entries.
+/// The default map, by pad: 1-4 Sampler / Sequencer / Song / Arrange,
+/// 5-8 Recorder / Slicer / (free) / More, 9-12 PitchPlay / PadMixer / Mixer /
+/// DawControl, 13-16 KitSelector / Instructions / Firmware / Settings.
+/// Writes the number of entries to @p count. A platform that wants switches
+/// (FULL LEVEL, NOTE REPEAT...) on a row passes its own table with
+/// ModeKind::Toggle entries.
 const ModeEntry* mode_overlay_default_map(size_t* count);
 
 /// Where apps are started (MainScreenResult::app_container) and what the map
@@ -66,9 +68,14 @@ void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t
 /// Works on the default map (it keeps its own mutable copy).
 void mode_overlay_bind_toggle(uint8_t pad, void (*toggle)(), bool (*isOn)());
 
+/// Open the map over the running app.
 void mode_overlay_open();
+/// Close the map; the pads go back to the app's own logic and colours.
 void mode_overlay_close();
+/// What MODE does: open the map, or close it when an app is under it. At
+/// home (nothing under the map) the map stays.
 void mode_overlay_toggle();
+/// True while the map is open. Safe from any task.
 bool mode_overlay_is_open();
 
 /// Act on pad @p padIdx (0..15) as if its cell were tapped. Safe from any

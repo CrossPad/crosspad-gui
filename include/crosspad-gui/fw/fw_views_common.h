@@ -12,7 +12,6 @@
  * @brief What the Firmware views share (fw_*_view.cpp, fw_kit_card.cpp,
  *        fw_actions.cpp): the kit tile and its icon, texts, the slots, the
  *        poll every view's refresh starts with. LVGL thread only.
- *        docs/subsystems/firmware-app.md (platform-idf)
  */
 
 constexpr int32_t kFwPad = 4;

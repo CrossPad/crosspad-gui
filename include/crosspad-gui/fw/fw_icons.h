@@ -7,7 +7,7 @@
 
 /**
  * @file fw_icons.h
- * @brief Kit icons as LVGL images (docs/subsystems/firmware-app.md): 6924-byte
+ * @brief Kit icons as LVGL images: 6924-byte
  *        buffers the platform reads (IFwViewService::requestIcon), shown as variable
  *        lv_image_dsc_t sources. LVGL draws an uncompressed RGB565A8 variable
  *        source in place and never puts it in its shared image cache. Files

@@ -21,7 +21,7 @@
 
 namespace crosspad_gui {
 
-/// What powerBack() actually did — for logging and for HIL assertions.
+/// What powerBack() did, for logging and tests.
 enum class BackResult : uint8_t {
     None = 0,   ///< nothing was open; the launcher stays as it is
     Dropdown,   ///< an open dropdown/picker was closed
@@ -32,6 +32,7 @@ enum class BackResult : uint8_t {
     App,        ///< the running app handled it, or was closed
 };
 
+/// The name of @p r in lower case ("none", "dropdown", ...), for logs.
 const char* backResultName(BackResult r);
 
 // ── Back handlers (overlay layer) ────────────────────────────────────────────
