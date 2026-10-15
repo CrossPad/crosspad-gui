@@ -324,6 +324,7 @@ bool settings_ui_back() {
 }
 
 void settings_ui_destroy() {
+    system_dialogs_dismiss();
     save_settings();
     s_content = nullptr;
     s_group = nullptr;

@@ -6,6 +6,7 @@
 
 #include "settings_ui_internal.h"
 #include "crosspad/config/crosspad_config.h"
+#include "crosspad-gui/components/main_screen.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
@@ -65,12 +66,15 @@ void settings_detail::cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           &s->themeColorIndex,
                           theme_color_changed_cb);
 
-    s_launcherStyleIdx = (uint8_t)s->launcherStyle;
-    settings_row_dropdown(parent, group, "Launcher", "Icon grid\nList",
-                          &s_launcherStyleIdx,
-                          [](lv_event_t *) {
-                              get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
-                          });
+    /* Only where there is a launcher to style. */
+    if (main_screen_has_launcher()) {
+        s_launcherStyleIdx = (uint8_t)s->launcherStyle;
+        settings_row_dropdown(parent, group, "Launcher", "Icon grid\nList",
+                              &s_launcherStyleIdx,
+                              [](lv_event_t *) {
+                                  get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
+                              });
+    }
 
     s_touchSensIdx = (uint8_t)s->touchSensitivity;
     settings_row_dropdown(parent, group, "Touch Sensitivity", "Low\nMedium\nHigh",

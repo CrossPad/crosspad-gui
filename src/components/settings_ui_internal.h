@@ -47,6 +47,8 @@ void apply_output_volumes(crosspad::CrosspadSettings* s);
 // ---- STM config (settings_ui_system.cpp) ----
 
 void stm_push_config(crosspad::CrosspadSettings* s);
+// Close the Factory Reset question, as Cancel, when Settings goes away.
+void system_dialogs_dismiss();
 
 // ---- Built-in category builders, one translation unit per category ----
 

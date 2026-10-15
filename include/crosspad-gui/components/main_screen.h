@@ -68,6 +68,16 @@ MainScreenResult build_main_screen(
     size_t app_count,
     const MainScreenConfig& config);
 
+/**
+ * @brief Whether the last build_main_screen() built a launcher.
+ *
+ * False before the first build and on a platform that turns the launcher off
+ * (UX 2000: home is the MODE map). Settings shows its Launcher row only when
+ * this is true -- choosing a style for a launcher that is never built did
+ * nothing.
+ */
+bool main_screen_has_launcher();
+
 } // namespace crosspad_gui
 
 #endif // USE_LVGL

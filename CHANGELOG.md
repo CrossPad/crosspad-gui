@@ -55,6 +55,15 @@ described in their commits.
   from pad-logic callbacks and event-bus handlers the LVGL thread may be
   waiting for.
 - Every app start closes the MODE map first, programmatic starts included.
+- Settings → System → **Factory Reset** asks first: a dialog *Factory
+  reset?* with **Cancel** (where the encoder starts) and **Reset** (red).
+  Cancel, the power button's back or leaving Settings change nothing.
+- Settings no longer offers rows that changed nothing: Display → Launcher
+  where no launcher is built, Audio → Audio Engine, Pads & LEDs → Note Off on
+  Release and Upper Row Functions, Vibration → On Error, MIDI → Send to STM,
+  BLE -> MIDI and the STM32 routing switches other than MIDI -> Thru and
+  MIDI -> USB, System → Wake Brightness. Their settings keys are still
+  stored, backed up and pushed as before.
 
 ### Added
 
@@ -86,6 +95,8 @@ described in their commits.
   pad opens.
 - `settings_ui` split into one source per category; the public header is
   unchanged.
+- `main_screen_has_launcher()` (`main_screen.h`): whether the last
+  `build_main_screen()` built a launcher.
 
 ### Fixed
 

@@ -346,8 +346,6 @@ void settings_detail::cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     auto* s = get_settings();
     if (!s) return;
 
-    settings_row_switch(parent, group, "Audio Engine",
-                        &s->AudioEngineEnabled);
 
     crosspad::IAudioBuffer * ab = crosspad::getPlatformServices().audioBuffer;
     if (ab) {

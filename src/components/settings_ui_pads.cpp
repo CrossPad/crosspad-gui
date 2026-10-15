@@ -35,12 +35,6 @@ void settings_detail::cat_build_pads(lv_obj_t * parent, lv_group_t * group) {
     settings_row_switch(parent, group, "Pad MIDI Output",
                         &s->keypad.enableKeypad);
 
-    settings_row_switch(parent, group, "Note Off on Release",
-                        &s->keypad.noteOffOnRelease);
-
-    // Consumed by the sequencer app (top row = transport/function keys).
-    settings_row_switch(parent, group, "Upper Row Functions",
-                        &s->keypad.upperRowFunctions);
 }
 
 } // namespace crosspad_gui

@@ -15,6 +15,11 @@ namespace crosspad_gui {
  * ~70 B of internal RAM per app visit, visible as a slope in app_churn. */
 static lv_group_t* s_encoder_group = nullptr;
 
+/* What the last build did with config.launcher (main_screen_has_launcher). */
+static bool s_has_launcher = false;
+
+bool main_screen_has_launcher() { return s_has_launcher; }
+
 MainScreenResult build_main_screen(
     lv_obj_t* parent,
     const LauncherAppInfo* apps,
@@ -72,6 +77,7 @@ MainScreenResult build_main_screen(
         mode_overlay_init(app_c, map, n);
     }
 
+    s_has_launcher = config.launcher;
     if (!config.launcher) return result;
 
     LauncherConfig lc = {};

@@ -6,6 +6,7 @@
 
 #include "settings_ui_internal.h"
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/components/dfu_panel.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
@@ -74,10 +75,6 @@ static void stm_keypad_en_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     // REG_CTL_KEYPAD_DIS is the INVERSE of keypadEnabled
     crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_KEYPAD_DIS, s->stm.keypadEnabled ? 0 : 1);
-}
-static void stm_wake_bright_cb(lv_event_t*) {
-    auto* s = get_settings(); if (!s) return;
-    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_WAKE_BRIGHT, s->stm.wakeBrightness);
 }
 // The STM only promotes LIGHT → DEEP while sleep_to > dim_to (sleep.c
 // light_sleep_tick). Picking sleep <= dim therefore disables sleep silently, so
@@ -225,8 +222,7 @@ void settings_detail::cat_build_info(lv_obj_t * parent, lv_group_t * group) {
 
 // ---- System ----
 
-static void factory_reset_cb(lv_event_t * e) {
-    (void)e;
+static void factory_reset_apply() {
     auto * s = CrosspadSettings::getInstance();
     if (!s) return;
     // Reset to defaults by constructing fresh sub-structs
@@ -269,7 +265,39 @@ static void factory_reset_cb(lv_event_t * e) {
     plat.onFactoryReset();
 
     ui_toast_show("Settings reset to defaults", 2000, UI_TOAST_WARNING);
-    show_detail(s_current_category);
+    // The page under the dialog, rebuilt on the new values -- if it is still open.
+    if (s_content) show_detail(s_current_category);
+}
+
+/* Factory Reset asks first, in the look of the Power off dialog: Cancel first
+ * and where the encoder starts, the action in red. */
+enum { kResetCancel = 0, kResetConfirm = 1 };
+static lv_obj_t * s_reset_dialog = nullptr;
+
+static void factory_reset_answer_cb(int index, void * user_data) {
+    (void)user_data;
+    s_reset_dialog = nullptr;
+    if (index == kResetConfirm) factory_reset_apply();
+    // Cancel or the power button's back (-1): nothing changes.
+}
+
+static void factory_reset_cb(lv_event_t * e) {
+    (void)e;
+    if (s_reset_dialog) return;
+    static const ui_modal_button_t buttons[] = {
+        {"Cancel", UI_MODAL_BUTTON_NORMAL},
+        {"Reset",  UI_MODAL_BUTTON_DANGER},
+    };
+    s_reset_dialog = ui_modal_choice(
+        "Factory reset?",
+        "Settings go back to their defaults. USB settings, Motion MIDI and "
+        "the SD card are kept.",
+        buttons, 2, kResetCancel, factory_reset_answer_cb, nullptr, s_group);
+}
+
+void settings_detail::system_dialogs_dismiss() {
+    // Leaving Settings answers an open question with Cancel.
+    if (s_reset_dialog) ui_modal_confirm_dismiss(s_reset_dialog, false);
 }
 
 static void stm32_dfu_cb(lv_event_t * e) {
@@ -295,8 +323,6 @@ void settings_detail::cat_build_system(lv_obj_t * parent, lv_group_t * group) {
         // STM-side pad scanning (distinct from keypad.enableKeypad, which gates
         // pad→MIDI in PadManager — that one lives under Pads & LEDs).
         settings_row_switch(parent, group, "STM Keypad Scan", &s->stm.keypadEnabled, stm_keypad_en_cb);
-        settings_row_slider(parent, group, "Wake Brightness", 0, 100,
-                            &s->stm.wakeBrightness, stm_wake_bright_cb);
         constexpr uint8_t kTimeoutCount = sizeof(kTimeoutSecs)/sizeof(kTimeoutSecs[0]);
         s_dimIdx   = nearest_idx_u16(kTimeoutSecs, kTimeoutCount, s->stm.dimTimeoutS);
         s_sleepIdx = nearest_idx_u16(kTimeoutSecs, kTimeoutCount, s->stm.sleepTimeoutS);

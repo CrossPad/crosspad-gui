@@ -59,8 +59,6 @@ void settings_detail::cat_build_vibration(lv_obj_t * parent, lv_group_t * group)
     settings_row_switch(s_vibration_dependent, group, "On Touch",
                         &s->vibration.enableVibrationOnTouch, vibration_apply_cb);
 
-    settings_row_switch(s_vibration_dependent, group, "On Error",
-                        &s->vibration.enableVibrationOnError, vibration_apply_cb);
 
     settings_row_switch(s_vibration_dependent, group, "Audio to Vibe",
                         &s->vibration.enableAudioToVibe, vibration_apply_cb);

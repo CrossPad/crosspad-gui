@@ -38,9 +38,6 @@ void settings_detail::cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
 
     settings_section_header(parent, "Keypad Routing");
 
-    settings_row_switch(parent, group, "Send to STM",
-                        &s->keypad.send2STM);
-
     settings_row_switch(parent, group, "Send to BLE",
                         &s->keypad.send2BLE);
 
@@ -52,55 +49,15 @@ void settings_detail::cat_build_midi(lv_obj_t * parent, lv_group_t * group) {
 
     settings_section_header(parent, "STM32 Routing");
 
-    settings_row_switch(parent, group, "Routing Enabled",
-                        &s->stmRouting.RoutingMatrixEnabled);
-
     settings_row_switch(parent, group, "MIDI -> Thru",
                         &s->stmRouting.Midi2MidiThru);
 
     settings_row_switch(parent, group, "MIDI -> USB",
                         &s->stmRouting.Midi2USB);
 
-    settings_row_switch(parent, group, "MIDI -> ESP",
-                        &s->stmRouting.Midi2ESP);
-
-    settings_row_switch(parent, group, "USB -> MIDI",
-                        &s->stmRouting.USB2Midi);
-
-    settings_row_switch(parent, group, "USB -> Thru",
-                        &s->stmRouting.USB2USBThru);
-
-    settings_row_switch(parent, group, "USB -> ESP",
-                        &s->stmRouting.USB2ESP);
-
-    settings_row_switch(parent, group, "ESP -> MIDI",
-                        &s->stmRouting.ESP2Midi);
-
-    settings_row_switch(parent, group, "ESP -> USB",
-                        &s->stmRouting.ESP2USB);
-
-    settings_row_switch(parent, group, "ESP -> Thru",
-                        &s->stmRouting.ESP2ESPThru);
-
-    settings_row_switch(parent, group, "Buttons -> MIDI",
-                        &s->stmRouting.Buttons2Midi);
-
-    settings_row_switch(parent, group, "Buttons -> USB",
-                        &s->stmRouting.Buttons2USB);
-
-    settings_row_switch(parent, group, "Buttons -> ESP",
-                        &s->stmRouting.Buttons2ESP);
-
-    settings_row_switch(parent, group, "Config Btns as MIDI",
-                        &s->stmRouting.ConfigButtonsAsMidi);
-
     settings_section_header(parent, "ESP32 Routing");
 
-    // BLE2Audio / Midi2Audio have no consumer in the firmware — only the two
-    // forwarding paths below are wired (MidiInputHandler).
-    settings_row_switch(parent, group, "BLE -> MIDI",
-                        &s->esp32Routing.BLE2Midi);
-
+    // The one ESP forwarding path that reaches a listener (MidiInputHandler).
     settings_row_switch(parent, group, "MIDI -> BLE",
                         &s->esp32Routing.Midi2BLE);
 
