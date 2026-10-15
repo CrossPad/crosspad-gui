@@ -23,13 +23,20 @@ namespace crosspad_gui {
 
 struct ILvglApp : public crosspad::IApp {
     // ── Metadata ─────────────────────────────────────────────────────────
+    /// The app's icon path.
     virtual const char* getIcon() = 0;
 
     // ── LVGL lifecycle ───────────────────────────────────────────────────
+    /// True from start() until the app is destroyed.
     virtual bool isStarted() = 0;
+    /// Build the app's screen under @p parent and show it.
     virtual void start(lv_obj_t* parent) = 0;
+    /// Hide the app's screen, keeping it built.
     virtual void pause() = 0;
+    /// Show the app's screen again.
     virtual void resume() = 0;
+    /// Tear the app down at once. From the app's own event callbacks, use
+    /// destroyAppAsync().
     virtual void destroyApp() = 0;
 
     /// Close this app from inside itself — the path an in-app Back button
@@ -49,6 +56,7 @@ struct ILvglApp : public crosspad::IApp {
     /// framework then returns to the launcher.
     virtual bool handleBack() { return false; }
 
+    /// The app's root object; null while it is not started.
     virtual lv_obj_t* getAppContainer() = 0;
 
     /// Declarative pad logic: name auto-activated on start() and restored on
@@ -56,7 +64,9 @@ struct ILvglApp : public crosspad::IApp {
     virtual void setPadLogicName(const char* name) { (void)name; }
 
     // ── Flag management ──────────────────────────────────────────────────
+    /// Add @p flag to the app's flags.
     virtual void AddFlag(crosspad::AppFlags flag) = 0;
+    /// True when every bit of @p flag is set.
     virtual bool HasFlag(crosspad::AppFlags flag) = 0;
 };
 

@@ -36,9 +36,9 @@ using IconResolverFn = const char* (*)(size_t index, const char* icon);
 /// Factory that creates a platform-specific App (which inherits ILvglApp)
 /// from an AppEntry.  Called once per registered LVGL app during populateApps().
 ///
-/// Must return a std::shared_ptr so that App (which uses
-/// std::enable_shared_from_this) can call shared_from_this() at runtime —
-/// required by App::destroyAppAsync(). Use crosspad_gui::defaultAppFactory<App>.
+/// Returns a std::shared_ptr, and should hand the app a weak reference to it
+/// (ILvglApp::setSelfRef()) so destroyAppAsync() can keep the app alive
+/// across the deferred close. Use crosspad_gui::defaultAppFactory<App>.
 using AppFactoryFn = std::shared_ptr<ILvglApp> (*)(lv_obj_t* container,
                                     const char* name,
                                     const char* icon,

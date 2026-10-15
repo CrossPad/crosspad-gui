@@ -18,8 +18,7 @@ using crosspad::CrosspadStatus;
  * @brief The App class every platform builds its apps from.
  *
  * Inherits the LVGL lifecycle from crosspad_gui::AppBase<App> (CRTP) and adds
- * std::enable_shared_from_this plus convenience accessors for crosspad-core's
- * singletons. A platform supplies nothing here: the accessors read
+ * convenience accessors for crosspad-core's singletons. A platform supplies nothing here: the accessors read
  * PlatformServices, which crosspad_platform_init() filled.
  */
 class App : public crosspad_gui::AppBase<App>,
@@ -29,8 +28,12 @@ public:
 
     virtual ~App() = default;
 
+    /// The platform's PadManager.
     crosspad::PadManager& padManager();
+    /// The platform's PadLedController.
     crosspad::PadLedController& ledController();
+    /// The device status (battery, connections, ...).
     CrosspadStatus& status();
+    /// The device settings.
     CrosspadSettings& settings();
 };
