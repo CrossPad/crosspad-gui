@@ -18,6 +18,7 @@
 #include "crosspad/platform/IVibration.hpp"
 #include "crosspad/platform/PlatformServices.hpp"
 #include "crosspad/audio/IOutputLevels.hpp"
+#include "crosspad/audio/IAudioBuffer.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -857,6 +858,39 @@ static void audio_engine_fc_cb(lv_event_t * e) {
     }
 }
 
+// ---- Audio buffer ----
+//
+// One choice of block and output queue from the platform (IAudioBuffer),
+// applied while playing. Shown as the block in frames and the queue in ms:
+// the queue is what a pad waits for after the render picks its note up.
+static uint8_t s_audioBufferIdx = 0;
+static lv_obj_t * s_audioBufferDd = nullptr;
+
+static void audio_buffer_cb(lv_event_t * e) {
+    (void)e;
+    crosspad::IAudioBuffer * ab = crosspad::getPlatformServices().audioBuffer;
+    if (!ab) return;
+    if (!ab->select(s_audioBufferIdx)) {
+        ui_toast_show("Buffer not changed", 2000, UI_TOAST_INFO);
+        s_audioBufferIdx = ab->current();
+        if (s_audioBufferDd) lv_dropdown_set_selected(s_audioBufferDd, s_audioBufferIdx);
+    }
+}
+
+/// "64 · 4.4 ms" per choice, one a line, into @p out (the dropdown copies it).
+static void audio_buffer_options(crosspad::IAudioBuffer & ab, char * out, size_t cap) {
+    size_t len = 0;
+    out[0] = '\0';
+    const uint32_t rate = ab.sampleRate();
+    for (uint8_t i = 0; i < ab.choices() && len < cap; ++i) {
+        const crosspad::IAudioBuffer::Choice c = ab.choice(i);
+        const unsigned tenthsMs = rate ? (unsigned)((c.queueFrames * 10000u + rate / 2) / rate) : 0u;
+        const int n = snprintf(out + len, cap - len, "%s%u · %u.%u ms", i ? "\n" : "",
+                               (unsigned)c.blockFrames, tenthsMs / 10, tenthsMs % 10);
+        if (n > 0) len += (size_t)n;
+    }
+}
+
 // ---- USB Audio routing ----
 //
 // Mirrors of the live codec routing, refreshed from the platform on every
@@ -1044,7 +1078,20 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
     settings_row_switch(parent, group, "Audio Engine",
                         &s->AudioEngineEnabled);
 
-    settings_section_header(parent, "Engine (restart required)");
+    crosspad::IAudioBuffer * ab = crosspad::getPlatformServices().audioBuffer;
+    if (ab) {
+        /* Live: block and queue together, as one choice the board can run. */
+        settings_section_header(parent, "Engine");
+        s_audioBufferIdx = ab->current();
+        char options[160];
+        audio_buffer_options(*ab, options, sizeof(options));
+        s_audioBufferDd = row_dropdown(settings_row_dropdown(parent, group, "Buffer", options,
+                                                             &s_audioBufferIdx, audio_buffer_cb));
+        if (s_audioBufferDd) lv_obj_set_width(s_audioBufferDd, 120);
+        settings_section_header(parent, "Engine (restart required)");
+    } else {
+        settings_section_header(parent, "Engine (restart required)");
+    }
 
     s_audioEngineSrIdx = 1;
     for (uint8_t i = 0; i < AudioEngineSettings::kSampleRatesCount; ++i) {
@@ -1056,15 +1103,17 @@ static void cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
                           "44100\n48000\n96000",
                           &s_audioEngineSrIdx, audio_engine_sr_cb);
 
-    s_audioEngineFcIdx = 2;
-    for (uint8_t i = 0; i < AudioEngineSettings::kFrameCountsCount; ++i) {
-        if (AudioEngineSettings::kFrameCounts[i] == s->audioEngine.frameCount) {
-            s_audioEngineFcIdx = i; break;
+    if (!ab) {
+        s_audioEngineFcIdx = 2;
+        for (uint8_t i = 0; i < AudioEngineSettings::kFrameCountsCount; ++i) {
+            if (AudioEngineSettings::kFrameCounts[i] == s->audioEngine.frameCount) {
+                s_audioEngineFcIdx = i; break;
+            }
         }
+        settings_row_dropdown(parent, group, "Frame Count",
+                              "32\n48\n64\n128\n256\n512",
+                              &s_audioEngineFcIdx, audio_engine_fc_cb);
     }
-    settings_row_dropdown(parent, group, "Frame Count",
-                          "32\n48\n64\n128\n256\n512",
-                          &s_audioEngineFcIdx, audio_engine_fc_cb);
 
     settings_section_header(parent, "Output Volume");
 
