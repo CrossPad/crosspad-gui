@@ -4,6 +4,9 @@
 
 #include "crosspad-gui/components/scope_view.h"
 
+#include "crosspad-gui/components/spectrum_math.h"
+
+#include <crosspad/dsp/FftFactory.hpp>
 #include <crosspad/dsp/ScopeTrigger.hpp>
 
 #include <new>
@@ -63,6 +66,50 @@ constexpr float kAutoScaleFloor = 0.01f;
  */
 constexpr float kAutoScaleRelease = 0.3f;
 
+/// A held peak tick stays this many frames (~0.5 s) before it falls.
+constexpr uint8_t kSpectrumPeakHoldFrames = 15;
+/// Bar fall per frame, as a fraction of the distance to the new level: the
+/// rise is instant, the fall takes ~0.3 s, so a hit reads and a tail decays.
+constexpr float kSpectrumBarRelease = 0.25f;
+/// Peak tick fall per frame once the hold is over, of the full scale.
+constexpr float kSpectrumPeakFall = 0.04f;
+/// A bar this far above the floor counts as signal (silence check, label).
+constexpr float kSpectrumSignal = 0.02f;
+/// A block whose loudest sample is below this (-80 dBFS, under the -72 dB floor
+/// of the scale) is drawn as silence without being transformed.
+constexpr float kSpectrumSilence = 1e-4f;
+/// Pixels per bar, gap included. Bars are as many as fit, up to kSpectrumMaxBars.
+constexpr int32_t kSpectrumBarPx = 3;
+
+constexpr uint32_t kPeakColor = 0xE8FFF4;
+/// Widest scope SPECTRUM draws: the display's own width.
+constexpr int32_t kSpectrumMaxWidth = 320;
+
+/**
+ * @brief Everything SPECTRUM needs, allocated when that mode is first chosen.
+ *
+ * ~13 kB with the transform buffer, so a scope that stays on Live or RMS never
+ * pays for it. The buffer is 16-byte aligned: esp-dsp's kernels move complex
+ * pairs with 64-bit loads.
+ */
+struct SpectrumState {
+    alignas(16) float fftBuf[2 * crosspad_gui::kSpectrumFftSize];
+    float window[crosspad_gui::kSpectrumFftSize];
+    crosspad_gui::SpectrumBar map[crosspad_gui::kSpectrumMaxBars];
+    int8_t  colBar[kSpectrumMaxWidth];               ///< bar a pixel column belongs to, -1 = the gap
+    bool    colGrid[kSpectrumMaxWidth];              ///< column of a decade line (100 Hz, 1 kHz, 10 kHz)
+    int16_t gridRow[2] = { -1, -1 };                 ///< rows of the -24 / -48 dB lines
+    int16_t colTop[kSpectrumMaxWidth];               ///< first row of each column's bar as painted; h = none
+    int16_t colTick[kSpectrumMaxWidth];              ///< row of its peak tick as painted; -1 = none
+    bool    painted = false;                         ///< the canvas holds this state's last frame
+    float   level[crosspad_gui::kSpectrumMaxBars];   ///< bar height, 0..1
+    float   peak[crosspad_gui::kSpectrumMaxBars];    ///< held tick, 0..1
+    uint8_t hold[crosspad_gui::kSpectrumMaxBars];    ///< frames the tick still holds
+    crosspad::IFft* fft = nullptr;
+    uint32_t rate = 0;    ///< sample rate `map` was built for
+    uint32_t bars = 0;
+};
+
 struct ScopeState {
     crosspad_gui::ScopeSource source = nullptr;
     void*     ctx     = nullptr;
@@ -75,6 +122,7 @@ struct ScopeState {
     bool      wasSilent = false; ///< the last frame drawn was a silent window
     uint8_t*  pixels  = nullptr;
     float*    history = nullptr; ///< one RMS value per pixel column
+    SpectrumState* spectrum = nullptr;
     uint32_t  historyHead  = 0;  ///< next slot to write
     uint32_t  historyCount = 0;
     int32_t   w = 0;
@@ -134,6 +182,152 @@ void vspan(const Pixels& p, int32_t x, int32_t y0, int32_t y1, uint16_t c) {
     }
 }
 
+void* spectrum_alloc(size_t bytes, size_t align) {
+    if (align < 16) align = 16;
+    const size_t rounded = (bytes + align - 1) & ~(align - 1);
+#ifdef ESP_PLATFORM
+    return heap_caps_aligned_alloc(align, rounded, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    return aligned_alloc(align, rounded);
+#endif
+}
+
+void spectrum_free(void* p) {
+#ifdef ESP_PLATFORM
+    heap_caps_free(p);
+#else
+    free(p);
+#endif
+}
+
+void spectrum_reset(SpectrumState* sp) {
+    memset(sp->level, 0, sizeof(sp->level));
+    memset(sp->peak, 0, sizeof(sp->peak));
+    memset(sp->hold, 0, sizeof(sp->hold));
+    sp->painted = false;
+}
+
+/// The bars and their held ticks over a faint grid of -24 / -48 dB and the
+/// decades 100 Hz, 1 kHz, 10 kHz. Paints nothing when the frame is as silent as
+/// the one before.
+void draw_spectrum(ScopeState* st, uint32_t got, uint32_t rate) {
+    SpectrumState* sp = st->spectrum;
+    constexpr uint32_t n = crosspad_gui::kSpectrumFftSize;
+
+    float fresh[crosspad_gui::kSpectrumMaxBars];
+    float loudestSample = 0.0f;
+    for (uint32_t i = 0; i < got; ++i) {
+        const float a = st->samples[i] < 0 ? -st->samples[i] : st->samples[i];
+        if (a > loudestSample) loudestSample = a;
+    }
+    // Between hits the engine hands over digital silence: nothing to transform.
+    if (loudestSample >= kSpectrumSilence && rate > 0 && sp->fft) {
+        if (rate != sp->rate) {
+            crosspad_gui::spectrum_map_bars(sp->map, sp->bars, n, rate);
+            sp->rate = rate;
+        }
+        // Newest n samples, windowed, real part only; short pulls are zero padded.
+        const uint32_t used = got < n ? got : n;
+        const float* src = st->samples + (got - used);
+        for (uint32_t i = 0; i < used; ++i) {
+            sp->fftBuf[2 * i]     = src[i] * sp->window[i];
+            sp->fftBuf[2 * i + 1] = 0.0f;
+        }
+        for (uint32_t i = used; i < n; ++i) {
+            sp->fftBuf[2 * i]     = 0.0f;
+            sp->fftBuf[2 * i + 1] = 0.0f;
+        }
+        sp->fft->forward(sp->fftBuf, n);
+        crosspad_gui::spectrum_levels(sp->fftBuf, n, sp->map, sp->bars, fresh);
+    } else {
+        memset(fresh, 0, sizeof(fresh));
+    }
+
+    bool signal = false;
+    uint32_t loudest = 0;
+    for (uint32_t i = 0; i < sp->bars; ++i) {
+        float& lv = sp->level[i];
+        lv = fresh[i] > lv ? fresh[i] : lv + (fresh[i] - lv) * kSpectrumBarRelease;
+        if (lv < 0.002f) lv = 0.0f;
+
+        if (lv >= sp->peak[i]) {
+            sp->peak[i] = lv;
+            sp->hold[i] = kSpectrumPeakHoldFrames;
+        } else if (sp->hold[i] > 0) {
+            --sp->hold[i];
+        } else {
+            sp->peak[i] -= kSpectrumPeakFall;
+            if (sp->peak[i] < lv) sp->peak[i] = lv;
+        }
+        if (sp->peak[i] >= kSpectrumSignal) signal = true;
+        if (fresh[i] > fresh[loudest]) loudest = i;
+    }
+
+    // Rest like the Live trace: a decayed, empty spectrum after an empty
+    // spectrum is the picture already on screen.
+    if (!signal && st->wasSilent) return;
+    st->wasSilent = !signal;
+
+    // The canvas is PSRAM: repainting all of it every frame cost ~2.4 ms on the
+    // board. A column is repainted only where its bar or tick moved since the
+    // last frame; the first frame after a mode change paints everything.
+    const Pixels px = pixels_of(st->canvas);
+    const uint16_t bg   = lv_color_to_u16(color_from_hex(kBgColor));
+    const uint16_t axis = lv_color_to_u16(color_from_hex(kAxisColor));
+    const uint16_t bar  = lv_color_to_u16(color_from_hex(kTraceColor));
+    const uint16_t tick = lv_color_to_u16(color_from_hex(kPeakColor));
+    const int32_t base = st->h - 1;
+    const int32_t span = base - 1;   // bar height at 0 dBFS
+
+    auto at = [&](int32_t x, int32_t y) {
+        return reinterpret_cast<uint16_t*>(px.data + static_cast<uint32_t>(y) * px.stride) + x;
+    };
+    auto behind = [&](int32_t x, int32_t y, int32_t top) {
+        if (y >= top) return bar;
+        return (y == sp->gridRow[0] || y == sp->gridRow[1] || sp->colGrid[x]) ? axis : bg;
+    };
+
+    for (int32_t x = 0; x < st->w; ++x) {
+        const int32_t i = sp->colBar[x];
+        int32_t top = st->h;   // none
+        int32_t mark = -1;
+        if (i >= 0) {
+            const int32_t hBar = static_cast<int32_t>(sp->level[i] * static_cast<float>(span));
+            if (hBar > 0) top = base - hBar + 1;
+            if (sp->peak[i] >= kSpectrumSignal) {
+                mark = base - static_cast<int32_t>(sp->peak[i] * static_cast<float>(span));
+            }
+        }
+        if (sp->painted && top == sp->colTop[x] && mark == sp->colTick[x]) continue;
+
+        const int32_t oldTop = sp->painted ? sp->colTop[x] : 0;
+        const int32_t y0 = sp->painted ? (top < oldTop ? top : oldTop) : 0;
+        const int32_t y1 = sp->painted ? (top < oldTop ? oldTop : top) : st->h;
+        for (int32_t y = y0; y < y1; ++y) *at(x, y) = behind(x, y, top);
+        const int32_t oldMark = sp->painted ? sp->colTick[x] : -1;
+        if (oldMark >= 0 && oldMark != mark) *at(x, oldMark) = behind(x, oldMark, top);
+        if (mark >= 0) *at(x, mark) = tick;
+        sp->colTop[x] = static_cast<int16_t>(top);
+        sp->colTick[x] = static_cast<int16_t>(mark);
+    }
+    sp->painted = true;
+
+    lv_obj_invalidate(st->canvas);
+
+    if (!st->label) return;
+    char next[sizeof(st->text)];
+    if (signal && fresh[loudest] >= kSpectrumSignal) {
+        snprintf(next, sizeof(next), "FFT %dHz",
+                 static_cast<int>(crosspad_gui::spectrum_bar_hz(loudest, sp->bars) + 0.5f));
+    } else {
+        snprintf(next, sizeof(next), "FFT");
+    }
+    if (strcmp(next, st->text) != 0) {
+        memcpy(st->text, next, sizeof(next));
+        lv_label_set_text_static(st->label, st->text);
+    }
+}
+
 void draw_frame(ScopeState* st) {
     lv_obj_t* canvas = st->canvas;
 
@@ -149,6 +343,11 @@ void draw_frame(ScopeState* st) {
     if (st->source) {
         got = st->source(st->ctx, st->samples, kSnapshotSamples, &hz, &rate);
         if (got > kSnapshotSamples) got = kSnapshotSamples;
+    }
+
+    if (st->mode == crosspad_gui::ScopeViewMode::Spectrum) {
+        draw_spectrum(st, got, rate);
+        return;
     }
 
     float rms = 0.0f;
@@ -286,8 +485,47 @@ void scope_delete_cb(lv_event_t* e) {
     if (!st) return;
     if (st->timer) lv_timer_delete(st->timer);
     free(st->history);
+    if (st->spectrum) spectrum_free(st->spectrum);
     free(st->pixels);
     lv_free(st);
+}
+
+/// Allocate the spectrum's buffers and fetch the FFT on first use. False leaves
+/// the scope on the mode it had. The FFT is asked for again on every selection:
+/// core retries an esp-dsp table that failed for want of memory.
+bool spectrum_prepare(ScopeState* st) {
+    if (!st->spectrum && st->w > kSpectrumMaxWidth) return false;
+    if (!st->spectrum) {
+        auto* sp = static_cast<SpectrumState*>(spectrum_alloc(sizeof(SpectrumState), alignof(SpectrumState)));
+        if (!sp) return false;
+        new (sp) SpectrumState();
+        crosspad_gui::spectrum_hann(sp->window, crosspad_gui::kSpectrumFftSize);
+        const int32_t fit = st->w / kSpectrumBarPx;
+        sp->bars = static_cast<uint32_t>(fit < 8 ? 8 : (fit > static_cast<int32_t>(crosspad_gui::kSpectrumMaxBars)
+                                                        ? static_cast<int32_t>(crosspad_gui::kSpectrumMaxBars) : fit));
+        spectrum_reset(sp);
+        // A bar is kSpectrumBarPx wide less one column of gap, however many fit.
+        for (int32_t x = 0; x < st->w; ++x) {
+            const int32_t i = x * static_cast<int32_t>(sp->bars) / st->w;
+            const int32_t next = (i + 1) * st->w / static_cast<int32_t>(sp->bars);
+            sp->colBar[x] = static_cast<int8_t>(x == next - 1 && next - 1 > i * st->w / static_cast<int32_t>(sp->bars) ? -1 : i);
+            sp->colGrid[x] = false;
+        }
+        const float octaves = log2f(crosspad_gui::kSpectrumHighHz / crosspad_gui::kSpectrumLowHz);
+        for (float hz = 100.0f; hz < crosspad_gui::kSpectrumHighHz; hz *= 10.0f) {
+            sp->colGrid[static_cast<int32_t>(static_cast<float>(st->w) *
+                                             log2f(hz / crosspad_gui::kSpectrumLowHz) / octaves)] = true;
+        }
+        for (int32_t k = 0; k < 2; ++k) {
+            sp->gridRow[k] = static_cast<int16_t>(1 + (st->h - 2) * 24 * (k + 1) / 72);
+        }
+        st->spectrum = sp;
+    }
+    crosspad::FftMemory mem;
+    mem.alloc = spectrum_alloc;
+    mem.free  = spectrum_free;
+    st->spectrum->fft = &crosspad::createFft(mem);
+    return true;
 }
 
 ScopeState* state_of(lv_obj_t* scope) {
@@ -363,9 +601,11 @@ void scope_view_clear_source(lv_obj_t* scope) {
 void scope_view_set_mode(lv_obj_t* scope, crosspad_gui::ScopeViewMode mode) {
     auto* st = state_of(scope);
     if (!st || st->mode == mode) return;
+    if (mode == crosspad_gui::ScopeViewMode::Spectrum && !spectrum_prepare(st)) return;
     st->mode = mode;
     st->peakEnv = 0.0f;
     st->wasSilent = false;
+    if (mode == crosspad_gui::ScopeViewMode::Spectrum) spectrum_reset(st->spectrum);
     if (mode == crosspad_gui::ScopeViewMode::HistoryRms) {
         if (!st->history) {
             st->history = static_cast<float*>(calloc(static_cast<size_t>(st->w), sizeof(float)));
@@ -388,6 +628,7 @@ void scope_view_clear_history(lv_obj_t* scope) {
     }
     st->historyHead = 0;
     st->historyCount = 0;
+    if (st->spectrum) spectrum_reset(st->spectrum);
     st->wasSilent = false;
 }
 

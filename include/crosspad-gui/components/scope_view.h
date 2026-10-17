@@ -14,7 +14,8 @@
  * the note and the refresh.
  *
  * The sample buffer and canvas pixels are allocated at create(). RMS history
- * is allocated lazily when that mode is selected.
+ * is allocated lazily when that mode is selected, the spectrum's ~13 kB
+ * (transform buffer, window, bar state) likewise, and kept until the scope dies.
  *
  * ```cpp
  * lv_obj_t* scope = create_scope_view(parent, 120, 60);
@@ -30,10 +31,13 @@
 
 namespace crosspad_gui {
 
-/// The close oscilloscope trace or a several-second RMS envelope.
+/// The close oscilloscope trace, a several-second RMS envelope, or the
+/// spectrum of the newest 1024 samples (spectrum_math.h) on a log-frequency
+/// axis, -72..0 dBFS, with peak ticks.
 enum class ScopeViewMode : uint8_t {
     Live,
     HistoryRms,
+    Spectrum,
 };
 
 /**
@@ -60,7 +64,9 @@ void scope_view_set_source(lv_obj_t* scope, crosspad_gui::ScopeSource src, void*
 void scope_view_clear_source(lv_obj_t* scope);
 
 /// Change how the live stream is rendered. RMS history starts fresh when that
-/// mode is selected; Live does not calculate or maintain it.
+/// mode is selected; Live does not calculate or maintain it. Spectrum runs an
+/// FFT per frame and only while the scope is active and visible; if its buffers
+/// cannot be allocated the mode stays as it was.
 void scope_view_set_mode(lv_obj_t* scope, crosspad_gui::ScopeViewMode mode);
 
 /// Return the current rendering mode. A null object defaults to Live.
