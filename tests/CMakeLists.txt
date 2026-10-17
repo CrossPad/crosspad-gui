@@ -21,13 +21,21 @@ target_include_directories(lvgl_host PUBLIC ${lvgl_SOURCE_DIR} ${CMAKE_CURRENT_S
 target_compile_definitions(lvgl_host PUBLIC LV_CONF_INCLUDE_SIMPLE)
 
 set(GUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(CORE_DIR ${GUI_DIR}/../crosspad-core CACHE PATH "crosspad-core checkout (PortableFft for the spectrum test)")
 add_executable(crosspad_gui_tests
     test_ui_tile_grid.cpp
+    test_spectrum_math.cpp
+    test_scope_spectrum.cpp
     lvgl_headless.cpp
     png_write.cpp
     ${GUI_DIR}/src/components/ui_tile_grid.cpp
+    ${GUI_DIR}/src/components/spectrum_math.cpp
+    ${GUI_DIR}/src/components/scope_view.cpp
+    ${CORE_DIR}/src/dsp/FftFactory.cpp
+    ${CORE_DIR}/src/dsp/ScopeTrigger.cpp
+    ${CORE_DIR}/src/dsp/PortableFft.cpp
 )
-target_include_directories(crosspad_gui_tests PRIVATE ${GUI_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(crosspad_gui_tests PRIVATE ${GUI_DIR}/include ${CORE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(crosspad_gui_tests PRIVATE USE_LVGL=1)
 target_link_libraries(crosspad_gui_tests PRIVATE lvgl_host Catch2::Catch2WithMain)
 # Tests make LVGL's allocations fail through this wrap (see test_ui_tile_grid.cpp).
