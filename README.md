@@ -45,6 +45,22 @@ crosspad_gui::statusbar_add_icon("midi", LV_SYMBOL_SHUFFLE, lv_color_hex(0x00FF0
 crosspad_gui::statusbar_set_loading(true, "Updating...");
 ```
 
+### Kit Loader
+
+A kit loading, in the context row (x 4, y 34, 312×22) under the transport bar,
+which the status bar's arc no longer is: a mint fill with the text flipping to
+ink under it, "LOADING <kit>  38%" → "KIT LOADED  16/16" (fades out after
+600 ms); an error is the bar in red until tapped or the next load. On the
+overlay layer, built on first use. `statusbar_process_loader_status()` sends
+its errors here.
+
+```cpp
+crosspad_gui::kit_loader_start("FINGERDRUMMING_BOSS");
+crosspad_gui::kit_loader_set(38);          // 0..100
+crosspad_gui::kit_loader_done(16, 16);
+crosspad_gui::kit_loader_error("MISSING open_hat.wav");
+```
+
 ### Settings UI
 
 Unified settings panel shared across all platforms — 7 built-in categories (Display, Audio, Pads & LEDs, Vibration, Connectivity, MIDI, System) plus up to 8 platform-extensible categories.

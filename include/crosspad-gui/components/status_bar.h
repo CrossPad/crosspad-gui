@@ -33,7 +33,8 @@ lv_subject_t * statusbar_get_loading_subject();
 void statusbar_show_loader_message(const char * title, const char * message, bool isError);
 
 // Process a single loading status update from any background loader.
-// Call from GUI thread only. Hides loading indicator when done, shows error message if needed.
+// Call from GUI thread only. Hides loading indicator when done; an error goes to
+// the kit loader's red bar (kit_loader.h).
 void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg);
 
 // ── Dynamic App Icon API ────────────────────────────────────────────────────
