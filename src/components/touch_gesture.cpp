@@ -41,6 +41,10 @@ const char* s_fwdResult = "-";
  * it actually has somewhere to scroll. */
 bool consumesHorizontal(lv_obj_t* obj)
 {
+    /* The press's object can be gone by now: a tap on the drawer's backdrop
+     * deletes it, and the next contact is classified before LVGL has named
+     * its own object. */
+    if (!obj || !lv_obj_is_valid(obj)) return false;
     for (lv_obj_t* o = obj; o; o = lv_obj_get_parent(o)) {
         if (lv_obj_check_type(o, &lv_slider_class) ||
             lv_obj_check_type(o, &lv_bar_class) ||
@@ -131,6 +135,7 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
         const bool inside = data->point.x >= a.x1 && data->point.x <= a.x2 &&
                             data->point.y >= a.y1 && data->point.y <= a.y2;
         s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get()};
+        s_pressed = nullptr;   // this contact's, from LVGL's PRESSED after this read
         return;
     }
     if (!down) {
