@@ -56,6 +56,7 @@ enum class BarState : uint8_t { Stop = 0, Pre, Play, Rec };
 constexpr uint32_t kRefreshMs = 120;
 
 struct {
+    lv_obj_t * row = nullptr;         ///< the bar and the status bar side by side, a page each
     lv_obj_t * bar = nullptr;
     lv_obj_t * btn[B_COUNT] = {};
     lv_obj_t * ico[B_COUNT] = {};
@@ -65,9 +66,11 @@ struct {
     lv_obj_t * pos_v = nullptr;
     lv_obj_t * vox = nullptr;
     lv_obj_t * bat_fill = nullptr;
+    lv_obj_t * bat = nullptr;         ///< the battery's key: the encoder's way to the status icons
     lv_obj_t * loading = nullptr;
     lv_obj_t * status_bar = nullptr;
     BarState   st = BarState::Stop;
+    bool       status_page = false;   ///< the status icons are the page on screen
     bool       en[B_COUNT] = {};
     bool       dub_on = false;
     bool       editing[B_COUNT] = {};   ///< BPM / POS: the encoder turns the value
@@ -461,17 +464,30 @@ bool is_ours(const lv_obj_t * obj)
 {
     if (!obj) return false;
     for (uint8_t i = 0; i < B_COUNT; i++) if (T.btn[i] == obj) return true;
-    return false;
+    return obj == T.bat;
+}
+
+lv_group_t * nav_group()
+{
+    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
+    return nav ? lv_indev_get_group(nav) : nullptr;
 }
 
 /// Put the keys in the group the encoder is on, appended, so every screen
-/// keeps its own navigation order and gains the transport at its end.
+/// keeps its own navigation order and gains the transport at its end. With
+/// the status icons on screen the status bar's arrow takes their place: the
+/// one thing on that page the encoder can do is come back.
 void join_current_group()
 {
-    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
-    if (!nav) return;
-    lv_group_t * g = lv_indev_get_group(nav);
+    lv_group_t * g = nav_group();
     if (!g) return;
+    if (T.status_page) {
+        lv_obj_t * a = statusbar_get_arrow();
+        if (!a || lv_obj_get_group(a) == g) return;
+        if (lv_group_get_obj_count(g) == 0) return;   // as for the keys, below
+        lv_group_add_obj(g, a);
+        return;
+    }
     /* Not only "a different group": an app that calls
      * lv_group_remove_all_objs() on its own group drops our keys without the
      * pointer ever changing. Arrange does exactly that every time it refills
@@ -487,21 +503,87 @@ void join_current_group()
     for (uint8_t i = 0; i < B_COUNT; i++) {
         if (T.btn[i]) lv_group_add_obj(g, T.btn[i]);
     }
+    if (T.bat) lv_group_add_obj(g, T.bat);
     s_joined = g;
     s_focus_return = nullptr;
+}
+
+void leave_group(lv_obj_t * o)
+{
+    if (o && lv_obj_get_group(o)) lv_group_remove_obj(o);
+}
+
+/// Make the status icons (or the transport) the page the encoder works on:
+/// who is in its rotation, and where its focus goes. Moving the row there is
+/// the caller's -- a finger's drag has already done it.
+///
+/// The battery's click lands on the arrow and the arrow's on the battery, so
+/// two clicks of the encoder go there and back. Any other key the encoder sat
+/// on hands it back to the screen, as the power-button jump does. The new
+/// member is focused before the old ones leave, or LVGL would focus whatever
+/// came next in the screen's own rotation in between.
+void set_page(bool status)
+{
+    if (status == T.status_page) return;
+    lv_group_t * g = nav_group();
+    lv_obj_t * focused = g ? lv_group_get_focused(g) : nullptr;
+    lv_obj_t * a = statusbar_get_arrow();
+
+    if (status) {
+        const bool from_bat = T.bat && focused == T.bat;
+        if (!from_bat && is_ours(focused)) transportbar_toggle_focus();
+        T.status_page = true;
+        join_current_group();
+        if (from_bat && a && g && lv_obj_get_group(a) == g) lv_group_focus_obj(a);
+        for (uint8_t i = 0; i < B_COUNT; i++) leave_group(T.btn[i]);
+        leave_group(T.bat);
+        s_joined = nullptr;
+        return;
+    }
+
+    const bool from_arrow = a && focused == a;
+    T.status_page = false;
+    join_current_group();
+    if (from_arrow && T.bat && g && lv_obj_get_group(T.bat) == g) lv_group_focus_obj(T.bat);
+    leave_group(a);
+    s_painted_valid = false;
+    transportbar_refresh();
+    paint_readouts();
 }
 
 void refresh_timer_cb(lv_timer_t *)
 {
     join_current_group();
+    if (T.status_page) return;   // nothing of ours on screen to repaint
     transportbar_refresh();
     paint_readouts();
 }
 
-/// A tap on the battery: the system status icons in place of the bar.
+/// A tap on the battery, or the encoder's click on it: the system status
+/// icons in place of the bar.
 void battery_cb(lv_event_t *)
 {
     transportbar_show(false);
+}
+
+/// The row is LVGL's own scroll, snapped a page at a time: a finger drags
+/// either bar sideways and the other comes in behind it, a flick or a drag
+/// past half way swaps them, anything less springs back. The page is read
+/// where the scroll comes to rest, so a drag, the battery and the arrow all
+/// end in the same state.
+void row_scroll_cb(lv_event_t * e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_SCROLL_BEGIN) {
+        /* The transport's paint stops while the icons are up; bring it up
+         * to date before it slides back into view. */
+        if (T.status_page) {
+            s_painted_valid = false;
+            transportbar_refresh();
+            paint_readouts();
+        }
+        return;
+    }
+    set_page(lv_obj_get_scroll_x(T.row) > lv_obj_get_width(T.row) / 2);
 }
 
 void bar_delete_cb(lv_event_t *)
@@ -526,9 +608,29 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
 
     for (uint8_t i = 0; i < B_COUNT; i++) T.en[i] = true;
     T.st = BarState::Stop;
+    T.status_page = false;
     T.status_bar = status_bar;
 
-    T.bar = box(parent, 0, 0, 320, TB_H, 0);
+    /* One row, two pages: this bar, then the status bar moved in beside it,
+     * in the place the status bar had in @p parent. The row is the scroll; a
+     * press on either bar's background lands on it (neither bar is
+     * clickable), and one on a key hands the drag up to it through LVGL's
+     * scroll chain -- the key gets PRESS_LOST, not a click. It also vetoes
+     * touch_gesture's sideways back/forward swipe, which it would otherwise
+     * be: that veto is any horizontally scrollable ancestor with somewhere
+     * to go. */
+    T.row = lv_obj_create(parent);
+    lv_obj_remove_style_all(T.row);
+    lv_obj_set_size(T.row, 320, TB_H);
+    lv_obj_set_flex_flow(T.row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(T.row, LV_DIR_HOR);
+    lv_obj_set_scroll_snap_x(T.row, LV_SCROLL_SNAP_START);
+    lv_obj_add_flag(T.row, LV_OBJ_FLAG_SCROLL_ONE);
+    lv_obj_set_scrollbar_mode(T.row, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(T.row, row_scroll_cb, LV_EVENT_SCROLL_BEGIN, nullptr);
+    lv_obj_add_event_cb(T.row, row_scroll_cb, LV_EVENT_SCROLL_END, nullptr);
+
+    T.bar = box(T.row, 0, 0, 320, TB_H, 0);
     lv_obj_add_event_cb(T.bar, bar_delete_cb, LV_EVENT_DELETE, nullptr);
 
     /* The five keys are 38 wide, not the export's 44: the metronome needed
@@ -613,11 +715,17 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_set_style_bg_color(T.bat_fill, INK, 0);
 
     /* The battery and the counter above it are one tap target for the
-     * status icons: 9 x 16 px alone is under any finger. */
-    lv_obj_t * bat_hit = box(T.bar, 290, 0, 30, TB_H, 0);
-    lv_obj_set_style_bg_opa(bat_hit, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(bat_hit, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(bat_hit, battery_cb, LV_EVENT_CLICKED, nullptr);
+     * status icons: 9 x 16 px alone is under any finger. It is also the last
+     * key in the encoder's rotation, framed when focused (a border: an
+     * outline would fall outside the bar and be clipped). A tap must not
+     * take the encoder's focus off the screen with it. */
+    T.bat = box(T.bar, 290, 0, 30, TB_H, 4);
+    lv_obj_set_style_bg_opa(T.bat, LV_OPA_TRANSP, 0);
+    lv_obj_add_flag(T.bat, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(T.bat, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_set_style_border_color(T.bat, INK, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(T.bat, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_add_event_cb(T.bat, battery_cb, LV_EVENT_CLICKED, nullptr);
 
     /* What the status bar's loader shows, as 2 px along the bottom edge: a
      * kit loading is something the player waits for. */
@@ -632,6 +740,14 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
             lv_obj_set_width(line, (320 * (v > 100 ? 100 : v)) / 100);
             lv_obj_remove_flag(line, LV_OBJ_FLAG_HIDDEN);
         }, T.loading, nullptr);
+    }
+
+    if (status_bar) {
+        lv_obj_move_to_index(T.row, lv_obj_get_index(status_bar));
+        lv_obj_set_parent(status_bar, T.row);
+        lv_obj_set_height(status_bar, TB_H);
+        lv_obj_remove_flag(status_bar, LV_OBJ_FLAG_HIDDEN);
+        statusbar_set_drawer_anchor(T.row);
     }
 
     s_painted_valid = false;
@@ -696,28 +812,18 @@ void transportbar_refresh()
 
 bool transportbar_shown()
 {
-    return T.bar && !lv_obj_has_flag(T.bar, LV_OBJ_FLAG_HIDDEN);
+    return T.bar && !T.status_page;
 }
 
 void transportbar_show(bool show)
 {
-    if (!T.bar || !T.status_bar) return;
-    if (show == transportbar_shown()) return;
-    if (show) {
-        lv_obj_add_flag(T.status_bar, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(T.bar, LV_OBJ_FLAG_HIDDEN);
-        s_painted_valid = false;
-        transportbar_refresh();
-        paint_readouts();
-        if (!s_timer) s_timer = lv_timer_create(refresh_timer_cb, kRefreshMs, nullptr);
-    } else {
-        /* Nothing to drive while the icons are up, and a hidden key must not
-         * keep the encoder: its clicks would still reach the transport. */
-        if (transportbar_has_focus()) transportbar_toggle_focus();
-        if (s_timer) { lv_timer_delete(s_timer); s_timer = nullptr; }
-        lv_obj_add_flag(T.bar, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(T.status_bar, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (!T.row || !T.status_bar) return;
+    /* The page first: it may focus the arrow, a button LVGL scrolls into
+     * view on focus, and the scroll below must be the last word. Also when
+     * the page is already the one asked for -- a drag let go half way can
+     * leave the row between the two. */
+    set_page(!show);
+    lv_obj_scroll_to_x(T.row, show ? 0 : lv_obj_get_width(T.row), LV_ANIM_ON);
 }
 
 uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max)

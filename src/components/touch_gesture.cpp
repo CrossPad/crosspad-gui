@@ -71,7 +71,10 @@ void act(void* param)
             powerBack();
             break;
         case SwipeDir::Down:
-            powerToggleQuickSettings();
+            /* The drawer's, also under the transport bar: there the power
+             * hold jumps the encoder instead, and a finger has no use for
+             * that. */
+            statusbar_toggle_drawer();
             break;
         case SwipeDir::Left:
             /* Forward. The platform gets it first, because a screen the
@@ -112,7 +115,7 @@ bool actionable(SwipeDir d)
     switch (d) {
         case SwipeDir::Right: return true;
         case SwipeDir::Left:  return true;
-        case SwipeDir::Down:  return s_c.y0 <= s_cfg.topBand;
+        case SwipeDir::Down:  return s_c.y0 - s_cfg.area.y1 <= s_cfg.topBand;
         default:              return false;
     }
 }
@@ -124,7 +127,10 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     const bool down = data->state == LV_INDEV_STATE_PRESSED;
 
     if (down && !s_c.down) {
-        s_c = Contact{true, true, false, data->point.x, data->point.y, lv_tick_get()};
+        const lv_area_t& a = s_cfg.area;
+        const bool inside = data->point.x >= a.x1 && data->point.x <= a.x2 &&
+                            data->point.y >= a.y1 && data->point.y <= a.y2;
+        s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get()};
         return;
     }
     if (!down) {

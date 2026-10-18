@@ -30,13 +30,19 @@
  * transportSetClick()), lit while it clicks; the Sequencer's M is the same
  * switch, and no transport command flips it.
  *
- * The status bar is still built, hidden, with its icons, loader and timers
- * running; tapping the battery swaps the two (the status bar's arrow swaps
- * back), and its loader runs as a 2 px line along the bar's bottom edge.
+ * The status bar is still built, with its icons, loader and timers running,
+ * as the second page of one row beside this bar: a finger drags the row
+ * sideways and it snaps to whichever bar it was dragged to (a flick, or past
+ * half way). Tapping the battery swaps the two as well, and so does the
+ * encoder's click on it -- it is the last key in the rotation -- with the
+ * status bar's arrow, then in the rotation in place of the keys, swapping
+ * back. A downward swipe from the top edge opens the quick-settings drawer
+ * under either page. The loader runs as a 2 px line along the bar's bottom
+ * edge.
  *
  * The keys sit in whatever group the encoder is on, appended, so turning one
  * step past the end of any screen reaches MODE / REC / DUB / PLAY / STOP /
- * metronome / BPM / position. The power button's 0.5 s hold is the shortcut there.
+ * metronome / BPM / position / battery. The power button's 0.5 s hold is the shortcut there.
  *
  * All functions must be called from the LVGL task.
  */
@@ -50,7 +56,8 @@
 namespace crosspad_gui {
 
 /// Build the bar as a child of @p parent, visible, and own it from here.
-/// @p status_bar is what a tap on the battery swaps to; nullptr disables it.
+/// @p status_bar is moved into the bar's row as its second page, where it
+/// was in @p parent, and made as tall as the bar; nullptr disables the swap.
 lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar);
 
 /// Repaint from the core transport now rather than on the next tick.
@@ -62,8 +69,10 @@ void transportbar_refresh();
 /// Bluetooth, SD and loader glyphs live nowhere else.
 void transportbar_set_mode_handler(void (*handler)());
 
-/// Swap with the status bar. show=false reveals the icons, show=true brings
-/// the transport back. No-op without a status bar to swap with.
+/// Swap with the status bar, animated. show=false reveals the icons,
+/// show=true brings the transport back. No-op without a status bar to swap
+/// with. transportbar_shown() answers for the page asked for at once, and
+/// for the one a drag came to rest on.
 void transportbar_show(bool show);
 bool transportbar_shown();
 
