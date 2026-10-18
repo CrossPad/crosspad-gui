@@ -1,0 +1,90 @@
+# Changelog
+
+Notable changes to crosspad-gui. The version is the triple in
+`include/crosspad-gui/CrosspadGuiVersion.hpp` (bump rules there;
+`library.json` carries the same number and `^` the core it requires, checked
+by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
+are described in their commits.
+
+## 2.0.0 — 2026-10-18
+
+The open-source baseline: gui is LVGL plus crosspad-core, links on its own
+and asks the platform for everything else through `IGuiPlatform` and
+`PlatformServices`. Requires crosspad-core 2.0.0. Contains 1.24.0 … 1.28.0
+(one slider per physical output, the kit loader in the context row,
+`create_segment_meter`, Settings → Audio → Buffer, the scope's SPECTRUM mode),
+described in their commits.
+
+### Removed
+
+- The `settings`, `status` and `status_c` globals a platform had to define:
+  gui reads what the platform passed to `crosspad_platform_init()` through
+  `crosspad_gui::platformSettings()` / `platformStatus()`
+  (`crosspad-gui/platform/GuiServices.h`), and the status bar keeps its own
+  container. A platform must no longer define them.
+- `radial_menu.h` (`lv_CreateRadialMenu`, `lv_DestroyRadialMenu` and their
+  types).
+- `App::sequencer()`, `addCLICommand()`, `sendEvent()`, `postGuiUpdate()`,
+  `registerCLICommands()`. A platform must no longer implement `App`'s
+  accessors (duplicate symbols).
+- `styleWaveformBox` and the `styleKitBrowser*` styles: crosspad-sampler
+  defines them.
+- `crosspad_gui::IFileSystem`, `PosixFileSystem`, `setFileSystem()`,
+  `getFileSystem()` (use crosspad-core's `IFileSystem`), the file-system
+  argument of `bootstrap()` (now `bootstrap(IGuiPlatform*)`) and
+  `GuiStartConfig::filesystem`.
+- The old BLE MIDI panel API: `lv_CreateMidiBLE`, `lv_MidiBLE_destroy`,
+  `midi_ble_get_callbacks` and the two-field `MidiBleCallbacks`.
+- `assets/pomoc.png`, `assets/instrukcja.png`.
+- `freertos` from the ESP-IDF component's REQUIRES.
+
+### Changed
+
+- When an app's root is deleted outside `destroyApp()` (e.g. by
+  `lv_obj_clean()`), `AppBase` calls the app's destroy function with
+  `nullptr`: release what the app owns, delete nothing. A destroy function
+  must guard its delete: `if (root) lv_obj_delete_async(root);`.
+- `AppBase::start()` with a create function that returns no root logs an
+  error and leaves the app not started; a later `start()` tries again.
+- `IGuiPlatform::postToGui()` must never make its caller wait: it is called
+  from pad-logic callbacks and event-bus handlers the LVGL thread may be
+  waiting for.
+- Every app start closes the MODE map first, programmatic starts included.
+
+### Added
+
+- `crosspad-gui/platform/GuiServices.h`: `platformSettings()`,
+  `platformStatus()`.
+- `App`'s accessors (`padManager()`, `ledController()`, `status()`,
+  `settings()`) implemented in gui (`src/app/App.cpp`) over
+  `PlatformServices`.
+- `PowerButtonClassifier`: the click/hold timing of the power button for the
+  hardware and the emulated button alike; `kPowerHoldMs`,
+  `kPowerWakeGuardMs`, `kPowerLightCancelWindowMs`.
+- Montserrat 10, 12, 14, 16, 18 and 24 with Latin-1 Supplement and Latin
+  Extended-A under LVGL's own symbol names, their generator
+  (`tools/fonts/generate.py`) and `cmake/crosspad_gui_fonts.cmake`
+  (`crosspad_gui_replace_lvgl_fonts()`).
+- `boot_splash`: the cold-boot splash, with `boot_splash_reveal()`.
+- `midi_ble_settings_build()` and the new `MidiBleCallbacks`: one Settings
+  BLE MIDI page for every platform; a row whose callback is null is not
+  shown.
+- The Firmware app (`crosspad-gui/fw/`): Library, Store and Updates views,
+  kit card, actions, icons and `fw_app`, behind `IFwViewService`
+  (`setFwViewService()`, `FwAppHooks`); the kit card's action table
+  `FwCardActions.hpp` (`fwCardPlan()`, from crosspad-core);
+  `platform/psram_placement.h` (`CROSSPAD_GUI_PSRAM_BSS`).
+- `AppOrchestrator::setBeforeLaunchHandler()`.
+- `IGuiPlatform::storagePath()`: where a card path is on the platform
+  (identity by default).
+- `ModeKind::More` and `mode_more`: pad 8 of the MODE map lists every app no
+  pad opens.
+- `settings_ui` split into one source per category; the public header is
+  unchanged.
+
+### Fixed
+
+- `ui_modal_selection()` with a title answered the option's index plus one.
+- `scope_view` allocates its canvas and its SPECTRUM buffers with `lv_malloc`
+  instead of an ESP heap call (and builds with MSVC, which has no
+  `aligned_alloc`).
