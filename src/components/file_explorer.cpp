@@ -8,6 +8,7 @@
 #include "crosspad-gui/widgets/footer_button.h"
 #include "crosspad-gui/components/power_gesture.h"
 #include "crosspad/platform/IFileSystem.hpp"
+#include "crosspad-gui/components/ui_toast.h"
 
 #include <vector>
 #include <algorithm>
@@ -118,6 +119,13 @@ static constexpr size_t   kBuildChunk  = 8;
 /* Per pane: the right one starts filling the moment the selection on the left
  * settles, which is while the left one may still be going up. One shared state
  * meant the left build was abandoned half-listed. */
+/* Rows stop going up below this much free PSRAM, and a toast says how many of
+ * the pane's are missing. The pad editor's explorer on a card of 86 kits, a
+ * kit loaded, left the board 19.6 kB of PSRAM from 290 kB at the launcher, and
+ * where that ran out first -- a kit loading under the boot's update check --
+ * the row that did not fit was an LVGL assert. What is left keeps the screen
+ * drawing; the rows that went up still work. */
+static constexpr uint32_t kBuildPsramFloor = 40 * 1024;
 static std::vector<uint16_t> s_buildOrder[2];
 static size_t       s_buildNext[2]  = {0, 0};
 static bool         s_buildRun[2]   = {false, false};
@@ -516,6 +524,15 @@ static void BuildChunk(int pane) {
     const char * fileSymbol = FilterSymbol();
     size_t built = 0;
     while (s_buildNext[pane] < s_buildOrder[pane].size() && built < kBuildChunk) {
+        const crosspad_gui::HeapStats heap = crosspad_gui::getGuiPlatform().getHeapStats();
+        if (heap.psram_total > 0 && heap.psram_free < kBuildPsramFloor) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Not enough memory: %u of %u shown",
+                     (unsigned)s_buildNext[pane], (unsigned)s_buildOrder[pane].size());
+            ui_toast_show(msg, 3000, UI_TOAST_WARNING);
+            s_buildNext[pane] = s_buildOrder[pane].size();
+            break;
+        }
         const size_t idx = s_buildOrder[pane][s_buildNext[pane]++];
         if (idx >= vec.size()) continue;
         lv_obj_t * row = lv_list_add_button(
