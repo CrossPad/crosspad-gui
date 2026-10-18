@@ -849,6 +849,11 @@ uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max)
     return n;
 }
 
+int32_t transportbar_row_scroll()
+{
+    return T.row ? lv_obj_get_scroll_x(T.row) : -1;
+}
+
 bool transportbar_has_focus()
 {
     lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();

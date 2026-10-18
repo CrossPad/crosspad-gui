@@ -92,6 +92,11 @@ struct TransportBarReadout {
 /// voice counter wrapped onto a second line.
 uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max);
 
+/// Where the row of the two bars rests: 0 on the transport, the row's width
+/// on the status icons, anything between while a finger drags it or it
+/// snaps. -1 without a bar. For the host, like transportbar_probe().
+int32_t transportbar_row_scroll();
+
 /// Jump the encoder's focus to the transport, and a second call back to
 /// where it came from -- what the power button's 0.5 s hold does.
 ///
