@@ -73,6 +73,8 @@ void delete_cb(lv_event_t* e)
 
 } // namespace
 
+namespace crosspad_gui {
+
 lv_obj_t * create_segment_meter(lv_obj_t * parent, int32_t height)
 {
     auto* m = static_cast<SegmentMeter*>(lv_malloc_zeroed(sizeof(SegmentMeter)));
@@ -106,5 +108,7 @@ lv_obj_t * create_segment_meter(lv_obj_t * parent, int32_t height)
     lv_obj_add_event_cb(well, delete_cb, LV_EVENT_DELETE, m);
     return well;
 }
+
+} // namespace crosspad_gui
 
 #endif // USE_LVGL

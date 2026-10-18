@@ -50,21 +50,21 @@ TEST_CASE("segment meter: a segment every 3 px, as many as fit", "[segment_meter
 {
     guitest::GuiFixture f;
 
-    lv_obj_t* arrange = create_segment_meter(f.screen, kArrangeHeight);
+    lv_obj_t* arrange = crosspad_gui::create_segment_meter(f.screen, kArrangeHeight);
     REQUIRE(arrange);
     CHECK(lv_obj_get_child_count(arrange) == 2 * kArrangeSegments);
     lv_obj_update_layout(arrange);
-    CHECK(lv_obj_get_width(arrange) == kSegmentMeterW);
+    CHECK(lv_obj_get_width(arrange) == crosspad_gui::kSegmentMeterW);
     CHECK(lv_obj_get_height(arrange) == kArrangeHeight);
 
-    CHECK(lv_obj_get_child_count(create_segment_meter(f.screen, 2)) == 2);
-    CHECK(lv_obj_get_child_count(create_segment_meter(f.screen, 1000)) == 2 * 40);
+    CHECK(lv_obj_get_child_count(crosspad_gui::create_segment_meter(f.screen, 2)) == 2);
+    CHECK(lv_obj_get_child_count(crosspad_gui::create_segment_meter(f.screen, 1000)) == 2 * 40);
 }
 
 TEST_CASE("segment meter: green to -6 dBFS, amber to -1, red above", "[segment_meter]")
 {
     guitest::GuiFixture f;
-    lv_obj_t* well = create_segment_meter(f.screen, kArrangeHeight);
+    lv_obj_t* well = crosspad_gui::create_segment_meter(f.screen, kArrangeHeight);
     REQUIRE(well);
 
     const lv_color_t green = lv_color_hex(0x9CD639);
@@ -85,7 +85,7 @@ TEST_CASE("segment meter: the loudest since the last tick, then the fall", "[seg
 {
     guitest::GuiFixture f;
     drain_peaks();
-    lv_obj_t* well = create_segment_meter(f.screen, kArrangeHeight);
+    lv_obj_t* well = crosspad_gui::create_segment_meter(f.screen, kArrangeHeight);
     REQUIRE(well);
 
     f.advance(kTickMs);
@@ -112,7 +112,7 @@ TEST_CASE("segment meter: its timer goes with the well", "[segment_meter]")
 {
     guitest::GuiFixture f;
     drain_peaks();
-    lv_obj_t* well = create_segment_meter(f.screen, kArrangeHeight);
+    lv_obj_t* well = crosspad_gui::create_segment_meter(f.screen, kArrangeHeight);
     REQUIRE(well);
     lv_obj_delete(well);
 

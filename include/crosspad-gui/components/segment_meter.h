@@ -5,6 +5,8 @@
 #include "lvgl.h"
 #include <cstdint>
 
+namespace crosspad_gui {
+
 /// The well's width: two columns of segments, 2 px apart, 2 px from each side.
 constexpr int32_t kSegmentMeterW = 10;
 
@@ -24,5 +26,7 @@ constexpr int32_t kSegmentMeterW = 10;
  * @return The well, kSegmentMeterW wide; its timer goes with it.
  */
 lv_obj_t * create_segment_meter(lv_obj_t * parent, int32_t height);
+
+} // namespace crosspad_gui
 
 #endif // USE_LVGL

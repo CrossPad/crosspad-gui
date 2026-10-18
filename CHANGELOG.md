@@ -43,6 +43,8 @@ described in their commits.
 
 ### Changed
 
+- `create_segment_meter()` and `kSegmentMeterW` moved from the global namespace
+  into `crosspad_gui::`, like every other gui API.
 - When an app's root is deleted outside `destroyApp()` (e.g. by
   `lv_obj_clean()`), `AppBase` calls the app's destroy function with
   `nullptr`: release what the app owns, delete nothing. A destroy function
