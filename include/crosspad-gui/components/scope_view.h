@@ -32,7 +32,7 @@
 namespace crosspad_gui {
 
 /// The close oscilloscope trace, a several-second RMS envelope, or the
-/// spectrum of the newest 1024 samples (spectrum_math.h) on a log-frequency
+/// spectrum of the newest 1024 samples (crosspad/dsp/SpectrumBars.hpp) on a log-frequency
 /// axis, -72..0 dBFS, with peak ticks.
 enum class ScopeViewMode : uint8_t {
     Live,

@@ -35,6 +35,9 @@ described in their commits.
   `GuiStartConfig::filesystem`.
 - The old BLE MIDI panel API: `lv_CreateMidiBLE`, `lv_MidiBLE_destroy`,
   `midi_ble_get_callbacks` and the two-field `MidiBleCallbacks`.
+- `crosspad-gui/components/spectrum_math.h` (`spectrum_hann()`,
+  `spectrum_map_bars()`, `spectrum_bar_hz()`, `spectrum_levels()`): the
+  scope's SPECTRUM arithmetic is crosspad-core's `dsp/SpectrumBars.hpp`.
 - `assets/pomoc.png`, `assets/instrukcja.png`.
 - `freertos` from the ESP-IDF component's REQUIRES.
 
