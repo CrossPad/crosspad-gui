@@ -14,6 +14,8 @@ constexpr int32_t  kSegPitch  = 3;
 constexpr int      kMaxSegs   = 40;      ///< a 121 px well
 constexpr uint32_t kTickMs    = 50;
 constexpr float    kFall      = 0.85f;   ///< a tick's fall: ~28 dB a second
+constexpr float    kFullScale = 32767.0f; ///< int16 peak of a full-scale signal
+constexpr float    kSilenceDb = -96.0f;  ///< level of a zero peak, below every segment
 
 /// Arrange's ten thresholds; a taller well spreads its segments over them.
 constexpr float kArrangeDb[10] = {-48, -42, -36, -30, -24, -18, -12, -6, -3, -1};
@@ -49,8 +51,8 @@ void tick_cb(lv_timer_t* t)
     int16_t peak[2];
     crosspad_gui::vu_take_peaks(peak[0], peak[1]);
     for (int c = 0; c < 2; ++c) {
-        m->shown[c] = std::max(static_cast<float>(peak[c]) / 32767.0f, m->shown[c] * kFall);
-        const float db = m->shown[c] > 0.0f ? 20.0f * std::log10(m->shown[c]) : -96.0f;
+        m->shown[c] = std::max(static_cast<float>(peak[c]) / kFullScale, m->shown[c] * kFall);
+        const float db = m->shown[c] > 0.0f ? 20.0f * std::log10(m->shown[c]) : kSilenceDb;
         uint8_t lit = 0;
         while (lit < m->count && db >= m->db[lit]) ++lit;
         if (lit == m->lit[c]) continue;
