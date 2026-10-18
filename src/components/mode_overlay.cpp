@@ -1,6 +1,7 @@
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/mode_overlay.h"
+#include "crosspad-gui/components/mode_more.h"
 #include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/components/power_gesture.h"
 #include "crosspad-gui/components/transport_bar.h"
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 namespace crosspad_gui {
 
@@ -40,6 +42,7 @@ const ModeEntry kDefaultMap[] = {
     {  4, "Arrange",  "4 tracks",   kTheme,   ModeKind::Core,  "Arrange",      nullptr, nullptr },
     {  5, "Record",   "mic/line",  0xFF5C5C, ModeKind::App,   "Recorder",     nullptr, nullptr },
     {  6, "Slicer",   "chop",       0xF5C46A, ModeKind::App,   "Slicer",       nullptr, nullptr },
+    {  8, "More",     "apps",       0x7B828B, ModeKind::More,  nullptr,        nullptr, nullptr },
     {  9, "Pitch",    "on keys",    0xA77BF0, ModeKind::App,   "PitchPlay",    nullptr, nullptr },
     { 10, "Pad Mix",  "faders",  0x4FE0B0, ModeKind::App,   "PadMixer",     nullptr, nullptr },
     { 11, "Mixer",    "routing",    0x4FE0B0, ModeKind::App,   "Mixer",        nullptr, nullptr },
@@ -63,6 +66,9 @@ struct State {
     lv_group_t* group = nullptr;
     lv_group_t* priorGroup = nullptr;
     uint32_t backToken = 0;
+    /// The "More" list over the map, and its own back-chain entry.
+    lv_obj_t* more = nullptr;
+    uint32_t moreBackToken = 0;
     bool checkPending = false;
 };
 
@@ -128,7 +134,7 @@ public:
             const lv_color32_t c = lv_color_to_32(entry_color(*e), LV_OPA_COVER);
             /* Toggles that are off and the rare row glow at half: the eye
              * finds the four core pads first. */
-            const bool dim = (e->kind == ModeKind::Rare) ||
+            const bool dim = (e->kind == ModeKind::Rare) || (e->kind == ModeKind::More) ||
                              (e->kind == ModeKind::Toggle && !(e->isOn && e->isOn()));
             const uint8_t k = dim ? 2 : 1;
             pm.setPadColor(i, c.red / k, c.green / k, c.blue / k);
@@ -155,6 +161,8 @@ public:
 void paint_cells();
 void open_map(bool asHome);
 void schedule_check();
+void open_more();
+void close_more();
 
 void choose(uint8_t pad)
 {
@@ -164,6 +172,11 @@ void choose(uint8_t pad)
     if (e->kind == ModeKind::Toggle) {
         if (e->toggle) e->toggle();
         mode_overlay_close();
+        return;
+    }
+
+    if (e->kind == ModeKind::More) {
+        open_more();
         return;
     }
 
@@ -201,6 +214,8 @@ void on_overlay_delete(lv_event_t* ev)
     if (lv_event_get_target(ev) != s.overlay) return;
     s.overlay = nullptr;
     s.cells.fill(nullptr);
+    s.more = nullptr;          // the list dies with the overlay
+    s.moreBackToken = 0;
     s_open.store(false);
 }
 
@@ -365,6 +380,69 @@ void build_overlay()
     paint_cells();
 }
 
+/// A row of the More list chosen: the same path a pad of the map takes.
+void pick_more(const char* name)
+{
+    close_more();
+    mode_overlay_close();
+    crosspad::arrangeFocus().clear();
+    mode_overlay_open_app(name);
+    schedule_check();
+}
+
+/// Power click in the list: back to the map, not out of it.
+bool on_more_back(void*)
+{
+    if (!s.more) return false;
+    close_more();
+    return true;
+}
+
+void open_more()
+{
+    if (!s.overlay || s.more) return;
+    std::vector<const char*> registered;
+    for (const auto& app : AppOrchestrator::getInstance().getApps()) {
+        if (app) registered.push_back(app->getName());
+    }
+    std::vector<ModeEntry> map;
+    for (const ModeEntry& e : s.map) if (e.label) map.push_back(e);
+    const auto names = mode_more_apps(map.data(), map.size(), registered);
+
+    s.more = lv_obj_create(s.overlay);
+    lv_obj_remove_style_all(s.more);
+    lv_obj_set_size(s.more, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_opa(s.more, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(s.more, kBg, 0);
+    lv_obj_add_flag(s.more, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t* head = label(s.more, &lv_font_montserrat_10, kDim, "MORE  -  every other app");
+    lv_obj_set_pos(head, 8, 4);
+    lv_obj_t* body = lv_obj_create(s.more);
+    lv_obj_remove_style_all(body);
+    lv_obj_update_layout(s.overlay);
+    lv_obj_set_pos(body, 0, 18);
+    lv_obj_set_size(body, LV_PCT(100), lv_obj_get_height(s.overlay) - 18);
+
+    if (s.group) lv_group_remove_all_objs(s.group);
+    mode_more_build(body, names, pick_more, s.group);
+    s.moreBackToken = ui_back_push(on_more_back, nullptr);
+}
+
+void close_more()
+{
+    if (!s.more) return;
+    ui_back_remove(s.moreBackToken);
+    s.moreBackToken = 0;
+    lv_obj_add_flag(s.more, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_delete_async(s.more);
+    s.more = nullptr;
+    if (s.group) {
+        lv_group_remove_all_objs(s.group);
+        for (lv_obj_t* c : s.cells) if (c) lv_group_add_obj(s.group, c);
+        if (lv_obj_t* c8 = s.cells[7]) lv_group_focus_obj(c8);
+    }
+}
+
 void ensure_pad_logic_registered()
 {
     if (s.registered) return;
@@ -448,6 +526,7 @@ void mode_overlay_open()
 
 void mode_overlay_close()
 {
+    close_more();
     if (s.padLogicPushed) {
         crosspad::getPadManager().popPadLogic();
         s.padLogicPushed = false;

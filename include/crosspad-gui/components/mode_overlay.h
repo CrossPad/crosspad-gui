@@ -33,6 +33,7 @@ enum class ModeKind : uint8_t {
     App,     ///< An app with its own screen.
     Toggle,  ///< No screen: flips a switch and the map closes (outlined cell).
     Rare,    ///< Once-a-session apps, drawn quieter.
+    More,    ///< Opens the list of every app no pad names (pad 8 on the default map).
 };
 
 struct ModeEntry {
@@ -46,9 +47,9 @@ struct ModeEntry {
     bool (*isOn)();         ///< Optional: a toggle's state, to fill its cell
 };
 
-/// The UX 2000 map: Sampler / Sequencer / Song / Arrange, Recorder / Slicer
-/// (pads 7-8 empty), PitchPlay / PadMixer / Mixer / DawControl, KitSelector /
-/// Instructions / Firmware / Settings. A platform that wants switches (FULL
+/// The UX 2000 map: Sampler / Sequencer / Song / Arrange, Recorder / Slicer / (pad 7 empty) / More,
+/// PitchPlay / PadMixer / Mixer / DawControl, KitSelector / Instructions /
+/// Firmware / Settings. A platform that wants switches (FULL
 /// LEVEL, NOTE REPEAT...) on a row passes its own table with ModeKind::Toggle
 /// entries.
 const ModeEntry* mode_overlay_default_map(size_t* count);
