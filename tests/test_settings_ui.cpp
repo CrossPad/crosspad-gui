@@ -211,31 +211,13 @@ TEST_CASE("Settings: rows that did nothing are not offered", "[settings]")
     setGuiPlatform(&f.gui);
 }
 
-TEST_CASE("Settings: Launcher is offered only where a launcher is built", "[settings]")
+TEST_CASE("Settings: Home screen offers the grid, the list and the pad map", "[settings]")
 {
     guitest::GuiFixture f;
-    /* The home screen on a screen of its own, never loaded and never deleted:
-     * the status bar build_main_screen() makes keeps timers that outlive any
-     * one test case, and they must find their objects alive. */
-    static lv_obj_t* home = lv_obj_create(nullptr);
-    MainScreenConfig config;
-    config.encoder = f.gui.encoder;
-
-    SECTION("home is the MODE map: no launcher, no row") {
-        config.launcher = false;
-        build_main_screen(home, nullptr, 0, config);
-        CHECK_FALSE(main_screen_has_launcher());
-        lv_obj_t* content = open_settings(f, "Display");
-        CHECK(find_label(content, "Theme Color") != nullptr);
-        CHECK(find_label(content, "Launcher") == nullptr);
-    }
-    SECTION("a launcher: the row") {
-        config.launcher = true;
-        build_main_screen(home, nullptr, 0, config);
-        CHECK(main_screen_has_launcher());
-        lv_obj_t* content = open_settings(f, "Display");
-        CHECK(find_label(content, "Launcher") != nullptr);
-    }
+    lv_obj_t* content = open_settings(f, "Display");
+    CHECK(find_label(content, "Theme Color") != nullptr);
+    CHECK(find_label(content, "Home screen") != nullptr);
+    CHECK(find_label(content, "Launcher") == nullptr);
     settings_ui_destroy();
     lv_indev_set_group(f.gui.encoder, f.group);
 }

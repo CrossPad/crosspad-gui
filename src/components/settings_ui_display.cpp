@@ -6,7 +6,6 @@
 
 #include "settings_ui_internal.h"
 #include "crosspad/config/crosspad_config.h"
-#include "crosspad-gui/components/main_screen.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
@@ -34,8 +33,7 @@ static void lcd_brightness_hw_cb(lv_event_t * e) {
     crosspad_gui::getGuiPlatform().setLcdBrightness(get_settings()->LCDbrightness);
 }
 
-/* The launcher's style through the dropdown's uint8_t; the launcher is
- * rebuilt on the way back to it, which is when the new style shows. */
+/* The home screen's style through the dropdown's uint8_t. */
 static uint8_t s_launcherStyleIdx = 0;
 static uint8_t s_touchSensIdx = 0;
 
@@ -66,15 +64,14 @@ void settings_detail::cat_build_display(lv_obj_t * parent, lv_group_t * group) {
                           &s->themeColorIndex,
                           theme_color_changed_cb);
 
-    /* Only where there is a launcher to style. */
-    if (main_screen_has_launcher()) {
-        s_launcherStyleIdx = (uint8_t)s->launcherStyle;
-        settings_row_dropdown(parent, group, "Launcher", "Icon grid\nList",
-                              &s_launcherStyleIdx,
-                              [](lv_event_t *) {
-                                  get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
-                              });
-    }
+    /* In crosspad::LauncherStyle's order. The main screen is rebuilt in the
+     * new style on the way back to it. */
+    s_launcherStyleIdx = (uint8_t)s->launcherStyle;
+    settings_row_dropdown(parent, group, "Home screen", "Icon grid\nList\nPad map",
+                          &s_launcherStyleIdx,
+                          [](lv_event_t *) {
+                              get_settings()->launcherStyle = (crosspad::LauncherStyle)s_launcherStyleIdx;
+                          });
 
     s_touchSensIdx = (uint8_t)s->touchSensitivity;
     settings_row_dropdown(parent, group, "Touch Sensitivity", "Low\nMedium\nHigh",

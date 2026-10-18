@@ -4,17 +4,21 @@
  * @file mode_overlay.h
  * @brief MODE + pad: switch apps from the pads.
  *
- * The MODE button on the transport bar opens a 4×4 map of the pads under the
- * bar. Hitting a pad -- or tapping its cell -- opens that app, flips that
- * switch, and closes the map. The pads light in each entry's colour while
- * the map is open and go back to the app's own colours when it closes.
+ * A 4×4 map of the pads. Hitting a pad -- or tapping its cell -- opens that
+ * app or flips that switch. The pads light in each entry's colour while the
+ * map is the screen and go back to the app's own colours when an app is.
+ *
+ * It is one of the three home screens (crosspad::LauncherStyle::Pads, beside
+ * the icon grid and the list; Settings -> Display -> Home screen):
+ *  - Pads: the map is the home screen, built into the app container by
+ *    build_main_screen() like a launcher -- where the board opens and where
+ *    closing the last app lands. MODE on the transport bar brings the map up
+ *    over any app as well, and MODE or the power button's click take it
+ *    away again.
+ *  - Grid / List: no map; MODE is the way home.
  *
  * The transport bar stays live above the map: you can stop, record or start
  * the loop while choosing where to go next.
- *
- * The map is also home. The board opens on it, and closing the last app on
- * screen brings it up: with nothing under it, MODE and the power button's
- * click leave it where it is.
  *
  * Pad numbering is the Sampler's: pad 1 bottom-left, pad 16 top-right
  * (PadManager index = pad - 1).
@@ -24,6 +28,7 @@
  */
 #ifdef USE_LVGL
 #include "lvgl.h"
+#include "crosspad/settings/CrosspadSettings.hpp"
 #include <cstddef>
 #include <cstdint>
 
@@ -57,34 +62,46 @@ struct ModeEntry {
 /// ModeKind::Toggle entries.
 const ModeEntry* mode_overlay_default_map(size_t* count);
 
-/// Where apps are started (MainScreenResult::app_container) and what the map
-/// shows. @p entries are copied, so a stack table is fine. Registers the
-/// "ModeOverlay" pad logic, installs mode_overlay_toggle() as the transport
-/// bar's MODE handler, and has the orchestrator close the map before any app
-/// starts, whoever started it.
-void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t count);
+/// Where apps are started (MainScreenResult::app_container), what the map
+/// shows, and what the home screen is. @p entries are copied, so a stack
+/// table is fine; an entry naming an app this firmware does not have is not
+/// drawn. Registers the "ModeOverlay" pad logic, installs
+/// mode_overlay_toggle() as the transport bar's MODE handler, and has the
+/// orchestrator close the map before any app starts, whoever started it.
+/// build_main_screen() calls it on every build.
+void mode_overlay_init(lv_obj_t* app_container, const ModeEntry* entries, size_t count,
+                       crosspad::LauncherStyle home);
+
+/// The map as the home screen, filling @p parent (the app container), its
+/// cells joined to @p group (the main screen's encoder group). Gone with
+/// @p parent's next clean. build_main_screen() calls it for the Pads style.
+lv_obj_t* mode_overlay_create_home(lv_obj_t* parent, lv_group_t* group);
 
 /// Bind a switch's action and state to the entry with that pad number.
 /// Works on the default map (it keeps its own mutable copy).
 void mode_overlay_bind_toggle(uint8_t pad, void (*toggle)(), bool (*isOn)());
 
-/// Open the map over the running app.
+/// Open the map over the running app. Only where the map is home, and only
+/// with an app on screen: at home the map is the screen already.
 void mode_overlay_open();
-/// Close the map; the pads go back to the app's own logic and colours.
+/// Close the map over the app; the pads go back to the app's own logic and
+/// colours. The home map is not closed -- it is the screen.
 void mode_overlay_close();
-/// What MODE does: open the map, or close it when an app is under it. At
-/// home (nothing under the map) the map stays.
+/// What MODE does. Map as home: open the map over the app, or close it. Grid
+/// or list as home: go home.
 void mode_overlay_toggle();
-/// True while the map is open. Safe from any task.
+/// True while a map is the screen -- the home map with nothing over it, or
+/// the map over an app -- and the pads choose rather than play. Safe from
+/// any task.
 bool mode_overlay_is_open();
 
 /// Act on pad @p padIdx (0..15) as if its cell were tapped. Safe from any
 /// task: the work is posted with IGuiPlatform::postToGui().
 void mode_overlay_select_pad(uint8_t padIdx);
 
-/// Go home -- what the board opens on: every app on screen is closed and the
-/// map comes up with nothing under it. Whatever holds the transport keeps
-/// playing.
+/// Go home -- what the board opens on: the map over an app and every app on
+/// screen are closed, which leaves the home screen, whichever style it is.
+/// Whatever holds the transport keeps playing.
 void mode_overlay_go_home();
 
 /// Open the app registered under @p name as if its pad had been hit: the same
