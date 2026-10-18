@@ -30,12 +30,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/crosspad_gui_fonts.cmake)
 crosspad_gui_replace_lvgl_fonts(lvgl_host)
 
 # crosspad-core beside this repository, as every platform checks it out, or
-# wherever CROSSPAD_CORE_DIR points. Its FreeRTOS / ESP-IDF adapters are left
-# out: crosspad-gui must link without them.
+# wherever CROSSPAD_CORE_DIR points. Stm32Manager is left out: crosspad-gui
+# must link without it.
 set(GUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(CROSSPAD_CORE_DIR ${GUI_DIR}/../crosspad-core CACHE PATH "crosspad-core checkout")
 file(GLOB_RECURSE CORE_SOURCES ${CROSSPAD_CORE_DIR}/src/*.cpp)
-list(FILTER CORE_SOURCES EXCLUDE REGEX "/(EspEventBus|FreeRtosEventBus|Drv2605Driver|Stm32Manager)\\.cpp$")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/Stm32Manager\\.cpp$")
 add_library(crosspad_core_host STATIC ${CORE_SOURCES})
 target_include_directories(crosspad_core_host PUBLIC ${CROSSPAD_CORE_DIR}/include)
 target_link_libraries(crosspad_core_host PUBLIC ArduinoJson)
