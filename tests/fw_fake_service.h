@@ -115,7 +115,7 @@ public:
     crosspad::WifiFail wifiFail() override { return wifiFailReason; }
     bool networkMode() override { return netMode; }
     void offerNetworkMode(crosspad_gui::FwNetTab tab, lv_group_t*) override { offers.push_back(tab); }
-    int64_t nowUs() override { return nowUs_ += 1000; }
+    int64_t nowUs() override { return s_nowUs += kNowStepUs; }
 
     void uiHost(const char* host) override { uiHostV = text(host); }
     void uiTab(const char* tab) override { uiTabV = text(tab); }
@@ -139,7 +139,14 @@ private:
     uint32_t detailGen_ = 0;
     std::vector<uint32_t> iconWanted_;
     std::string communityOk_;
-    int64_t nowUs_ = 0;
+
+    /* One clock for the whole run, as on the board: the views keep the last
+     * automatic check in a static across showings, so a clock restarting at
+     * 0 with each service put the next test's check inside the last one's
+     * minute. Each service starts kServiceGapUs after the one before. */
+    static constexpr int64_t kNowStepUs = 1000;
+    static constexpr int64_t kServiceGapUs = 60LL * 60 * 1000 * 1000;   // an hour, past any gap the views keep
+    static inline int64_t s_nowUs = 0;
 };
 
 } // namespace guitest

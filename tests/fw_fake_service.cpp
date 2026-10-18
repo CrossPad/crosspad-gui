@@ -15,6 +15,7 @@ constexpr uint8_t kLvCfRgb565A8 = 0x14;
 } // namespace
 
 FakeFwService::FakeFwService() : lib(new crosspad_gui::FwLibrarySnap{}) {
+    s_nowUs += kServiceGapUs;
     slots[0].label = 'A';
     slots[1].label = 'B';
     slots[0].running = true;
