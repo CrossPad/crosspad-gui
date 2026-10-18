@@ -12,13 +12,10 @@
 #include <new>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#endif
 
 namespace {
 
@@ -182,22 +179,24 @@ void vspan(const Pixels& p, int32_t x, int32_t y0, int32_t y1, uint16_t c) {
     }
 }
 
+/// Smallest alignment the spectrum's buffers get: esp-dsp's 64-bit loads.
+constexpr size_t kSpectrumAlign = 16;
+
+/// From LVGL's heap like the canvas, aligned by hand: lv_malloc() promises
+/// natural alignment only. The block lv_malloc() returned is kept in the word
+/// before the aligned pointer, for spectrum_free().
 void* spectrum_alloc(size_t bytes, size_t align) {
-    if (align < 16) align = 16;
-    const size_t rounded = (bytes + align - 1) & ~(align - 1);
-#ifdef ESP_PLATFORM
-    return heap_caps_aligned_alloc(align, rounded, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-#else
-    return aligned_alloc(align, rounded);
-#endif
+    if (align < kSpectrumAlign) align = kSpectrumAlign;
+    auto* raw = static_cast<uint8_t*>(lv_malloc(bytes + align + sizeof(void*)));
+    if (!raw) return nullptr;
+    const uintptr_t first = reinterpret_cast<uintptr_t>(raw) + sizeof(void*);
+    const uintptr_t aligned = (first + align - 1) & ~static_cast<uintptr_t>(align - 1);
+    reinterpret_cast<void**>(aligned)[-1] = raw;
+    return reinterpret_cast<void*>(aligned);
 }
 
 void spectrum_free(void* p) {
-#ifdef ESP_PLATFORM
-    heap_caps_free(p);
-#else
-    free(p);
-#endif
+    if (p) lv_free(static_cast<void**>(p)[-1]);
 }
 
 void spectrum_reset(SpectrumState* sp) {
@@ -486,7 +485,7 @@ void scope_delete_cb(lv_event_t* e) {
     if (st->timer) lv_timer_delete(st->timer);
     free(st->history);
     if (st->spectrum) spectrum_free(st->spectrum);
-    free(st->pixels);
+    lv_free(st->pixels);
     lv_free(st);
 }
 
@@ -546,12 +545,10 @@ lv_obj_t* create_scope_view(lv_obj_t* parent, int32_t w, int32_t h) {
     st->text[0] = '\0';
 
     // A 120x60 RGB565 canvas is 14 kB — small, but on the S3 it is 14 kB of
-    // internal RAM that the UI has none to spare of, so it goes to PSRAM.
+    // internal RAM that the UI has none to spare of. LVGL's heap is where a
+    // platform puts the UI's memory (the board routes it to PSRAM).
     const uint32_t bytes = LV_CANVAS_BUF_SIZE(w, h, 16, 1);
-#ifdef ESP_PLATFORM
-    st->pixels = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-#endif
-    if (!st->pixels) st->pixels = static_cast<uint8_t*>(malloc(bytes));
+    st->pixels = static_cast<uint8_t*>(lv_malloc(bytes));
     if (!st->pixels) { lv_free(st); return nullptr; }
 
     lv_obj_t* cont = lv_obj_create(parent);
