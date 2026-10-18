@@ -66,6 +66,19 @@ bool consumesHorizontal(lv_obj_t* obj)
     return false;
 }
 
+/* What the contact started on. LVGL's PRESSED names it, but LVGL sends no
+ * PRESSED for an object in LV_STATE_DISABLED -- and the transport bar's keys
+ * are disabled whenever nothing holds the transport, so a drag starting on
+ * one carried no object and the veto let the swipe through. The same search
+ * the indev does finds it. */
+lv_obj_t* pressedObj()
+{
+    if (s_pressed) return s_pressed;
+    lv_point_t p = { s_c.x0, s_c.y0 };
+    lv_obj_t* o = lv_indev_search_obj(lv_layer_top(), &p);
+    return o ? o : lv_indev_search_obj(lv_screen_active(), &p);
+}
+
 /* Runs one LVGL tick after recognition rather than inside the read: powerBack()
  * deletes objects, and the indev is mid-read when the swipe is spotted. */
 void act(void* param)
@@ -153,7 +166,7 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
         return;
     }
     if (!actionable(d)) { s_c.armed = false; return; }
-    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(s_pressed)) {
+    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(pressedObj())) {
         s_c.armed = false;
         return;
     }
