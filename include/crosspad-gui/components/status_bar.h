@@ -102,19 +102,31 @@ void statusbar_set_perf_level(uint8_t flags);
 
 // ── Arrow handler ────────────────────────────────────────────────────────────
 
-/* The arrow on the bar's right used to be the quick-settings drawer's open
- * button. The drawer is off, and the arrow is now the way back to whatever
- * replaced the bar: the transport bar installs transportbar_show(true) here.
+/* The arrow on the bar's right is the quick-settings drawer's open button
+ * until a handler is installed; then it is the way back to whatever replaced
+ * the bar -- the transport bar installs transportbar_show(true) here -- and
+ * the drawer opens with the downward swipe from the top edge instead.
  *
  * Installing a handler builds the arrow if the drawer had not already. With
  * no handler and no drawer the arrow is not built at all, rather than sitting
  * there doing nothing. */
 void statusbar_set_arrow_handler(void (*handler)());
 
+/* The arrow itself, or nullptr when it is not built: the transport bar puts
+ * it in the encoder's rotation while the status icons are on screen. */
+lv_obj_t * statusbar_get_arrow();
+
+/* The row the drawer hangs from and takes its width from: the status bar
+ * itself by default. The transport bar sets its own row of two pages, where
+ * the status bar can be scrolled off screen when the drawer opens. Reset by
+ * every lv_CreateStatusBar(). */
+void statusbar_set_drawer_anchor(lv_obj_t * row);
+
 // ── Drawer (quick-settings) toggle ───────────────────────────────────────────
 
-// Enable/disable the status-bar drawer (header dropdown + arrow button).
-// When disabled: the open arrow is hidden and any open drawer is closed.
+// Enable/disable the status-bar drawer (Settings -> Quick Settings Drawer;
+// every lv_CreateStatusBar() reads the setting again). When disabled, any
+// open drawer is closed; the arrow stays if it has a handler.
 // Must be called from LVGL task context.
 void statusbar_set_drawer_enabled(bool enabled);
 

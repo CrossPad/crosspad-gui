@@ -115,8 +115,11 @@ void powerButtonPress()
     lv_timer_set_repeat_count(s_holdTimer, 1);
     /* Visual feedback for the same threshold the timer above is counting
      * down — a no-op when the drawer is already open, since there is
-     * nothing to charge. */
-    statusbar_arrow_hold_begin(kPowerHoldMs);
+     * nothing to charge. Not with the transport on screen: there the hold
+     * jumps the encoder rather than opening the drawer, and the arrow it
+     * would charge is on the status bar's page, out of sight -- the charge's
+     * end hides it, and it stayed hidden when that page came back. */
+    if (!transportbar_shown()) statusbar_arrow_hold_begin(kPowerHoldMs);
 }
 
 void powerButtonRelease()
@@ -135,13 +138,15 @@ void powerButtonRelease()
 
 bool powerToggleQuickSettings()
 {
-    /* The 0.5 s hold used to open the quick-settings drawer. The drawer is
-     * off -- its five controls are all in Settings and the Mixer -- so the
-     * gesture reaches the transport instead: it jumps the encoder's focus to
-     * the top bar's keys, and a second hold jumps it back. The drawer keeps
-     * the gesture if anything ever turns it on again. */
-    if (statusbar_toggle_drawer()) return true;
-    return transportbar_toggle_focus();
+    /* An open drawer closes first, whichever page of the top bar it hangs
+     * from. With the transport on screen the hold jumps the encoder's focus
+     * to its keys, and a second hold jumps it back -- the drawer has the
+     * downward swipe from the top edge for a finger. With the status icons
+     * on screen, or no transport bar at all, the hold is the drawer's, as
+     * the arrow's charge on the press already said. */
+    if (statusbar_drawer_is_open()) return statusbar_toggle_drawer();
+    if (transportbar_toggle_focus()) return true;
+    return statusbar_toggle_drawer();
 }
 
 BackResult powerBack()

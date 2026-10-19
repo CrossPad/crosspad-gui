@@ -39,6 +39,14 @@ struct SwipeConfig {
      * status bar (LV_STATUS_BAR_HEIGHT) plus room for a fingertip.
      */
     int topBand = 40;
+    /**
+     * Where on the pointer's plane a swipe may start, and the edge topBand
+     * counts from. The whole plane on the board, whose panel is the screen;
+     * the simulator draws the panel inside a picture of the device and
+     * passes the LCD's rectangle, so a drag across the drawn pads is not a
+     * back gesture.
+     */
+    lv_area_t area = { 0, 0, LV_COORD_MAX, LV_COORD_MAX };
 };
 
 /// Wrap the pointer indev. Safe with nullptr (a board whose panel never came

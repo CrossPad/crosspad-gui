@@ -15,11 +15,6 @@ namespace crosspad_gui {
  * ~70 B of internal RAM per app visit, visible as a slope in app_churn. */
 static lv_group_t* s_encoder_group = nullptr;
 
-/* What the last build did with config.launcher (main_screen_has_launcher). */
-static bool s_has_launcher = false;
-
-bool main_screen_has_launcher() { return s_has_launcher; }
-
 MainScreenResult build_main_screen(
     lv_obj_t* parent,
     const LauncherAppInfo* apps,
@@ -28,8 +23,8 @@ MainScreenResult build_main_screen(
 {
     MainScreenResult result;
 
-    /* The map lives on the overlay layer, not in parent: close it (and hand
-     * the pads back) before the screen under it is rebuilt. */
+    /* The map over an app lives on the overlay layer, not in parent: close
+     * it (and hand the pads back) before the screen under it is rebuilt. */
     mode_overlay_close();
     lv_obj_clean(parent);
     lv_obj_set_size(parent, CP_LCD_HOR_RES, CP_LCD_VER_RES);
@@ -51,10 +46,11 @@ MainScreenResult build_main_screen(
 
     result.status_bar = lv_CreateStatusBar(parent);
     if (config.transport_bar) {
-        lv_obj_add_flag(result.status_bar, LV_OBJ_FLAG_HIDDEN);
+        /* The status bar becomes the transport bar's second page, in one row
+         * a finger drags sideways. The swap goes both ways for a tap and the
+         * encoder too: the battery on the transport bar reveals the icons,
+         * the arrow on the status bar brings the transport back. */
         result.transport_bar = transportbar_create(parent, result.status_bar);
-        /* The swap goes both ways: the arrow on the transport bar reveals the
-         * icons, the arrow on the status bar brings the transport back. */
         statusbar_set_arrow_handler([]() { transportbar_show(true); });
     }
 
@@ -71,14 +67,14 @@ MainScreenResult build_main_screen(
     lv_obj_update_layout(app_c);
     result.app_container = app_c;
 
-    if (config.transport_bar) {
-        size_t n = 0;
-        const ModeEntry* map = mode_overlay_default_map(&n);
-        mode_overlay_init(app_c, map, n);
-    }
+    size_t n = 0;
+    const ModeEntry* map = mode_overlay_default_map(&n);
+    mode_overlay_init(app_c, map, n, config.style);
 
-    s_has_launcher = config.launcher;
-    if (!config.launcher) return result;
+    if (config.style == crosspad::LauncherStyle::Pads) {
+        result.home_map = mode_overlay_create_home(app_c, result.encoder_group);
+        return result;
+    }
 
     LauncherConfig lc = {};
     lc.encoder_group  = result.encoder_group;

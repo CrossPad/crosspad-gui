@@ -15,24 +15,19 @@ namespace crosspad_gui {
  */
 struct MainScreenConfig {
     lv_indev_t* encoder = nullptr;       ///< Rotary encoder input device
-    crosspad::LauncherStyle style = crosspad::LauncherStyle::List;
+    /// The home screen: the icon grid, the list or the pad map (Settings ->
+    /// Display -> Home screen). The pad map decodes no icons.
+    crosspad::LauncherStyle style = crosspad::LauncherStyle::Pads;
     launcher_app_select_cb_t on_select = nullptr;
     launcher_close_popup_cb_t on_close = nullptr;
     int button_size  = 64;
     int button_spacing = 10;
     bool show_names  = true;
     lv_color_t bg_color = lv_color_make(26, 26, 46);
-    /// The transport bar on top in place of the status bar, and MODE + pad
-    /// to switch apps. The status bar is still built -- its drawer,
-    /// loader and timers keep working -- but hidden.
+    /// The transport bar on top in place of the status bar, with MODE. The
+    /// status bar is still built -- its drawer, loader and timers keep
+    /// working -- as the bar's second page.
     bool transport_bar = false;
-    /// Build the launcher into the app container.
-    ///
-    /// With the transport bar there is no launcher: home is the MODE map, and
-    /// apps are switched with MODE and a pad. A platform with the transport bar turns this off,
-    /// and then pays nothing for a grid of icons the map covers anyway --
-    /// every one of them a decoded image in the PSRAM the apps have to live in.
-    bool launcher = true;
 };
 
 /**
@@ -45,14 +40,15 @@ struct MainScreenResult {
     lv_group_t* encoder_group = nullptr; ///< Encoder navigation group
     lv_obj_t*  launcher_grid = nullptr;  ///< The button grid, when style is Grid
     lv_obj_t*  launcher_menu = nullptr;  ///< The list menu, when style is List
+    lv_obj_t*  home_map      = nullptr;  ///< The pad map, when style is Pads
 };
 
 /**
  * @brief Build the standard main screen layout.
  *
  * Sets up the parent with a column flex layout, creates the status bar,
- * creates the app container, and populates the launcher -- the button grid
- * or the list menu, as config.style says.
+ * creates the app container, and builds the home screen into it -- the
+ * button grid, the list menu or the pad map, as config.style says.
  *
  * Cleans the parent before building.
  *
@@ -67,16 +63,6 @@ MainScreenResult build_main_screen(
     const LauncherAppInfo* apps,
     size_t app_count,
     const MainScreenConfig& config);
-
-/**
- * @brief Whether the last build_main_screen() built a launcher.
- *
- * False before the first build and on a platform that turns the launcher off
- * (UX 2000: home is the MODE map). Settings shows its Launcher row only when
- * this is true -- choosing a style for a launcher that is never built did
- * nothing.
- */
-bool main_screen_has_launcher();
 
 } // namespace crosspad_gui
 
