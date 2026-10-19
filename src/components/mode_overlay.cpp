@@ -473,7 +473,11 @@ void open_over_app()
     lv_obj_get_coords(s.appContainer, &a);
     lv_obj_t* parent = getOverlayParent();
     s.overlay = build_map(parent, lv_area_get_width(&a), lv_area_get_height(&a), s.overlayCells);
-    lv_obj_set_pos(s.overlay, a.x1, a.y1);
+    /* Floating and aligned, not placed: the overlay parent is not the screen
+     * everywhere -- the simulator's is its LCD container, the main screen's
+     * flex column, which would lay the map out below the app container. */
+    lv_obj_add_flag(s.overlay, LV_OBJ_FLAG_FLOATING);
+    lv_obj_align_to(s.overlay, s.appContainer, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_add_event_cb(s.overlay, on_overlay_delete, LV_EVENT_DELETE, nullptr);
     take_pads();
 
