@@ -45,10 +45,11 @@ MainScreenResult build_main_screen(
 
     result.status_bar = lv_CreateStatusBar(parent);
     if (config.transport_bar) {
-        lv_obj_add_flag(result.status_bar, LV_OBJ_FLAG_HIDDEN);
+        /* The status bar becomes the transport bar's second page, in one row
+         * a finger drags sideways. The swap goes both ways for a tap and the
+         * encoder too: the battery on the transport bar reveals the icons,
+         * the arrow on the status bar brings the transport back. */
         result.transport_bar = transportbar_create(parent, result.status_bar);
-        /* The swap goes both ways: the arrow on the transport bar reveals the
-         * icons, the arrow on the status bar brings the transport back. */
         statusbar_set_arrow_handler([]() { transportbar_show(true); });
     }
 

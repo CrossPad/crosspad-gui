@@ -26,8 +26,8 @@
 
 using namespace crosspad;
 
-// Maximum drawer height = parent content height minus status bar (cap so it doesn't exceed screen)
-#define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(status_c)) - lv_obj_get_height(status_c))
+// Maximum drawer height = parent content height minus the row it hangs from (cap so it doesn't exceed screen)
+#define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(drawer_anchor())) - lv_obj_get_height(drawer_anchor()))
 
 extern CrosspadSettings * settings;
 extern CrosspadStatus status;
@@ -35,17 +35,23 @@ extern lv_obj_t * status_c; // status bar container
 
 static bool quickSettingsPanelVisible = false;
 
-/* The arrow used to be the drawer's open button and nothing else; it is now
- * the bar's mode switch, and the drawer is off by default. Everything that
- * reached the drawer -- the power button's 0.5 s hold included -- goes
- * through s_drawer_enabled, so the arrow survives the drawer being disabled
- * instead of disappearing with it. */
+/* The arrow used to be the drawer's open button and nothing else; with a
+ * handler installed it is the bar's mode switch instead. Everything that
+ * reaches the drawer -- the downward swipe from the top edge and the power
+ * button's 0.5 s hold -- goes through s_drawer_enabled, which follows
+ * Settings -> Display -> Quick Settings Drawer, so the arrow survives the
+ * drawer being disabled instead of disappearing with it. */
 static bool s_drawer_enabled = false;
 /* What the arrow does instead of opening the drawer: the transport bar
- * installs transportbar_show(true) here, so the icons are one tap from the
- * row that replaced them. Nothing installed = the arrow does nothing, which
- * is why it is only built when something has. */
+ * installs transportbar_show(true) here, so the transport is one tap (or one
+ * encoder click) from the icons. Nothing installed = the arrow opens the
+ * drawer, as it always did. */
 static void (*s_arrow_handler)() = NULL;
+/* The row the drawer hangs from. The status bar itself unless a caller put
+ * it in a row of its own -- the transport bar's, where the status bar is one
+ * page of two and may be scrolled off screen when the drawer opens. */
+static lv_obj_t * s_drawer_anchor = NULL;
+static lv_obj_t * drawer_anchor() { return s_drawer_anchor ? s_drawer_anchor : status_c; }
 
 // subjects
 static lv_subject_t s_loading;
@@ -490,6 +496,14 @@ void statusbar_set_arrow_handler(void (*handler)()) {
     if (handler && !openButton) create_open_button();
 }
 
+lv_obj_t * statusbar_get_arrow() {
+    return openButton;
+}
+
+void statusbar_set_drawer_anchor(lv_obj_t * row) {
+    s_drawer_anchor = row;
+}
+
 } // namespace crosspad_gui
 
 // ── Status check timer ──────────────────────────────────────────────────────
@@ -587,14 +601,14 @@ static void check_status_timer_cb(lv_timer_t * timer) {
  * swaps the focus group mid-click, and the release half lands on whatever the
  * other group had focused — closing the drawer launched an app that way. */
 
-/* The arrow is the bar's mode switch now: status icons on one side of it,
- * the four transport keys on the other. The drawer is off (its five controls
- * all live in Settings and the Mixer) and, while it is off, has no touch
- * entry point at all — only the power button's 0.5 s hold, which
- * s_drawer_enabled turns away too. */
+/* With a handler the arrow is the bar's mode switch, drawer or no drawer:
+ * it is the only way back to the transport a finger can tap and the encoder
+ * can click, so it cannot also be the drawer's. The drawer then opens with a
+ * downward swipe from the top edge (touch_gesture) or the power button's
+ * 0.5 s hold. */
 static void drawer_open_event_cb(lv_event_t * e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    if (!s_drawer_enabled) { if (s_arrow_handler) s_arrow_handler(); return; }
+    if (s_arrow_handler) { s_arrow_handler(); return; }
     /* Tapping the arrow opens instantly — it never charged, so there is
      * nothing for drawer_open() to find but an unhidden, unmoved button. */
     drawer_open();
@@ -611,7 +625,8 @@ static void drawer_open() {
      * off independently of the arrow now that the arrow switches modes. */
     if (!s_drawer_enabled || !openButton) return;
 
-    lv_obj_t * parent = lv_obj_get_parent(status_c);
+    lv_obj_t * anchor = drawer_anchor();
+    lv_obj_t * parent = lv_obj_get_parent(anchor);
 
     /* Click catcher under the drawer, so a tap that misses the panel closes it
      * instead of reaching what is below. The close arrow sits in the corner,
@@ -629,7 +644,7 @@ static void drawer_open() {
     // Create floating overlay on the parent screen
     s_drawer_overlay = lv_obj_create(parent);
     lv_obj_add_flag(s_drawer_overlay, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(status_c));
+    lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(anchor));
     /* Dark under the bar, the accent along its foot: the look of the
      * Settings rows, not a second status bar. */
     lv_obj_set_style_bg_color(s_drawer_overlay, lv_color_make(20, 20, 20), 0);
@@ -656,8 +671,8 @@ static void drawer_open() {
     // Set initial height to 0 for animation
     lv_obj_set_height(s_drawer_overlay, 0);
 
-    // Position directly below the status bar (relative alignment)
-    lv_obj_align_to(s_drawer_overlay, status_c, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
+    // Position directly below the bar's row (relative alignment)
+    lv_obj_align_to(s_drawer_overlay, anchor, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
 
     // Ensure drawn on top of siblings
     lv_obj_move_to_index(s_drawer_overlay, -1);
@@ -792,6 +807,11 @@ static void create_open_button() {
     lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_ext_click_area(openButton, 8);
+    /* styleStatusBar zeroes the outline, and the arrow is in the encoder's
+     * rotation under the transport bar: a border shows where it is. */
+    lv_obj_set_style_border_color(openButton, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(openButton, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_radius(openButton, 4, LV_STATE_FOCUS_KEY);
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
     if (s_app_icon_zone_right) {
         lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
@@ -819,6 +839,7 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     drawer_release_encoder();
     openButton = NULL;
     closeButton = NULL;
+    s_drawer_anchor = NULL;
     s_drawer_overlay = NULL;
     s_drawer_backdrop = NULL;
     quickSettingsPanelVisible = false;
@@ -840,7 +861,9 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     // Status bar panel (icons row)
     statusBarPanel = lv_obj_create(cont);
     lv_obj_set_width(statusBarPanel, LV_PCT(100));
-    lv_obj_set_height(statusBarPanel, LV_STATUS_BAR_HEIGHT);
+    /* The container's height, not LV_STATUS_BAR_HEIGHT: as a page of the
+     * transport bar's row the bar is as tall as that row, icons centred. */
+    lv_obj_set_height(statusBarPanel, LV_PCT(100));
     lv_obj_add_style(statusBarPanel, &styleStatusBar, 0);
     lv_obj_set_style_pad_left(statusBarPanel, 4, 0);
     lv_obj_set_style_pad_right(statusBarPanel, 4, 0);
@@ -848,12 +871,11 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
-    /* The drawer is off, and the setting is left alone so it can come back
-     * without the user having to find it again: every control it held (both
-     * outputs, the speaker switch, pad RGB, screen brightness) is in Settings
-     * and the Mixer already. The arrow outlives it as the swap back to the
-     * transport bar, so it is built whenever either has something to do. */
-    s_drawer_enabled = false;
+    /* The drawer follows its setting (on unless switched off). The arrow is
+     * built whenever either the drawer or the swap back to the transport bar
+     * has something to do with it. */
+    const crosspad::CrosspadSettings * cfg = crosspad::CrosspadSettings::getInstance();
+    crosspad_gui::statusbar_set_drawer_enabled(cfg && cfg->quickSettingsEnabled);
     if (s_drawer_enabled || s_arrow_handler) create_open_button();
 
     // Init RAM subjects once (reused across open/close cycles)

@@ -41,6 +41,10 @@ const char* s_fwdResult = "-";
  * it actually has somewhere to scroll. */
 bool consumesHorizontal(lv_obj_t* obj)
 {
+    /* The press's object can be gone by now: a tap on the drawer's backdrop
+     * deletes it, and the next contact is classified before LVGL has named
+     * its own object. */
+    if (!obj || !lv_obj_is_valid(obj)) return false;
     for (lv_obj_t* o = obj; o; o = lv_obj_get_parent(o)) {
         if (lv_obj_check_type(o, &lv_slider_class) ||
             lv_obj_check_type(o, &lv_bar_class) ||
@@ -62,6 +66,19 @@ bool consumesHorizontal(lv_obj_t* obj)
     return false;
 }
 
+/* What the contact started on. LVGL's PRESSED names it, but LVGL sends no
+ * PRESSED for an object in LV_STATE_DISABLED -- and the transport bar's keys
+ * are disabled whenever nothing holds the transport, so a drag starting on
+ * one carried no object and the veto let the swipe through. The same search
+ * the indev does finds it. */
+lv_obj_t* pressedObj()
+{
+    if (s_pressed) return s_pressed;
+    lv_point_t p = { s_c.x0, s_c.y0 };
+    lv_obj_t* o = lv_indev_search_obj(lv_layer_top(), &p);
+    return o ? o : lv_indev_search_obj(lv_screen_active(), &p);
+}
+
 /* Runs one LVGL tick after recognition rather than inside the read: powerBack()
  * deletes objects, and the indev is mid-read when the swipe is spotted. */
 void act(void* param)
@@ -71,7 +88,10 @@ void act(void* param)
             powerBack();
             break;
         case SwipeDir::Down:
-            powerToggleQuickSettings();
+            /* The drawer's, also under the transport bar: there the power
+             * hold jumps the encoder instead, and a finger has no use for
+             * that. */
+            statusbar_toggle_drawer();
             break;
         case SwipeDir::Left:
             /* Forward. The platform gets it first, because a screen the
@@ -112,7 +132,7 @@ bool actionable(SwipeDir d)
     switch (d) {
         case SwipeDir::Right: return true;
         case SwipeDir::Left:  return true;
-        case SwipeDir::Down:  return s_c.y0 <= s_cfg.topBand;
+        case SwipeDir::Down:  return s_c.y0 - s_cfg.area.y1 <= s_cfg.topBand;
         default:              return false;
     }
 }
@@ -124,7 +144,11 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     const bool down = data->state == LV_INDEV_STATE_PRESSED;
 
     if (down && !s_c.down) {
-        s_c = Contact{true, true, false, data->point.x, data->point.y, lv_tick_get()};
+        const lv_area_t& a = s_cfg.area;
+        const bool inside = data->point.x >= a.x1 && data->point.x <= a.x2 &&
+                            data->point.y >= a.y1 && data->point.y <= a.y2;
+        s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get()};
+        s_pressed = nullptr;   // this contact's, from LVGL's PRESSED after this read
         return;
     }
     if (!down) {
@@ -142,7 +166,7 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
         return;
     }
     if (!actionable(d)) { s_c.armed = false; return; }
-    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(s_pressed)) {
+    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(pressedObj())) {
         s_c.armed = false;
         return;
     }
