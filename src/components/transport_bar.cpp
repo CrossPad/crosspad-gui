@@ -175,6 +175,10 @@ lv_obj_t * button(uint8_t id, int32_t x, int32_t w)
 {
     lv_obj_t * o = box(T.bar, x, BTN_Y, w, BTN_H, 4);
     lv_obj_add_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    /* A finger on a key must not take the encoder off the screen: the next
+     * power click would then only hand the focus back (powerBack()'s
+     * Transport step) instead of leaving the app. */
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICK_FOCUSABLE);
     lv_obj_add_event_cb(o, ev_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)id);
     lv_obj_add_event_cb(o, ev_cb, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)id);
     T.btn[id] = o;
