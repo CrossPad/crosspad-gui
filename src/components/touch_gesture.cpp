@@ -88,10 +88,13 @@ void act(void* param)
             powerBack();
             break;
         case SwipeDir::Down:
-            /* The drawer's, also under the transport bar: there the power
-             * hold jumps the encoder instead, and a finger has no use for
-             * that. */
-            statusbar_toggle_drawer();
+            /* Opens the drawer, never closes it: the drawer grows for 400 ms
+             * after the pull is recognised, and a second pull made because
+             * the first seemed to do nothing used to close it again. */
+            if (!statusbar_drawer_is_open()) statusbar_toggle_drawer();
+            break;
+        case SwipeDir::Up:
+            statusbar_close_drawer();
             break;
         case SwipeDir::Left:
             /* Forward. The platform gets it first, because a screen the
@@ -132,7 +135,11 @@ bool actionable(SwipeDir d)
     switch (d) {
         case SwipeDir::Right: return true;
         case SwipeDir::Left:  return true;
-        case SwipeDir::Down:  return s_c.y0 - s_cfg.area.y1 <= s_cfg.topBand;
+        case SwipeDir::Down:  return !statusbar_drawer_is_open() &&
+                                     s_c.y0 - s_cfg.area.y1 <= s_cfg.topBand;
+        /* An open drawer covers the screen, so pushing it back up starts
+         * anywhere; with none open an upward drag is a list's. */
+        case SwipeDir::Up:    return statusbar_drawer_is_open();
         default:              return false;
     }
 }
