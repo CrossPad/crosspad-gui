@@ -151,6 +151,7 @@ static void anim_translate_x_cb(void * var, int32_t v) {
 // Forward declarations
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
+static void drawer_backdrop_event_cb(lv_event_t * e);
 static void drawer_open();
 static void drawer_close();
 static void drawer_open_end_cb(lv_anim_t * a);
@@ -639,7 +640,8 @@ static void drawer_open() {
     lv_obj_remove_flag(s_drawer_backdrop, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(s_drawer_backdrop, lv_obj_get_width(parent), lv_obj_get_height(parent));
     lv_obj_set_pos(s_drawer_backdrop, 0, 0);
-    lv_obj_add_event_cb(s_drawer_backdrop, drawer_close_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_CLICKED, NULL);
 
     // Create floating overlay on the parent screen
     s_drawer_overlay = lv_obj_create(parent);
@@ -709,6 +711,24 @@ static void drawer_open_end_cb(lv_anim_t * a) {
         lv_timer_resume(t_ramUpdate);
         lv_timer_ready(t_ramUpdate);
     }
+}
+
+/* The backdrop closes the drawer on a tap beside it, not on a drag: LVGL
+ * sends CLICKED after any press that scrolled nothing, and a second pull from
+ * the top edge -- made because the drawer was still growing -- landed on the
+ * backdrop and shut the drawer it was meant to open. */
+static lv_point_t s_backdrop_press;
+#define DRAWER_TAP_SLOP_PX 12
+
+static void drawer_backdrop_event_cb(lv_event_t * e) {
+    lv_indev_t * indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) { s_backdrop_press = p; return; }
+    if (LV_ABS(p.x - s_backdrop_press.x) > DRAWER_TAP_SLOP_PX ||
+        LV_ABS(p.y - s_backdrop_press.y) > DRAWER_TAP_SLOP_PX) return;
+    drawer_close();
 }
 
 static void drawer_close_event_cb(lv_event_t * e) {
