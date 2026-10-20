@@ -21,7 +21,15 @@ struct Contact {
     bool     fired   = false;
     int32_t  x0 = 0, y0 = 0;
     uint32_t t0      = 0;
+    int32_t  lastX = 0, lastY = 0;   ///< the last sample taken for classification
 } s_c;
+
+/* The FT6x36 now and then reports one sample at y = 0 in the middle of a
+ * contact: a 200 px jump no finger made, which on its own read as an upward
+ * swipe and closed the drawer a tap inside it was meant for. 73 traced
+ * contacts on the board moved at most 70 px between two reads; a jump past
+ * this is not the finger. */
+constexpr int32_t kMaxStepPx = 120;
 
 lv_obj_t* s_pressed = nullptr;   // object under the press, for the widget veto
 SwipeDir  s_last    = SwipeDir::None;
@@ -154,7 +162,8 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
         const lv_area_t& a = s_cfg.area;
         const bool inside = data->point.x >= a.x1 && data->point.x <= a.x2 &&
                             data->point.y >= a.y1 && data->point.y <= a.y2;
-        s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get()};
+        s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get(),
+                      data->point.x, data->point.y};
         s_pressed = nullptr;   // this contact's, from LVGL's PRESSED after this read
         return;
     }
@@ -164,6 +173,10 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     }
     if (s_c.fired) return;   // lv_indev_wait_release() ignores the rest of the contact
     if (!s_c.armed) return;
+    if (LV_ABS(data->point.x - s_c.lastX) > kMaxStepPx ||
+        LV_ABS(data->point.y - s_c.lastY) > kMaxStepPx) return;
+    s_c.lastX = data->point.x;
+    s_c.lastY = data->point.y;
 
     const SwipeDir d = classify(data->point.x - s_c.x0, data->point.y - s_c.y0,
                                 lv_tick_elaps(s_c.t0));
