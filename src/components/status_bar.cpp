@@ -627,7 +627,9 @@ static void drawer_open() {
     if (!s_drawer_enabled || !openButton) return;
 
     lv_obj_t * anchor = drawer_anchor();
-    lv_obj_t * parent = lv_obj_get_parent(anchor);
+    /* On the overlay layer, not beside the bar: the home screen's MODE map
+     * lives there and covered a drawer opened on the screen below it. */
+    lv_obj_t * parent = crosspad_gui::getOverlayParent();
 
     /* Click catcher under the drawer, so a tap that misses the panel closes it
      * instead of reaching what is below. The close arrow sits in the corner,
@@ -643,7 +645,7 @@ static void drawer_open() {
     lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_CLICKED, NULL);
 
-    // Create floating overlay on the parent screen
+    // Create floating overlay on the overlay layer
     s_drawer_overlay = lv_obj_create(parent);
     lv_obj_add_flag(s_drawer_overlay, LV_OBJ_FLAG_FLOATING);
     lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(anchor));
@@ -860,6 +862,10 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     openButton = NULL;
     closeButton = NULL;
     s_drawer_anchor = NULL;
+    /* The drawer is not in that tree: it lives on the overlay layer, and an
+     * open one would outlive the bar it hangs from. */
+    if (s_drawer_overlay && lv_obj_is_valid(s_drawer_overlay)) lv_obj_delete(s_drawer_overlay);
+    if (s_drawer_backdrop && lv_obj_is_valid(s_drawer_backdrop)) lv_obj_delete(s_drawer_backdrop);
     s_drawer_overlay = NULL;
     s_drawer_backdrop = NULL;
     quickSettingsPanelVisible = false;
