@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "lvgl_headless.h"
 #include <cstdint>
 #include <vector>

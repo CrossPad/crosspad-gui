@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #ifdef USE_LVGL
@@ -6,10 +7,8 @@
  * @file app_icon.h
  * @brief Portable app icon path resolution.
  *
- * Every REGISTER_APP call site used to snprintf its own
- * "<assetPathPrefix><icon>" path into a static buffer before building its
- * AppEntry — duplicated verbatim across platforms and apps. resolveAppIcon()
- * is that one line, shared: it asks the platform for its asset prefix
+ * resolveAppIcon() builds an app's "<assetPathPrefix><icon>" path for its
+ * AppEntry: it asks the platform for its asset prefix
  * (IGuiPlatform::assetPathPrefix(), e.g. "/assets/" on IDF, "assets/" on PC)
  * and leaves already-resolved icons (absolute paths, LVGL symbols) alone.
  */

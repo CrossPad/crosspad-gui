@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/virtual_device/VirtualPadGrid.h"
@@ -83,7 +84,8 @@ void VirtualPadGrid::create(lv_obj_t* parent, int32_t x, int32_t y,
 void VirtualPadGrid::updateLeds()
 {
     for (int i = 0; i < 16; i++) {
-        crosspad::RgbColor c = crosspad::getPadManager().getPadColor((uint8_t)i);
+        crosspad::RgbColor c = ledSource_ ? ledSource_((uint16_t)i)
+                                          : crosspad::getPadManager().getPadColor((uint8_t)i);
 
         if (c.R <= 2 && c.G <= 2 && c.B <= 2) {
             // LED off -- cream-white default look

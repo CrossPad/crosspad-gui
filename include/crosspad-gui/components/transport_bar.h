@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 /**
  * @file transport_bar.h
- * @brief The transport, always at the top of the screen (UX 2000).
+ * @brief The transport, always at the top of the screen.
  *
  * One 30 px row in place of the status bar, the same in every app:
  *
@@ -74,22 +75,20 @@ void transportbar_set_mode_handler(void (*handler)());
 /// with. transportbar_shown() answers for the page asked for at once, and
 /// for the one a drag came to rest on.
 void transportbar_show(bool show);
+/// True while the transport bar (not the status bar) is the one shown.
 bool transportbar_shown();
 
 /// One of the bar's readouts, for measuring the layout from the host.
 struct TransportBarReadout {
     const char * id;     ///< "bpm", "pos" or "vox"
-    int32_t      x, y, w, h;
+    int32_t      x, y, w, h;   ///< the label's area on screen, in pixels
     const char * text;   ///< the label's own buffer; valid until the next repaint
 };
 
-/// Fill up to @p max readouts and return how many were written.
-///
-/// These labels sit in no encoder group, so `ui snapshot` cannot see them,
-/// and SCREENSHOT needs 230 kB of contiguous PSRAM this board does not have
-/// with a kit loaded. Without it every claim about the row's geometry is an
-/// argument rather than a measurement -- and the first one was wrong: the
-/// voice counter wrapped onto a second line.
+/// Fill up to @p max readouts and return how many were written: where each
+/// label sits and what it shows, for checking the row's layout from the
+/// host. These labels sit in no encoder group, so a UI snapshot does not
+/// list them.
 uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max);
 
 /// Where the row of the two bars rests: 0 on the transport, the row's width
@@ -104,9 +103,12 @@ int32_t transportbar_row_scroll();
 /// so turning past a screen's last field reaches them anyway. LVGL skips
 /// hidden and LV_STATE_DISABLED objects when it navigates, so a hidden bar and
 /// a key the claim holder cannot honour drop out of the rotation on their own.
-/// The jump lands on PLAY when stopped, STOP otherwise.
+/// The jump lands on PLAY when stopped, STOP otherwise. Back from keys the
+/// encoder was turned onto lands on the screen's last control, the one
+/// turning past it came from.
 ///
-/// False when there is no bar, or it is not the one on screen.
+/// False when there is no bar, or it is not the one on screen, or the screen
+/// has nothing of its own to take the focus back.
 bool transportbar_toggle_focus();
 
 /// True while the encoder's focus is on one of the bar's keys or values.

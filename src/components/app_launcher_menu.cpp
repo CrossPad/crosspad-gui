@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/app_launcher.h"
+#include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
@@ -101,6 +103,12 @@ size_t   s_sel = 0;
 lv_obj_t* s_list = nullptr;
 lv_obj_t* s_appContainer = nullptr;
 lv_obj_t* s_barPos = nullptr;
+lv_obj_t* s_barKit = nullptr;
+/* The menu is home and stays built under every app, so the kit a later load
+ * brings -- the boot's own, or one picked in an app -- is read again. */
+lv_timer_t* s_kitTimer = nullptr;
+int       s_kitShown = -2;   // getCurrentKitId() of the name on screen
+constexpr uint32_t kKitPollMs = 500;
 
 void refresh_header() {
     if (s_barPos) lv_label_set_text_fmt(s_barPos, "%u / %u",
@@ -152,16 +160,29 @@ void row_focused_cb(lv_event_t* e) {
 void row_clicked_cb(lv_event_t* e) {
     const size_t i = (size_t)(uintptr_t)lv_event_get_user_data(e);
     if (i < s_rowCount && s_rows[i].app && s_config.on_select) {
+        AppOrchestrator::getInstance().clearHistory();   // opened from home
         s_config.on_select(s_rows[i].app, s_appContainer);
     }
 }
+
+void show_kit() {
+    crosspad::IKitManager* km = crosspad::getKitManager();
+    const int id = km ? km->getCurrentKitId() : -1;
+    if (!s_barKit || id == s_kitShown) return;
+    s_kitShown = id;
+    crosspad::KitInfo* ki = km ? km->getCurrentKit() : nullptr;
+    lv_label_set_text(s_barKit, ki ? ki->name.c_str() : "No kit");
+}
+
+void kit_timer_cb(lv_timer_t*) { show_kit(); }
 
 void menu_deleted_cb(lv_event_t* e) {
     /* The launcher is torn down by lv_obj_clean() of the whole screen; the
      * table must not outlive the rows it points at. */
     (void)e;
     s_rowCount = 0;
-    s_list = s_barPos = s_appContainer = nullptr;
+    s_list = s_barPos = s_barKit = s_appContainer = nullptr;
+    if (s_kitTimer) { lv_timer_delete(s_kitTimer); s_kitTimer = nullptr; }
 }
 
 lv_obj_t* make_box(lv_obj_t* parent) {
@@ -184,15 +205,15 @@ void build_header(lv_obj_t* wrap) {
     lv_obj_set_style_bg_opa(mark, LV_OPA_COVER, 0);
     lv_obj_align(mark, LV_ALIGN_LEFT_MID, 0, 0);
 
-    lv_obj_t* kit = lv_label_create(bar);
-    lv_obj_set_style_text_font(kit, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(kit, lv_color_hex(kBarText), 0);
-    lv_label_set_long_mode(kit, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(kit, kHeaderKitW);
-    crosspad::IKitManager* km = crosspad::getKitManager();
-    crosspad::KitInfo* ki = km ? km->getCurrentKit() : nullptr;
-    lv_label_set_text(kit, ki ? ki->name.c_str() : "No kit");
-    lv_obj_align(kit, LV_ALIGN_LEFT_MID, kHeaderKitX, 0);
+    s_barKit = lv_label_create(bar);
+    lv_obj_set_style_text_font(s_barKit, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_barKit, lv_color_hex(kBarText), 0);
+    lv_label_set_long_mode(s_barKit, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_barKit, kHeaderKitW);
+    lv_obj_align(s_barKit, LV_ALIGN_LEFT_MID, kHeaderKitX, 0);
+    s_kitShown = -2;
+    show_kit();
+    if (!s_kitTimer) s_kitTimer = lv_timer_create(kit_timer_cb, kKitPollMs, nullptr);
 
     s_barPos = lv_label_create(bar);
     lv_obj_set_style_text_font(s_barPos, &lv_font_montserrat_10, 0);

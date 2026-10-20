@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/app_orchestrator.h"
@@ -87,6 +88,7 @@ void AppOrchestrator::onAppSelected(void* app_ptr, lv_obj_t* app_container) {
     if (!app) return;
 
     auto& self = getInstance();
+    if (self.onBeforeLaunch_) self.onBeforeLaunch_();
 
     // Destroy previous app if running
     auto* prev = self.runningApp_;
@@ -113,8 +115,43 @@ void AppOrchestrator::onPopupClose(void* app_ptr) {
     if (app) app->destroyApp();
 }
 
+bool AppOrchestrator::isRegistered(const ILvglApp* app) const {
+    for (const auto& a : apps_) {
+        if (a.get() == app) return true;
+    }
+    return false;
+}
+
+ILvglApp* AppOrchestrator::historyBack(ILvglApp* current) {
+    /* Not one the history knows (a hand-built overlay): no step of it. */
+    if (history_.empty() || history_.back() != current) return nullptr;
+    history_.pop_back();
+    ILvglApp* prev = history_.empty() ? nullptr : history_.back();
+    if (!prev || prev->isStarted()) {
+        history_.clear();
+        return nullptr;
+    }
+    return prev;
+}
+
 void AppOrchestrator::noteAppStarted(ILvglApp* app) {
     if (!app) return;
+    /* A hand-built screen (the kit selector's gate) is not a place to come
+     * back to: only the registered apps are. Bounded, oldest out first. */
+    if (isRegistered(app)) {
+        constexpr size_t kMaxHistory = 8;
+        bool found = false;
+        for (size_t i = 0; i < history_.size(); i++) {
+            if (history_[i] != app) continue;
+            history_.resize(i + 1);
+            found = true;
+            break;
+        }
+        if (!found) {
+            if (history_.size() >= kMaxHistory) history_.erase(history_.begin());
+            history_.push_back(app);
+        }
+    }
     noteAppStopped(app);          // one entry per app, newest position
     started_.push_back(app);
     if (onForegroundChanged_) onForegroundChanged_();
@@ -140,6 +177,7 @@ ILvglApp* AppOrchestrator::getForegroundApp() const {
 MainScreenResult AppOrchestrator::loadMainScreen(
     lv_obj_t* parent, const MainScreenConfig& config)
 {
+    history_.clear();
     // Destroy currently running app
     if (runningApp_ && runningApp_->isStarted()) {
         runningApp_->destroyApp();

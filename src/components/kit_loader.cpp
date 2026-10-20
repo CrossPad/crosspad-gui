@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/kit_loader.h"
@@ -15,6 +16,9 @@ constexpr int32_t kW    = 312;
 constexpr int32_t kH    = 22;
 constexpr int32_t kPad  = 8;
 constexpr int32_t kPctW = 40;
+/// "KIT LOADED" stays this long, then fades out over kFadeMs.
+constexpr uint32_t kDoneHoldMs = 600;
+constexpr uint32_t kFadeMs     = 250;
 
 const lv_color_t kPanel = lv_color_hex(0x20242A);
 const lv_color_t kText  = lv_color_hex(0xE8EAED);
@@ -101,7 +105,7 @@ void hide_timer_cb(lv_timer_t*)
     lv_anim_init(&a);
     lv_anim_set_var(&a, s_root);
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_duration(&a, 250);
+    lv_anim_set_duration(&a, kFadeMs);
     lv_anim_set_exec_cb(&a, opa_cb);
     lv_anim_set_completed_cb(&a, fade_done_cb);
     lv_anim_start(&a);
@@ -216,7 +220,7 @@ void kit_loader_done(uint8_t loaded, uint8_t total)
     set_clickable(false);
     s_state = State::Done;
     cancel_timer();
-    s_hideTimer = lv_timer_create(hide_timer_cb, 600, nullptr);
+    s_hideTimer = lv_timer_create(hide_timer_cb, kDoneHoldMs, nullptr);
     lv_timer_set_repeat_count(s_hideTimer, 1);
 }
 

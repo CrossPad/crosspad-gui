@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 /**
@@ -15,11 +16,12 @@
 #ifdef USE_LVGL
 
 #include "lvgl.h"
+#include "crosspad-gui/components/power_button_classifier.h"
 #include <cstdint>
 
 namespace crosspad_gui {
 
-/// What powerBack() actually did — for logging and for HIL assertions.
+/// What powerBack() did, for logging and tests.
 enum class BackResult : uint8_t {
     None = 0,   ///< nothing was open; the launcher stays as it is
     Dropdown,   ///< an open dropdown/picker was closed
@@ -30,6 +32,7 @@ enum class BackResult : uint8_t {
     App,        ///< the running app handled it, or was closed
 };
 
+/// The name of @p r in lower case ("none", "dropdown", ...), for logs.
 const char* backResultName(BackResult r);
 
 // ── Back handlers (overlay layer) ────────────────────────────────────────────
@@ -63,13 +66,10 @@ bool ui_back_has_overlay();
  */
 BackResult powerBack();
 
-/// The hold threshold both platforms use, and the STM32's own
-/// LONG_PRESS_SLEEP_MS: under it a press is a click, at it the hold fires.
-constexpr uint32_t kPowerHoldMs = 500;
-
 /// Press / release of an *emulated* power button (the simulator's on-screen
-/// button, a keyboard key, a control-port verb). Does the same click-vs-hold
-/// split the firmware does from its register poll, on an LVGL timer.
+/// button, a keyboard key, a control-port verb). The same
+/// PowerButtonClassifier the firmware feeds from its register poll splits
+/// click from hold; an LVGL timer takes the sample at kPowerHoldMs.
 void powerButtonPress();
 void powerButtonRelease();
 

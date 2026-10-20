@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/app_launcher.h"
+#include "crosspad-gui/components/app_orchestrator.h"
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/styles/styles.h"
@@ -126,7 +128,7 @@ void launcher_register_power_off() {
              getGuiPlatform().assetPathPrefix());
 
     registry.registerApp({
-        "Power OFF",
+        kPowerOffAppName,
         icon_path,
         PowerOffFactory,
         nullptr,  // no destroy
@@ -150,6 +152,7 @@ static void button_click_cb(lv_event_t* e) {
     lv_obj_t* btn_wrap = lv_obj_get_parent(btn);
     lv_obj_t* app_container = lv_obj_get_parent(btn_wrap);
 
+    crosspad_gui::AppOrchestrator::getInstance().clearHistory();   // opened from home
     s_config.on_select(app_ptr, app_container);
 }
 

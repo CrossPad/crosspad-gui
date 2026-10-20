@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/power_gesture.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/transport_bar.h"
 #include "crosspad-gui/components/app_orchestrator.h"
+#include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 
 namespace crosspad_gui {
@@ -85,21 +87,31 @@ bool ui_back_has_overlay() { return s_slotCount > 0; }
 
 namespace {
 lv_timer_t* s_holdTimer = nullptr;
-bool        s_holdFired = false;
+
+/* An emulated button is never the one that woke the device and has no sleep
+ * to come out of: it starts released, awake, with the GUI up. */
+PowerGesture feedEmulated(bool pressed)
+{
+    static PowerButtonClassifier s_classifier = [] {
+        PowerButtonClassifier c;
+        c.feed(PowerButtonClassifier::Sample{false, true, false, true, lv_tick_get()});
+        return c;
+    }();
+    return s_classifier.feed(PowerButtonClassifier::Sample{pressed, true, false, true, lv_tick_get()}).gesture;
+}
 
 void hold_timer_cb(lv_timer_t* t)
 {
     (void)t;
     s_holdTimer = nullptr;   // repeat_count 1: LVGL deletes it after this call
-    s_holdFired = true;
-    powerToggleQuickSettings();
+    if (feedEmulated(true) == PowerGesture::Hold) powerToggleQuickSettings();
 }
 } // namespace
 
 void powerButtonPress()
 {
     if (s_holdTimer) { lv_timer_delete(s_holdTimer); s_holdTimer = nullptr; }
-    s_holdFired = false;
+    feedEmulated(true);
     s_holdTimer = lv_timer_create(hold_timer_cb, kPowerHoldMs, nullptr);
     lv_timer_set_repeat_count(s_holdTimer, 1);
     /* Visual feedback for the same threshold the timer above is counting
@@ -114,14 +126,13 @@ void powerButtonPress()
 void powerButtonRelease()
 {
     if (s_holdTimer) { lv_timer_delete(s_holdTimer); s_holdTimer = nullptr; }
-    if (!s_holdFired) {
+    if (feedEmulated(false) == PowerGesture::Click) {
         /* Released before the threshold: the charge animation (if any)
          * eases back rather than snapping, then the click is handled as
          * the ordinary contextual back. */
         statusbar_arrow_hold_cancel();
         powerBack();
     }
-    s_holdFired = false;
 }
 
 // ── Gestures ─────────────────────────────────────────────────────────────────
@@ -174,14 +185,15 @@ BackResult powerBack()
     }
 
     /* 4b. The encoder on the top bar's keys: back to the screen it left,
-     *     rather than out of the app behind it -- one step back, not two. */
-    if (transportbar_has_focus()) {
-        transportbar_toggle_focus();
+     *     rather than out of the app behind it -- one step back, not two.
+     *     A focus the bar cannot hand back is no step: the app's turn. */
+    if (transportbar_has_focus() && transportbar_toggle_focus()) {
         return BackResult::Transport;
     }
 
-    /* 5. The running app: its own back hook first, then close it. With
-     *    nothing left on screen the MODE map comes up as home on its own.
+    /* 5. The running app: its own back hook first, then the app it was
+     *    opened from (AppOrchestrator::historyBack()), and home -- the
+     *    launcher under it -- once there is none.
      *    getForegroundApp(), not getRunningApp(): an app started from the
      *    pre-launch hook (the sampler's kit-selector gate) owns the screen
      *    without ever becoming runningApp_, and that screen has no other way
@@ -189,6 +201,20 @@ BackResult powerBack()
     ILvglApp* app = AppOrchestrator::getInstance().getForegroundApp();
     if (app) {
         if (app->handleBack()) return BackResult::App;
+        if (ILvglApp* prev = AppOrchestrator::getInstance().historyBack(app)) {
+            /* Deferred like destroyAppAsync(): this can run inside an event
+             * of the screen about to go. By name, through the MODE map's way
+             * in, so the hand-over is the one every other switch makes. */
+            lv_async_call([](void* p) {
+                auto* to = static_cast<ILvglApp*>(p);
+                if (ILvglApp* fg = AppOrchestrator::getInstance().getForegroundApp(); fg && fg != to) {
+                    fg->destroyApp();
+                }
+                if (!mode_overlay_open_app(to->getName())) AppOrchestrator::getInstance().clearHistory();
+            }, prev);
+            return BackResult::App;
+        }
+        AppOrchestrator::getInstance().clearHistory();
         app->destroyAppAsync();
         return BackResult::App;
     }

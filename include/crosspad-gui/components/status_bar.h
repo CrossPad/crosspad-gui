@@ -1,11 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include "lvgl.h"
 #include <cstdint>
 
-// Status bar height (shared define, can be overridden)
+// Status bar height (shared define, can be overridden). The transport bar's,
+// which it swaps with in place: at 22 the app container below moved up 8 px on
+// every swap. The boards' CrossPad.h said 30 all along, but this header is
+// compiled without it.
 #ifndef LV_STATUS_BAR_HEIGHT
-#define LV_STATUS_BAR_HEIGHT 22
+#define LV_STATUS_BAR_HEIGHT 30
 #endif
 
 #ifndef QUICK_BUTTON_SIZE
@@ -92,8 +96,10 @@ void statusbar_hide_title();
 
 // ── Performance Stats ────────────────────────────────────────────────────────
 
-// Set performance stats display flags (bitfield).
-// bit 0 = FPS column, bit 1 = CPU column, bit 2 = MEM column
+// Set performance stats display flags (bitfield), from IGuiPlatform::getPerfStats().
+// bit 0 = FPS; bit 1 = CPU: both cores and the audio render (DSP %, overruns);
+// bit 2 = MEM: internal RAM free + low-water mark, PSRAM free + largest block.
+// While any is on they take the logo's place.
 #define PERF_FLAG_FPS  (1 << 0)
 #define PERF_FLAG_CPU  (1 << 1)
 #define PERF_FLAG_MEM  (1 << 2)
@@ -153,10 +159,8 @@ void statusbar_arrow_hold_cancel();
 
 } // namespace crosspad_gui
 
-// Create the status bar as a child of the given parent.
-// Requires: extern CrosspadSettings * settings;
-//           extern CrosspadStatus status;
-//           extern lv_obj_t * status_c;
+// Create the status bar as a child of the given parent. It shows the
+// settings and status in crosspad::PlatformServices (crosspad-gui/platform/GuiServices.h).
 // @param parent  Parent object (typically the main screen flex column)
 // @return The created status bar container
 lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent);

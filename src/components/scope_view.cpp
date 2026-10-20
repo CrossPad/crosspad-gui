@@ -4,21 +4,17 @@
 
 #include "crosspad-gui/components/scope_view.h"
 
-#include "crosspad-gui/components/spectrum_math.h"
-
 #include <crosspad/dsp/FftFactory.hpp>
 #include <crosspad/dsp/ScopeTrigger.hpp>
+#include <crosspad/dsp/SpectrumBars.hpp>
 
 #include <new>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-
-#ifdef ESP_PLATFORM
-#include <esp_heap_caps.h>
-#endif
 
 namespace {
 
@@ -93,18 +89,18 @@ constexpr int32_t kSpectrumMaxWidth = 320;
  * pairs with 64-bit loads.
  */
 struct SpectrumState {
-    alignas(16) float fftBuf[2 * crosspad_gui::kSpectrumFftSize];
-    float window[crosspad_gui::kSpectrumFftSize];
-    crosspad_gui::SpectrumBar map[crosspad_gui::kSpectrumMaxBars];
+    alignas(16) float fftBuf[2 * crosspad::dsp::kSpectrumFftSize];
+    float window[crosspad::dsp::kSpectrumFftSize];
+    crosspad::dsp::SpectrumBar map[crosspad::dsp::kSpectrumMaxBars];
     int8_t  colBar[kSpectrumMaxWidth];               ///< bar a pixel column belongs to, -1 = the gap
     bool    colGrid[kSpectrumMaxWidth];              ///< column of a decade line (100 Hz, 1 kHz, 10 kHz)
     int16_t gridRow[2] = { -1, -1 };                 ///< rows of the -24 / -48 dB lines
     int16_t colTop[kSpectrumMaxWidth];               ///< first row of each column's bar as painted; h = none
     int16_t colTick[kSpectrumMaxWidth];              ///< row of its peak tick as painted; -1 = none
     bool    painted = false;                         ///< the canvas holds this state's last frame
-    float   level[crosspad_gui::kSpectrumMaxBars];   ///< bar height, 0..1
-    float   peak[crosspad_gui::kSpectrumMaxBars];    ///< held tick, 0..1
-    uint8_t hold[crosspad_gui::kSpectrumMaxBars];    ///< frames the tick still holds
+    float   level[crosspad::dsp::kSpectrumMaxBars];   ///< bar height, 0..1
+    float   peak[crosspad::dsp::kSpectrumMaxBars];    ///< held tick, 0..1
+    uint8_t hold[crosspad::dsp::kSpectrumMaxBars];    ///< frames the tick still holds
     crosspad::IFft* fft = nullptr;
     uint32_t rate = 0;    ///< sample rate `map` was built for
     uint32_t bars = 0;
@@ -182,22 +178,24 @@ void vspan(const Pixels& p, int32_t x, int32_t y0, int32_t y1, uint16_t c) {
     }
 }
 
+/// Smallest alignment the spectrum's buffers get: esp-dsp's 64-bit loads.
+constexpr size_t kSpectrumAlign = 16;
+
+/// From LVGL's heap like the canvas, aligned by hand: lv_malloc() promises
+/// natural alignment only. The block lv_malloc() returned is kept in the word
+/// before the aligned pointer, for spectrum_free().
 void* spectrum_alloc(size_t bytes, size_t align) {
-    if (align < 16) align = 16;
-    const size_t rounded = (bytes + align - 1) & ~(align - 1);
-#ifdef ESP_PLATFORM
-    return heap_caps_aligned_alloc(align, rounded, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-#else
-    return aligned_alloc(align, rounded);
-#endif
+    if (align < kSpectrumAlign) align = kSpectrumAlign;
+    auto* raw = static_cast<uint8_t*>(lv_malloc(bytes + align + sizeof(void*)));
+    if (!raw) return nullptr;
+    const uintptr_t first = reinterpret_cast<uintptr_t>(raw) + sizeof(void*);
+    const uintptr_t aligned = (first + align - 1) & ~static_cast<uintptr_t>(align - 1);
+    reinterpret_cast<void**>(aligned)[-1] = raw;
+    return reinterpret_cast<void*>(aligned);
 }
 
 void spectrum_free(void* p) {
-#ifdef ESP_PLATFORM
-    heap_caps_free(p);
-#else
-    free(p);
-#endif
+    if (p) lv_free(static_cast<void**>(p)[-1]);
 }
 
 void spectrum_reset(SpectrumState* sp) {
@@ -212,9 +210,9 @@ void spectrum_reset(SpectrumState* sp) {
 /// the one before.
 void draw_spectrum(ScopeState* st, uint32_t got, uint32_t rate) {
     SpectrumState* sp = st->spectrum;
-    constexpr uint32_t n = crosspad_gui::kSpectrumFftSize;
+    constexpr uint32_t n = crosspad::dsp::kSpectrumFftSize;
 
-    float fresh[crosspad_gui::kSpectrumMaxBars];
+    float fresh[crosspad::dsp::kSpectrumMaxBars];
     float loudestSample = 0.0f;
     for (uint32_t i = 0; i < got; ++i) {
         const float a = st->samples[i] < 0 ? -st->samples[i] : st->samples[i];
@@ -223,7 +221,7 @@ void draw_spectrum(ScopeState* st, uint32_t got, uint32_t rate) {
     // Between hits the engine hands over digital silence: nothing to transform.
     if (loudestSample >= kSpectrumSilence && rate > 0 && sp->fft) {
         if (rate != sp->rate) {
-            crosspad_gui::spectrum_map_bars(sp->map, sp->bars, n, rate);
+            crosspad::dsp::spectrumMapBars(sp->map, sp->bars, n, rate);
             sp->rate = rate;
         }
         // Newest n samples, windowed, real part only; short pulls are zero padded.
@@ -238,7 +236,7 @@ void draw_spectrum(ScopeState* st, uint32_t got, uint32_t rate) {
             sp->fftBuf[2 * i + 1] = 0.0f;
         }
         sp->fft->forward(sp->fftBuf, n);
-        crosspad_gui::spectrum_levels(sp->fftBuf, n, sp->map, sp->bars, fresh);
+        crosspad::dsp::spectrumLevels(sp->fftBuf, n, sp->map, sp->bars, fresh);
     } else {
         memset(fresh, 0, sizeof(fresh));
     }
@@ -318,7 +316,7 @@ void draw_spectrum(ScopeState* st, uint32_t got, uint32_t rate) {
     char next[sizeof(st->text)];
     if (signal && fresh[loudest] >= kSpectrumSignal) {
         snprintf(next, sizeof(next), "FFT %dHz",
-                 static_cast<int>(crosspad_gui::spectrum_bar_hz(loudest, sp->bars) + 0.5f));
+                 static_cast<int>(crosspad::dsp::spectrumBarHz(loudest, sp->bars) + 0.5f));
     } else {
         snprintf(next, sizeof(next), "FFT");
     }
@@ -486,7 +484,7 @@ void scope_delete_cb(lv_event_t* e) {
     if (st->timer) lv_timer_delete(st->timer);
     free(st->history);
     if (st->spectrum) spectrum_free(st->spectrum);
-    free(st->pixels);
+    lv_free(st->pixels);
     lv_free(st);
 }
 
@@ -499,10 +497,10 @@ bool spectrum_prepare(ScopeState* st) {
         auto* sp = static_cast<SpectrumState*>(spectrum_alloc(sizeof(SpectrumState), alignof(SpectrumState)));
         if (!sp) return false;
         new (sp) SpectrumState();
-        crosspad_gui::spectrum_hann(sp->window, crosspad_gui::kSpectrumFftSize);
+        crosspad::dsp::spectrumHann(sp->window, crosspad::dsp::kSpectrumFftSize);
         const int32_t fit = st->w / kSpectrumBarPx;
-        sp->bars = static_cast<uint32_t>(fit < 8 ? 8 : (fit > static_cast<int32_t>(crosspad_gui::kSpectrumMaxBars)
-                                                        ? static_cast<int32_t>(crosspad_gui::kSpectrumMaxBars) : fit));
+        sp->bars = static_cast<uint32_t>(fit < 8 ? 8 : (fit > static_cast<int32_t>(crosspad::dsp::kSpectrumMaxBars)
+                                                        ? static_cast<int32_t>(crosspad::dsp::kSpectrumMaxBars) : fit));
         spectrum_reset(sp);
         // A bar is kSpectrumBarPx wide less one column of gap, however many fit.
         for (int32_t x = 0; x < st->w; ++x) {
@@ -511,10 +509,10 @@ bool spectrum_prepare(ScopeState* st) {
             sp->colBar[x] = static_cast<int8_t>(x == next - 1 && next - 1 > i * st->w / static_cast<int32_t>(sp->bars) ? -1 : i);
             sp->colGrid[x] = false;
         }
-        const float octaves = log2f(crosspad_gui::kSpectrumHighHz / crosspad_gui::kSpectrumLowHz);
-        for (float hz = 100.0f; hz < crosspad_gui::kSpectrumHighHz; hz *= 10.0f) {
+        const float octaves = log2f(crosspad::dsp::kSpectrumHighHz / crosspad::dsp::kSpectrumLowHz);
+        for (float hz = 100.0f; hz < crosspad::dsp::kSpectrumHighHz; hz *= 10.0f) {
             sp->colGrid[static_cast<int32_t>(static_cast<float>(st->w) *
-                                             log2f(hz / crosspad_gui::kSpectrumLowHz) / octaves)] = true;
+                                             log2f(hz / crosspad::dsp::kSpectrumLowHz) / octaves)] = true;
         }
         for (int32_t k = 0; k < 2; ++k) {
             sp->gridRow[k] = static_cast<int16_t>(1 + (st->h - 2) * 24 * (k + 1) / 72);
@@ -546,12 +544,10 @@ lv_obj_t* create_scope_view(lv_obj_t* parent, int32_t w, int32_t h) {
     st->text[0] = '\0';
 
     // A 120x60 RGB565 canvas is 14 kB — small, but on the S3 it is 14 kB of
-    // internal RAM that the UI has none to spare of, so it goes to PSRAM.
+    // internal RAM that the UI has none to spare of. LVGL's heap is where a
+    // platform puts the UI's memory (the board routes it to PSRAM).
     const uint32_t bytes = LV_CANVAS_BUF_SIZE(w, h, 16, 1);
-#ifdef ESP_PLATFORM
-    st->pixels = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-#endif
-    if (!st->pixels) st->pixels = static_cast<uint8_t*>(malloc(bytes));
+    st->pixels = static_cast<uint8_t*>(lv_malloc(bytes));
     if (!st->pixels) { lv_free(st); return nullptr; }
 
     lv_obj_t* cont = lv_obj_create(parent);

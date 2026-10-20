@@ -1,13 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/volume_overlay.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/settings/ISettingsUI.hpp"
-
-extern crosspad::CrosspadSettings * settings;
 
 namespace crosspad_gui {
 
@@ -46,12 +46,10 @@ static void slider_cb(lv_event_t * e) {
     // Persist into settings. The first index is the codec, and the jacks are
     // numbered the other way round: Out 2 (phones, and the speakers beside
     // them) is codec 0, Out 1 (line out) is codec 1.
-    if (settings) {
-        if (s_mode == 1) {
-            settings->masterFX.outVolumeCodec[0][0] = val;
-        } else if (s_mode == 2) {
-            settings->masterFX.outVolumeCodec[1][0] = val;
-        }
+    if (s_mode == 1) {
+        platformSettings().masterFX.outVolumeCodec[0][0] = val;
+    } else if (s_mode == 2) {
+        platformSettings().masterFX.outVolumeCodec[1][0] = val;
     }
 
     // Hardware apply through the GUI platform.
@@ -74,12 +72,12 @@ static void show(int mode) {
         s_mode = mode;
         if (mode == 1) {
             lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Out 2");
-            uint8_t v = settings->masterFX.outVolumeCodec[0][0];
+            uint8_t v = platformSettings().masterFX.outVolumeCodec[0][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         } else {
             lv_label_set_text(s_label, LV_SYMBOL_UPLOAD " Out 1");
-            uint8_t v = settings->masterFX.outVolumeCodec[1][0];
+            uint8_t v = platformSettings().masterFX.outVolumeCodec[1][0];
             lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
             if (s_value_label) lv_label_set_text_fmt(s_value_label, "%d", (int)v);
         }
@@ -120,12 +118,12 @@ static void show(int mode) {
 
     if (mode == 1) {
         lv_label_set_text(s_label, LV_SYMBOL_AUDIO " Out 2");
-        uint8_t v = settings->masterFX.outVolumeCodec[0][0];
+        uint8_t v = platformSettings().masterFX.outVolumeCodec[0][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     } else {
         lv_label_set_text(s_label, LV_SYMBOL_UPLOAD " Out 1");
-        uint8_t v = settings->masterFX.outVolumeCodec[1][0];
+        uint8_t v = platformSettings().masterFX.outVolumeCodec[1][0];
         lv_slider_set_value(s_slider, v, LV_ANIM_OFF);
         lv_label_set_text_fmt(s_value_label, "%d", (int)v);
     }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * @file markdown_view.cpp
  * @brief Simple markdown renderer for LVGL
