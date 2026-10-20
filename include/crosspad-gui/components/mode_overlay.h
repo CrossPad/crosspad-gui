@@ -101,7 +101,9 @@ void mode_overlay_select_pad(uint8_t padIdx);
 
 /// Go home -- what the board opens on: the map over an app and every app on
 /// screen are closed, which leaves the home screen, whichever style it is.
-/// Whatever holds the transport keeps playing.
+/// Whatever holds the transport keeps playing. The way back
+/// (AppOrchestrator::historyBack()) starts afresh, as it does for an app
+/// picked on the home map.
 void mode_overlay_go_home();
 
 /// Open the app registered under @p name as if its pad had been hit: the same

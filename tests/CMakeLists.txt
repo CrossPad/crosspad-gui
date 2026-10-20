@@ -39,6 +39,9 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/Stm32Manager\\.cpp$")
 add_library(crosspad_core_host STATIC ${CORE_SOURCES})
 target_include_directories(crosspad_core_host PUBLIC ${CROSSPAD_CORE_DIR}/include)
 target_link_libraries(crosspad_core_host PUBLIC ArduinoJson)
+# AppEntry carries the LVGL factory only under USE_LVGL: core's AppRegistry has
+# to be built with the layout the tests register apps with.
+target_compile_definitions(crosspad_core_host PRIVATE USE_LVGL=1)
 
 # Every crosspad-gui source, linked whole into the test binary: a symbol the
 # library expects a platform to define fails this link.

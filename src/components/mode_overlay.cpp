@@ -223,6 +223,9 @@ void launch(const char* name)
      * and that hand-over is exactly what sets the focus. The orchestrator's
      * before-launch hook closes the map and hands the pads back. */
     crosspad::arrangeFocus().clear();
+    /* Picked on the home map: the way back starts here, as from a launcher.
+     * Over an app the map is a switch, and the way back goes on. */
+    if (home_in_charge()) AppOrchestrator::getInstance().clearHistory();
     mode_overlay_open_app(name);
     schedule_check();
 }
@@ -566,10 +569,13 @@ void close_more()
     }
 }
 
+/// Once per PadManager: the host tests build one for every case, and a map
+/// set up under an earlier one left the next without the map's logic.
 void ensure_pad_logic_registered()
 {
-    if (s.registered) return;
-    crosspad::getPadManager().registerPadLogic(kPadLogicName, std::make_shared<ModePadLogic>());
+    crosspad::PadManager& pm = crosspad::getPadManager();
+    if (s.registered && pm.getPadLogic(kPadLogicName)) return;
+    pm.registerPadLogic(kPadLogicName, std::make_shared<ModePadLogic>());
     s.registered = true;
 }
 
@@ -675,6 +681,7 @@ void mode_overlay_go_home()
     /* Going home is also how a flow is left: whatever Arrange handed to the
      * Recorder or the sequencer is no longer being filled. */
     crosspad::arrangeFocus().clear();
+    AppOrchestrator::getInstance().clearHistory();
     /* Everything on screen goes, the kit browser over an app included. What
      * holds the transport keeps playing: a claim outlives its screen. Bounded,
      * because an app whose teardown fails would otherwise stay foreground. */
