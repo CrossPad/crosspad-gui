@@ -11,6 +11,18 @@ are described in their commits.
 - `VirtualPadGrid::setLedSource()`: the grid can show what the LED strip
   shows (pressed, playing, a dimmed Loop pad) instead of only each pad's
   resting colour. Default unchanged.
+- The top bar slides between the transport and the status icons; the
+  quick-settings drawer opens on a pull from the top edge and closes on a
+  push, and its backdrop closes on a tap, not on a drag (from 1.x master).
+- `AppBase` sends the transport home as an app opens and closes
+  (`transportGoHome()`), so REC/PLAY on the top bar never stay greyed after
+  an app that claimed them.
+- Back (power click) from transport keys the encoder was turned onto lands on
+  the screen's last control in one click; `transportbar_toggle_focus()`
+  answers false when the screen has nothing to take the focus back, and
+  `powerBack()` then moves on to the app.
+- The file explorer stops adding rows below 40 kB of free PSRAM and says how
+  many it left out, instead of an LVGL assert.
 - Paired with crosspad-core 2.1.0.
 
 ## 2.0.0 — 2026-10-18
