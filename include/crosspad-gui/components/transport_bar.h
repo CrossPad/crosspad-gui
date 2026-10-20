@@ -103,9 +103,12 @@ int32_t transportbar_row_scroll();
 /// so turning past a screen's last field reaches them anyway. LVGL skips
 /// hidden and LV_STATE_DISABLED objects when it navigates, so a hidden bar and
 /// a key the claim holder cannot honour drop out of the rotation on their own.
-/// The jump lands on PLAY when stopped, STOP otherwise.
+/// The jump lands on PLAY when stopped, STOP otherwise. Back from keys the
+/// encoder was turned onto lands on the screen's last control, the one
+/// turning past it came from.
 ///
-/// False when there is no bar, or it is not the one on screen.
+/// False when there is no bar, or it is not the one on screen, or the screen
+/// has nothing of its own to take the focus back.
 bool transportbar_toggle_focus();
 
 /// True while the encoder's focus is on one of the bar's keys or values.
