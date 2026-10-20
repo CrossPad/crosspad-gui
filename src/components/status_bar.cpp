@@ -162,7 +162,6 @@ static void drawer_close_end_cb(lv_anim_t * a);
 static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * parent);
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont);
 static void create_open_button();
-static void delete_open_button();
 
 // ── Loading API ─────────────────────────────────────────────────────────────
 
@@ -837,15 +836,6 @@ static void create_open_button() {
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
     if (s_app_icon_zone_right) {
         lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
-    }
-}
-
-static void delete_open_button() {
-    if (!openButton) return;
-    lv_obj_delete(openButton);
-    openButton = NULL;
-    if (s_app_icon_zone_right) {
-        lv_obj_set_style_pad_right(s_app_icon_zone_right, 4, 0);
     }
 }
 
