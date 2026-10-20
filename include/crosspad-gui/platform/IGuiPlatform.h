@@ -25,6 +25,18 @@ struct PerfStats {
     uint32_t sram_pct;    ///< Internal SRAM usage 0-100
     uint32_t psram_pct;   ///< PSRAM usage 0-100
     uint32_t stm32_mps;   ///< STM32 messages per second
+    /* Headroom in kilobytes, 0 = not measured here. A percentage hides what
+     * runs out: the UI dies of the largest free PSRAM block long before PSRAM
+     * looks full, and the internal low-water mark is what WiFi and BLE need. */
+    uint32_t sram_free_kb;    ///< internal RAM free now
+    uint32_t sram_min_kb;     ///< internal RAM's low-water mark since boot
+    uint32_t psram_free_kb;   ///< PSRAM free now
+    uint32_t psram_block_kb;  ///< the largest free PSRAM block: the most the next app can take at once
+    /* The audio render: its longest pass since the previous call as a share
+     * of one block (over 100 the DMA was late), and how many passes overran a
+     * block since boot -- each one a click a player may have heard. */
+    uint32_t dsp_pct;
+    uint32_t dsp_overruns;
 };
 
 /* Two ceilings, and the smaller one binds: a resident voice is arithmetic, a

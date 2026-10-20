@@ -5,6 +5,7 @@
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/transport_bar.h"
 #include "crosspad-gui/components/app_orchestrator.h"
+#include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
 
 namespace crosspad_gui {
@@ -190,8 +191,9 @@ BackResult powerBack()
         return BackResult::Transport;
     }
 
-    /* 5. The running app: its own back hook first, then close it. With
-     *    nothing left on screen the MODE map comes up as home on its own.
+    /* 5. The running app: its own back hook first, then the app it was
+     *    opened from (AppOrchestrator::historyBack()), and home -- the
+     *    launcher under it -- once there is none.
      *    getForegroundApp(), not getRunningApp(): an app started from the
      *    pre-launch hook (the sampler's kit-selector gate) owns the screen
      *    without ever becoming runningApp_, and that screen has no other way
@@ -199,6 +201,20 @@ BackResult powerBack()
     ILvglApp* app = AppOrchestrator::getInstance().getForegroundApp();
     if (app) {
         if (app->handleBack()) return BackResult::App;
+        if (ILvglApp* prev = AppOrchestrator::getInstance().historyBack(app)) {
+            /* Deferred like destroyAppAsync(): this can run inside an event
+             * of the screen about to go. By name, through the MODE map's way
+             * in, so the hand-over is the one every other switch makes. */
+            lv_async_call([](void* p) {
+                auto* to = static_cast<ILvglApp*>(p);
+                if (ILvglApp* fg = AppOrchestrator::getInstance().getForegroundApp(); fg && fg != to) {
+                    fg->destroyApp();
+                }
+                if (!mode_overlay_open_app(to->getName())) AppOrchestrator::getInstance().clearHistory();
+            }, prev);
+            return BackResult::App;
+        }
+        AppOrchestrator::getInstance().clearHistory();
         app->destroyAppAsync();
         return BackResult::App;
     }

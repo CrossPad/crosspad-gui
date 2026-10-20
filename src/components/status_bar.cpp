@@ -92,11 +92,19 @@ static lv_obj_t * status_loading_arc;
  * the engine starts cutting tails to keep up. */
 static lv_obj_t * s_voice_meter = NULL;
 
-static lv_obj_t * s_perf_fps_col = NULL;   // FPS column
-static lv_obj_t * s_perf_cpu_col = NULL;   // CPU column
-static lv_obj_t * s_perf_mem_col = NULL;   // MEM column
+/* Two lines each, in the logo's place while any is on (there is no room for
+ * both): FPS; CPU = both cores and the audio render; MEM = internal RAM and
+ * PSRAM in kilobytes. A column near its limit inverts, as the transport bar's
+ * voice counter does at the ceiling. */
+static lv_obj_t * s_perf_fps_col = NULL;   // FPS
+static lv_obj_t * s_perf_cpu_col = NULL;   // CPU: core 0, core 1
+static lv_obj_t * s_perf_dsp_col = NULL;   // CPU: the audio render's longest pass, overruns
+static lv_obj_t * s_perf_ram_col = NULL;   // MEM: internal RAM free, its low-water mark
+static lv_obj_t * s_perf_ps_col  = NULL;   // MEM: PSRAM free, its largest block
 static lv_timer_t * t_perf_stats = NULL;
 static uint8_t s_perf_flags = 0; // bitfield: bit0=FPS, bit1=CPU, bit2=MEM
+static uint32_t s_perf_overruns = UINT32_MAX;   // the count last read; MAX = none yet
+static uint32_t s_perf_overrun_at = 0;          // lv_tick when it last grew
 
 // dynamic app icon slots
 struct StatusBarAppIcon {
@@ -368,47 +376,88 @@ static void voice_meter_timer_cb(lv_timer_t * timer) {
              : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
 }
 
-static void perf_stats_timer_cb(lv_timer_t * timer) {
-    if (s_perf_flags == 0) return;
+/* Where a column inverts. 85 % of a block is where the pitched engine starts
+ * shedding voices (audio_task.cpp); 128 kB is the PSRAM the song rings and the
+ * screen mirror leave the UI; 32 kB of internal RAM is under what BLE or the
+ * WiFi radio needs to start. An overrun stays lit for 10 s, so one that
+ * happened while nobody looked is still seen. */
+static constexpr uint32_t kPerfCpuWarnPct = 90;
+static constexpr uint32_t kPerfDspWarnPct = 85;
+static constexpr uint32_t kPerfSramWarnKb = 32;
+static constexpr uint32_t kPerfPsramWarnKb = 128;
+static constexpr uint32_t kPerfOverrunLitMs = 10000;
 
-    crosspad_gui::PerfStats ps = crosspad_gui::getGuiPlatform().getPerfStats();
+static void perf_paint(lv_obj_t * col, bool warn) {
+    lv_obj_set_style_bg_opa(col, warn ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_color(col, warn ? CROSSPAD_THEME_PRIMARY
+                                          : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+}
+
+/// "411k", "1.2M" from a thousand up (the column is as wide as "999k"), or
+/// "--" where the platform does not measure it (0).
+static const char * perf_kb(char * buf, size_t n, uint32_t kb) {
+    if (!kb)              snprintf(buf, n, "--");
+    else if (kb < 1000)   snprintf(buf, n, "%" LV_PRIu32 "k", kb);
+    else                  snprintf(buf, n, "%" LV_PRIu32 ".%" LV_PRIu32 "M", kb / 1024, (kb % 1024) * 10 / 1024);
+    return buf;
+}
+
+static void perf_stats_timer_cb(lv_timer_t * timer) {
+    (void)timer;
+    /* Hidden behind the transport bar most of the time: nothing to paint. */
+    if (!status_c || lv_obj_has_flag(status_c, LV_OBJ_FLAG_HIDDEN)) return;
+
+    const crosspad_gui::PerfStats ps = crosspad_gui::getGuiPlatform().getPerfStats();
+    char a[12], b[12];
 
     if (s_perf_fps_col && (s_perf_flags & PERF_FLAG_FPS)) {
-        lv_label_set_text_fmt(s_perf_fps_col,
-            "fps\n%" LV_PRIu32, ps.fps);
+        lv_label_set_text_fmt(s_perf_fps_col, "FPS\n%" LV_PRIu32, ps.fps);
     }
-    if (s_perf_cpu_col && (s_perf_flags & PERF_FLAG_CPU)) {
-        lv_label_set_text_fmt(s_perf_cpu_col,
-            "%02" LV_PRIu32 "%%\n%02" LV_PRIu32 "%%",
-            ps.cpu0_pct, ps.cpu1_pct);
+    if (s_perf_flags & PERF_FLAG_CPU) {
+        if (s_perf_cpu_col) {
+            lv_label_set_text_fmt(s_perf_cpu_col, "C0 %" LV_PRIu32 "%%\nC1 %" LV_PRIu32 "%%",
+                                  ps.cpu0_pct, ps.cpu1_pct);
+            perf_paint(s_perf_cpu_col, ps.cpu0_pct >= kPerfCpuWarnPct || ps.cpu1_pct >= kPerfCpuWarnPct);
+        }
+        if (s_perf_dsp_col) {
+            if (s_perf_overruns != UINT32_MAX && ps.dsp_overruns != s_perf_overruns) {
+                s_perf_overrun_at = lv_tick_get() | 1;   // 0 is "never"
+            }
+            s_perf_overruns = ps.dsp_overruns;
+            const bool fresh = s_perf_overrun_at && lv_tick_elaps(s_perf_overrun_at) < kPerfOverrunLitMs;
+            lv_label_set_text_fmt(s_perf_dsp_col, "DSP %" LV_PRIu32 "%%\nXR %" LV_PRIu32,
+                                  ps.dsp_pct, ps.dsp_overruns);
+            perf_paint(s_perf_dsp_col, ps.dsp_pct >= kPerfDspWarnPct || fresh);
+        }
     }
-    if (s_perf_mem_col && (s_perf_flags & PERF_FLAG_MEM)) {
-        lv_label_set_text_fmt(s_perf_mem_col,
-            "S%" LV_PRIu32 "\nP%" LV_PRIu32,
-            ps.sram_pct, ps.psram_pct);
+    if (s_perf_flags & PERF_FLAG_MEM) {
+        if (s_perf_ram_col) {
+            lv_label_set_text_fmt(s_perf_ram_col, "RAM %s\nMIN %s",
+                                  perf_kb(a, sizeof(a), ps.sram_free_kb), perf_kb(b, sizeof(b), ps.sram_min_kb));
+            perf_paint(s_perf_ram_col, ps.sram_free_kb && ps.sram_free_kb < kPerfSramWarnKb);
+        }
+    }
+    /* PSRAM always, whatever the flags: it is what the UI and every app run
+     * out of first, and the sample engine now takes it as it needs it. */
+    if (s_perf_ps_col) {
+        lv_label_set_text_fmt(s_perf_ps_col, "PS %s\nBLK %s",
+                              perf_kb(a, sizeof(a), ps.psram_free_kb), perf_kb(b, sizeof(b), ps.psram_block_kb));
+        perf_paint(s_perf_ps_col, ps.psram_block_kb && ps.psram_block_kb < kPerfPsramWarnKb);
     }
 }
 
 static void apply_perf_column_visibility() {
-    if (s_perf_fps_col) {
-        if (s_perf_flags & PERF_FLAG_FPS) lv_obj_remove_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
+    struct { lv_obj_t * col; uint8_t flag; } cols[] = {
+        { s_perf_fps_col, PERF_FLAG_FPS }, { s_perf_cpu_col, PERF_FLAG_CPU },
+        { s_perf_dsp_col, PERF_FLAG_CPU }, { s_perf_ram_col, PERF_FLAG_MEM },
+    };
+    for (auto & c : cols) {
+        if (c.col) lv_obj_set_hidden(c.col, !(s_perf_flags & c.flag));
     }
-    if (s_perf_cpu_col) {
-        if (s_perf_flags & PERF_FLAG_CPU) lv_obj_remove_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (s_perf_mem_col) {
-        if (s_perf_flags & PERF_FLAG_MEM) lv_obj_remove_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (status_logo) lv_obj_set_hidden(status_logo, s_perf_flags != 0);
 
-    if (s_perf_flags && t_perf_stats) {
-        lv_timer_resume(t_perf_stats);
-        lv_timer_ready(t_perf_stats);
-    } else if (!s_perf_flags && t_perf_stats) {
-        lv_timer_pause(t_perf_stats);
-    }
+    /* The PSRAM column is always up, so its timer always runs. */
+    if (t_perf_stats) lv_timer_ready(t_perf_stats);
 
 #if LV_USE_SYSMON && LV_USE_PERF_MONITOR
     lv_sysmon_hide_performance(NULL);
@@ -1032,15 +1081,24 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     extern lv_style_t styleLoadingArc;
     lv_obj_add_style(status_loading_arc, &styleLoadingArc, LV_PART_INDICATOR);
 
-    // Performance stats: 3 vertical columns in right icon zone
-    // Each column is a label with 2 lines, narrow and tall
-    auto make_perf_col = [](lv_obj_t * parent) -> lv_obj_t * {
+    // Performance stats: two-line columns in the right icon zone, each as
+    // wide as its widest text, so a digit more or less does not shift the row.
+    auto make_perf_col = [](lv_obj_t * parent, const char * widest) -> lv_obj_t * {
         lv_obj_t * lbl = lv_label_create(parent);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+        const lv_font_t * font = &lv_font_montserrat_10;
+        lv_obj_set_style_text_font(lbl, font, 0);
         // Match status bar text color (styleStatusBar uses lv_color_bw_from_color)
         lv_obj_set_style_text_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
-        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_bg_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+        lv_obj_set_style_radius(lbl, 2, 0);
+        lv_obj_set_style_pad_hor(lbl, 1, 0);
         lv_obj_set_style_text_line_space(lbl, -2, 0);
+        lv_point_t sz;
+        lv_text_get_size(&sz, widest, font, 0, -2, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_obj_set_width(lbl, sz.x + 2);
+        /* A value wider than the template (100 %, five digits of overruns)
+         * loses its last pixels rather than growing a third line. */
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
         lv_label_set_text(lbl, "");
         return lbl;
     };
@@ -1057,9 +1115,16 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
      * repainting the bar on every block. */
     t_voice_meter = lv_timer_create(voice_meter_timer_cb, 150, NULL);
 
-    s_perf_fps_col = make_perf_col(s_app_icon_zone_right);
-    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right);
-    s_perf_mem_col = make_perf_col(s_app_icon_zone_right);
+    /* Between the system icons and the arrow there are ~230 px: the five
+     * columns at these widths fill ~205 of them. */
+    lv_obj_set_style_pad_column(s_app_icon_zone_right, 1, 0);   // each column pads itself by 1
+    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right, "C0 99%\nC1 99%");
+    s_perf_dsp_col = make_perf_col(s_app_icon_zone_right, "DSP 99%\nXR 999");
+    s_perf_ram_col = make_perf_col(s_app_icon_zone_right, "RAM 999k\nMIN 999k");
+    s_perf_ps_col  = make_perf_col(s_app_icon_zone_right, "PS 999k\nBLK 999k");
+    s_perf_fps_col = make_perf_col(s_app_icon_zone_right, "FPS\n99");
+    s_perf_overruns = UINT32_MAX;
+    s_perf_overrun_at = 0;
 
     // Perf stats timer (500ms update)
     if (t_perf_stats) {

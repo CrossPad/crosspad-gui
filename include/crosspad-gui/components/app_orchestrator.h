@@ -95,6 +95,21 @@ public:
     void noteAppStarted(ILvglApp* app);
     void noteAppStopped(ILvglApp* app);
 
+    /// The way back: the registered apps opened since the last one opened from
+    /// home, oldest first. Every start of a registered app goes on top, and a
+    /// start of one already in it drops what was opened after it -- so an app
+    /// handing the screen back (the Recorder to Arrange) is a step back, not a
+    /// step forward. Home (the launcher, mode_overlay_go_home(), a rebuilt
+    /// main screen) starts it again.
+    void clearHistory() { history_.clear(); }
+
+    /// One step back from @p current, which owns the screen: it leaves the
+    /// history and the app under it is returned, or nullptr when the next step
+    /// back is home (or @p current is not the history's top -- a hand-built
+    /// overlay -- and the history is left alone). powerBack() opens what this
+    /// returns; a screen with its own way out (the kit browser) does the same.
+    ILvglApp* historyBack(ILvglApp* current);
+
     /// Told every time an app starts or stops, from inside start() or
     /// destroyApp() -- so it must not start or destroy apps itself; defer.
     /// The MODE map uses it to come up as home when nothing is left on screen.
@@ -116,6 +131,8 @@ private:
 
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
+    std::vector<ILvglApp*> history_;               ///< see clearHistory()
+    bool isRegistered(const ILvglApp* app) const;
     void (*onForegroundChanged_)() = nullptr;
     void (*onBeforeLaunch_)() = nullptr;
 
