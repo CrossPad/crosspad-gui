@@ -36,9 +36,12 @@ struct SwipeConfig {
      * this band below the top edge. Everywhere else a downward drag is a list
      * scroll, and the two are geometrically identical — the kit selector, the
      * pad editor and the pitched editor all scroll vertically. The band is the
-     * status bar (LV_STATUS_BAR_HEIGHT) plus room for a fingertip.
+     * top bar plus room for a fingertip: 18 px below the 22 px status bar it
+     * was drawn for, and as much below the 30 px transport bar that replaced
+     * it -- a band left at 40 kept 10, and fingers on the board started a
+     * pull at y = 53 and 67 and got nothing.
      */
-    int topBand = 40;
+    int topBand = 48;
     /**
      * Where on the pointer's plane a swipe may start, and the edge topBand
      * counts from. The whole plane on the board, whose panel is the screen;
