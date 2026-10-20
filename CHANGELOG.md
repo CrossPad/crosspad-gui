@@ -6,6 +6,38 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.2.0 — 2026-10-20
+
+From the UX 2000 line (Steve's 1.29.0 there), on 2.x's widgets.
+
+- The way back: `AppOrchestrator` keeps the registered apps opened since the
+  last one opened from home, at most 8 (`historyBack()`, `clearHistory()`);
+  a start of one already in it drops what was opened after it. A power
+  click on an app that declines it opens the app it was opened from, and
+  goes home only when there is none. Launcher rows, a pick on the home map,
+  `mode_overlay_go_home()` and a rebuilt main screen start it afresh.
+- `PerfStats` carries headroom in kB -- internal RAM free and its low-water
+  mark, PSRAM free and its largest block -- and the audio render's load
+  (`dsp_pct`) and overruns. The status bar shows them in two-line columns,
+  inverted near a limit, and PSRAM free / largest block always.
+- The launcher list re-reads the kit's name every 500 ms: a load made under
+  an app changes it.
+- `LV_STATUS_BAR_HEIGHT` is 30, the transport bar's height: at 22 the app
+  container moved on every swap of the two bars.
+- Paired with crosspad-core 2.2.0.
+
+### Not taken from the UX 2000 line
+
+- The 40 px transport bar of seven tiles (BPM, position, MODE, REC/DUB,
+  PLAY/STOP in one key with a hold to stop back to 1.1, the metronome
+  flashing on the beat, voices and battery), and the MODE list (one row per
+  pad, home, ACTIVE/ON tags). 2.x keeps its 30 px transport bar, which
+  swipes to the status bar as the row's second page, and its MODE map: one
+  of the three home screens (grid, list, pad map; Settings -> Display), with
+  More on pad 8. The two designs replace the same widgets, and 2.x's carry
+  the swipe, the home styles and their tests; the list and the tile bar are
+  to be redone on top of them if they are still wanted.
+
 ## 2.1.0 — 2026-10-19
 
 - `VirtualPadGrid::setLedSource()`: the grid can show what the LED strip
