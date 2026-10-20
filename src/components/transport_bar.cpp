@@ -471,6 +471,25 @@ bool is_ours(const lv_obj_t * obj)
     return obj == T.bat;
 }
 
+/// The screen's own last control the encoder can land on, as LVGL's
+/// navigation judges it: not disabled, nothing above it hidden.
+lv_obj_t * last_not_ours(lv_group_t * g)
+{
+    lv_obj_t * last = nullptr;
+    const uint32_t n = lv_group_get_obj_count(g);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t * o = lv_group_get_obj_by_index(g, i);
+        if (!o || is_ours(o) || o == statusbar_get_arrow()) continue;
+        if (lv_obj_get_state(o) & LV_STATE_DISABLED) continue;
+        bool hidden = false;
+        for (lv_obj_t * p = o; p && !hidden; p = lv_obj_get_parent(p)) {
+            hidden = lv_obj_has_flag(p, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (!hidden) last = o;
+    }
+    return last;
+}
+
 lv_group_t * nav_group()
 {
     lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
@@ -880,13 +899,15 @@ bool transportbar_toggle_focus()
          * with a screen in between, so it is checked against this group
          * rather than trusted. A value being turned lets go first. */
         lv_group_set_editing(g, false);
-        if (s_focus_return && lv_obj_get_group(s_focus_return) == g) {
-            lv_group_focus_obj(s_focus_return);
-        } else {
-            lv_group_focus_next(g);   // anything that is not the transport
-        }
+        /* With no jump to go back to -- the encoder was turned past the
+         * screen's last control onto the keys -- that control: the keys sit
+         * at the group's end, so "next" from one of them was the next key,
+         * one per click. */
+        lv_obj_t * back = (s_focus_return && lv_obj_get_group(s_focus_return) == g)
+                              ? s_focus_return : last_not_ours(g);
+        if (back) lv_group_focus_obj(back);
         s_focus_return = nullptr;
-        return true;
+        return back != nullptr;
     }
 
     /* Jump to the key the state makes obvious, so one press does the expected

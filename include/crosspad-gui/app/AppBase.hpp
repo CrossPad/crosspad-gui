@@ -10,6 +10,7 @@
 #include "crosspad-gui/platform/IGuiPlatform.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad/pad/PadManager.hpp"
+#include "crosspad/transport/Transport.hpp"
 #include <memory>
 
 namespace crosspad_gui {
@@ -127,6 +128,10 @@ public:
         // Same ownership model as pushPadLogic()/popPadLogic() below.
         lv_indev_t* enc = getGuiPlatform().getNavigationEncoder();
         priorEncoderGroup_ = enc ? lv_indev_get_group(enc) : nullptr;
+
+        // A transport an app left stopped goes home first; an app with one of
+        // its own claims it in its create or show, after this.
+        crosspad::transportGoHome();
 
         app = create_(parent, static_cast<Derived*>(this));
         if (!app) {
@@ -252,6 +257,9 @@ public:
         if (padLogicName_ && padLogicName_[0] != '\0') {
             crosspad::getPadManager().popPadLogic();
         }
+
+        // Back to the home screen's transport, unless this app's still plays.
+        crosspad::transportGoHome();
 
         if (destroy_) {
             destroy_(app_to_destroy);

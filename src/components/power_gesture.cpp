@@ -184,9 +184,9 @@ BackResult powerBack()
     }
 
     /* 4b. The encoder on the top bar's keys: back to the screen it left,
-     *     rather than out of the app behind it -- one step back, not two. */
-    if (transportbar_has_focus()) {
-        transportbar_toggle_focus();
+     *     rather than out of the app behind it -- one step back, not two.
+     *     A focus the bar cannot hand back is no step: the app's turn. */
+    if (transportbar_has_focus() && transportbar_toggle_focus()) {
         return BackResult::Transport;
     }
 

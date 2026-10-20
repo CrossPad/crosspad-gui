@@ -3,6 +3,7 @@
 
 #ifdef USE_LVGL
 #include "lvgl.h"
+#include "crosspad/led/RgbColor.hpp"
 #include <cstdint>
 
 namespace crosspad_gui {
@@ -12,7 +13,9 @@ namespace crosspad_gui {
  *
  * Creates 16 clickable pads that route press/release through PadManager.
  * Each pad has a "PAD N" label below it, numbered from bottom-left.
- * LED colours are polled externally via updateLeds() using PadManager::getPadColor().
+ * LED colours are polled externally via updateLeds(): by default each pad's
+ * resting colour (PadManager::getPadColor()), or whatever setLedSource() names
+ * -- a platform that keeps the strip's pixels shows what the LEDs show.
  *
  * Portable across platforms (PC emulator, ESP32-S3 touchscreen, etc.).
  */
@@ -35,8 +38,14 @@ public:
 
     void updateLeds();
 
+    /// Where updateLeds() reads pad @p idx's colour; nullptr restores the
+    /// resting colours.
+    using LedSource = crosspad::RgbColor (*)(uint16_t idx);
+    void setLedSource(LedSource source) { ledSource_ = source; }
+
 private:
     lv_obj_t* pads_[16] = {};
+    LedSource ledSource_ = nullptr;
 
     static void onPressed(lv_event_t* e);
     static void onReleased(lv_event_t* e);

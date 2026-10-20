@@ -6,6 +6,13 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.1.0 — 2026-10-19
+
+- `VirtualPadGrid::setLedSource()`: the grid can show what the LED strip
+  shows (pressed, playing, a dimmed Loop pad) instead of only each pad's
+  resting colour. Default unchanged.
+- Paired with crosspad-core 2.1.0.
+
 ## 2.0.0 — 2026-10-18
 
 The open-source baseline: gui is LVGL plus crosspad-core, links on its own
