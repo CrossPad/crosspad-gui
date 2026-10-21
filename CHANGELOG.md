@@ -6,6 +6,26 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.4.0 — 2026-10-21
+
+The UX 2000 top bar (Steve's 1.29.0), redone on 2.x's row.
+
+- The transport bar is 40 px of seven tiles, 36 tall ("CrossPad UX2000
+  Touch.html", v2): BPM, the position under the state word (STOP, COUNT,
+  PLAY, REC, DUB), MODE, REC (an overdub onto what plays, DUB in the key),
+  PLAY/STOP in one key (held: stop and back to 1.1), the metronome flashing
+  on the beat (longer on the one), and VOICES with the battery. Encoder
+  order BPM, position, MODE, REC, PLAY, metronome, battery; the power
+  button's hold jumps to PLAY. `TRANSPORT_BAR_HEIGHT` 40: the app container
+  is 200 px under it.
+- Kept from 2.x: the row the bar shares with the status bar as its second
+  page (dragged sideways, or the VOICES + battery tile -- the last key in the
+  rotation -- and the status bar's arrow), the drawer pulled from the top
+  edge, a long press on MODE to the status bar, a tap on a key leaving the
+  encoder's focus where it was, back from the keys to the screen's last
+  control. MODE still opens 2.x's map.
+- Paired with crosspad-core 2.3.0.
+
 ## 2.3.0 — 2026-10-21
 
 The 1.x line's Hit window settings (1.29.0 there), on 2.x's split settings

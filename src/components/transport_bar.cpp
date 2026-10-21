@@ -4,7 +4,6 @@
 #include "crosspad-gui/components/transport_bar.h"
 
 #include "crosspad-gui/components/mode_overlay.h"
-#include "crosspad-gui/design/cp_design.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
@@ -22,68 +21,77 @@ namespace crosspad_gui {
 
 namespace {
 
-/* ── Geometry and palette, 1:1 with the V5 export ──────────────────────── */
+/* ── Geometry and palette, 1:1 with "CrossPad UX2000 Touch.html" (v2) ──── *
+ *   BPM 2..50 | POS 52..99 | MODE 101..139 | REC 141..179 | PLAY 181..219 |
+ *   METRO 221..259 | VOICES + BATTERY 261..318, every tile 36 tall at y 2. */
 
-constexpr int32_t TB_H   = TRANSPORT_BAR_HEIGHT;   // 30
-constexpr int32_t BTN_Y  = 3;
-constexpr int32_t BTN_H  = 24;
+constexpr int32_t TB_H   = TRANSPORT_BAR_HEIGHT;   // 40
+constexpr int32_t TILE_Y = 2;
+constexpr int32_t TILE_H = 36;
+constexpr int32_t TILE_R = 6;
 
 #define INK     lv_color_hex(0x06120c)
 #define C_MINT  lv_color_hex(0x00ff88)
 #define C_AMB   lv_color_hex(0xffc857)
 #define C_RED   lv_color_hex(0xff5c5c)
 
-/* The correction narrows the substitutions to two. F_DUB was montserrat 10
- * all along and this firmware builds it, so DUB, the BPM value and the
- * position are 1:1. F_VAL now dresses only the PLAY glyph, which has to be a
- * montserrat (the pixel faces are ASCII and carry no LV_SYMBOL_*) -- 14 is
- * what we build either side of the 12 it asks for, and the key is 44x24 now,
- * so the larger triangle fits and reads better. F_LBL dresses only the voice
- * counter; there is no montserrat 8 here, and the design's own pixel face is
- * exactly the 8 px slot it was drawn in. */
-#define F_LBL  CP_FONT_PIXEL
-#define F_VAL  (&lv_font_montserrat_14)
-#define F_DUB  (&lv_font_montserrat_10)
+#define F10 (&lv_font_montserrat_10)
+#define F14 (&lv_font_montserrat_14)
+#define F18 (&lv_font_montserrat_18)
 
-/* In the encoder's order: the five keys, the metronome, then the two values
- * it can turn. */
-enum Btn : uint8_t { B_MODE = 0, B_REC, B_DUB, B_PLAY, B_STOP, B_CLICK, B_BPM, B_POS, B_COUNT };
+constexpr lv_opa_t kWash    = 36;   // an idle tile: 14 % ink
+constexpr lv_opa_t kPressed = 72;   // a finger on it: 28 %
 
-/// The four the bar paints from, which is fewer than the transport's five:
-/// an overdub is a take like a record, and the bar says so in red.
+/* In the encoder's order, left to right; the VOICES + battery tile (T.bat)
+ * comes last, the way to the status icons. */
+enum Btn : uint8_t { B_BPM = 0, B_POS, B_MODE, B_REC, B_PLAY, B_METRO, B_COUNT };
+
+/// What the bar paints from: an overdub is a take like a record, red, with
+/// DUB in the REC key and the POS label.
 enum class BarState : uint8_t { Stop = 0, Pre, Play, Rec };
 
 constexpr uint32_t kRefreshMs = 120;
+/* The metronome's beat flash: watched at this rate, lit 80 ms, 140 on the one. */
+constexpr uint32_t kBeatPollMs  = 15;
+constexpr uint32_t kFlashMs     = 80;
+constexpr uint32_t kFlashDownMs = 140;
 
 struct {
     lv_obj_t * row = nullptr;         ///< the bar and the status bar side by side, a page each
     lv_obj_t * bar = nullptr;
     lv_obj_t * btn[B_COUNT] = {};
-    lv_obj_t * ico[B_COUNT] = {};
-    lv_obj_t * mode_sq[4] = {};
-    lv_obj_t * click_rod = nullptr;   ///< the metronome's pendulum; T.ico[B_CLICK] is its case
     lv_obj_t * bpm_v = nullptr;
+    lv_obj_t * pos_l = nullptr;       ///< the state word above the position
     lv_obj_t * pos_v = nullptr;
+    lv_obj_t * mode_sq[4] = {};
+    lv_obj_t * rec_dot = nullptr;
+    lv_obj_t * rec_dub = nullptr;
+    lv_obj_t * play_tri = nullptr;
+    lv_obj_t * play_sq = nullptr;
+    lv_obj_t * mt_case = nullptr;
+    lv_obj_t * mt_arm = nullptr;
+    lv_obj_t * mt_bob = nullptr;
     lv_obj_t * vox = nullptr;
     lv_obj_t * bat_fill = nullptr;
-    lv_obj_t * bat = nullptr;         ///< the battery's key: the encoder's way to the status icons
+    lv_obj_t * bat = nullptr;         ///< VOICES + battery: the encoder's way to the status icons
     lv_obj_t * loading = nullptr;
     lv_obj_t * status_bar = nullptr;
     BarState   st = BarState::Stop;
     bool       status_page = false;   ///< the status icons are the page on screen
     bool       en[B_COUNT] = {};
     bool       dub_on = false;
+    bool       click_on = false;
     bool       editing[B_COUNT] = {};   ///< BPM / POS: the encoder turns the value
 } T;
 
 void (*s_mode_handler)() = nullptr;
 lv_timer_t * s_timer = nullptr;
+lv_timer_t * s_beat_timer = nullptr;
 /* The keys live in whatever group the navigation encoder currently points at,
  * so the transport is one step past the end of every screen: turning off an
- * app's last field reaches MODE, and on through the values to its first one.
- * LVGL does the rest for free: its group navigation skips hidden objects and
- * objects in LV_STATE_DISABLED, so a hidden bar drops out of the rotation and
- * so does a key the claim holder cannot honour. The power button's hold is a
+ * app's last field reaches BPM, and on to the battery. LVGL's navigation
+ * skips hidden and LV_STATE_DISABLED objects, so a key the claim holder
+ * cannot honour drops out of the rotation. The power button's hold is a
  * shortcut to the keys, not the way in. */
 lv_group_t * s_joined = nullptr;
 /* Where focus was before the power-button shortcut jumped to the transport. */
@@ -98,8 +106,13 @@ float    s_held_bpm = 0.0f;
 uint32_t s_held_since = 0;
 constexpr uint32_t kHeldBpmMs = 3000;
 
-/* What the last paint was for: the row repaints ten objects, and doing that
- * every 120 ms would also restyle the key the encoder has focused. */
+/* The metronome flash: the beat last seen and when the flash ends (0 = off). */
+uint8_t  s_last_beat = 0;
+uint32_t s_flash_until = 0;
+bool     s_flash_lit = false;
+
+/* What the last paint was for: the row restyles a dozen objects, and doing
+ * that every 120 ms would also restyle the key the encoder has focused. */
 BarState s_painted_st = BarState::Stop;
 uint8_t  s_painted_caps = 0;
 bool     s_painted_dub = false;
@@ -115,6 +128,8 @@ lv_color_t bar_color()
                                  : C_MINT;
 }
 
+bool playing() { return T.st == BarState::Play || T.st == BarState::Rec; }
+
 lv_obj_t * box(lv_obj_t * p, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r)
 {
     lv_obj_t * o = lv_obj_create(p);
@@ -122,33 +137,84 @@ lv_obj_t * box(lv_obj_t * p, int32_t x, int32_t y, int32_t w, int32_t h, int32_t
     lv_obj_set_pos(o, x, y);
     lv_obj_set_size(o, w, h);
     lv_obj_set_style_radius(o, r, 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
     return o;
 }
 
-lv_obj_t * label(lv_obj_t * p, const lv_font_t * f, int32_t x, int32_t y, const char * t)
+void fill(lv_obj_t * o, lv_color_t c, lv_opa_t opa)
+{
+    lv_obj_set_style_bg_color(o, c, 0);
+    lv_obj_set_style_bg_opa(o, opa, 0);
+}
+
+lv_obj_t * label(lv_obj_t * p, const lv_font_t * f, const char * t)
 {
     lv_obj_t * l = lv_label_create(p);
     lv_obj_set_style_text_font(l, f, 0);
     lv_obj_set_style_text_color(l, INK, 0);
     lv_label_set_text(l, t);
-    lv_obj_set_pos(l, x, y);
+    lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
     return l;
+}
+
+/// A drawn glyph: no font here has a metronome or the design's triangle.
+lv_obj_t * line(lv_obj_t * p, const lv_point_precise_t * pts, uint32_t n, int32_t w)
+{
+    lv_obj_t * l = lv_line_create(p);
+    lv_line_set_points(l, pts, n);
+    lv_obj_set_style_line_width(l, w, 0);
+    lv_obj_set_style_line_rounded(l, true, 0);
+    lv_obj_set_style_line_color(l, INK, 0);
+    lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
+    return l;
+}
+
+/// A two-line readout: a 10 px caption over a value, centred in the tile.
+lv_obj_t * stack(lv_obj_t * tile, const char * caption, lv_obj_t ** caption_out)
+{
+    lv_obj_t * c = box(tile, 0, 0, LV_PCT(100), LV_PCT(100), 0);
+    lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t * a = label(c, F10, caption);
+    lv_obj_t * v = label(c, F18, "");
+    if (caption_out) *caption_out = a;
+    return v;
+}
+
+/// @p text in 18 px where it fits the tile, else 14: "123.4" and a three-digit
+/// tempo with its tenth are wider than 18 px allows in 47-48.
+void set_fitted(lv_obj_t * l, const char * text, int32_t room)
+{
+    lv_point_t sz;
+    lv_text_get_size(&sz, text, F18, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const lv_font_t * f = sz.x <= room ? F18 : F14;
+    if (lv_obj_get_style_text_font(l, 0) != f) lv_obj_set_style_text_font(l, f, 0);
+    if (strcmp(lv_label_get_text(l), text) != 0) lv_label_set_text(l, text);
 }
 
 void press(uint8_t b)
 {
     if (b >= B_COUNT || !T.en[b]) return;
     switch (b) {
-        case B_MODE: if (s_mode_handler) s_mode_handler(); return;  // the overlay repaints us
-        case B_REC:  crosspad::transportRecord();  break;
-        case B_DUB:  crosspad::transportOverdub(); break;
-        case B_PLAY: crosspad::transportPlay();    break;
-        case B_STOP: crosspad::transportStop();    break;
-        case B_CLICK: crosspad::transportSetClick(!crosspad::transportClick()); break;
-        default:     return;   // BPM and POS are turned, see value_cb
+        case B_MODE:
+            if (s_mode_handler) s_mode_handler();
+            return;   // the overlay repaints us
+        case B_REC:
+            /* One key for a take: REC while stopped, DUB onto what plays, and
+             * the same key again ends the overdub. */
+            if (T.dub_on || T.st == BarState::Play) crosspad::transportOverdub();
+            else                                     crosspad::transportRecord();
+            break;
+        case B_PLAY:
+            if (playing() || T.st == BarState::Pre) crosspad::transportStop();
+            else                                    crosspad::transportPlay();
+            break;
+        case B_METRO:
+            crosspad::transportSetClick(!crosspad::transportClick());
+            break;
+        default:
+            return;   // BPM and POS are turned, see value_cb
     }
     /* Paint from the target's own answer, not from what we just asked for: a
      * sequencer waiting for a sync point reports Waiting, not Playing. */
@@ -162,24 +228,36 @@ void ev_cb(lv_event_t * e)
     if (b >= B_COUNT || !T.en[b]) return;
 
     if (code == LV_EVENT_LONG_PRESSED) {
-        /* A long press on MODE is this design's way to the status bar: the
-         * row is full to the last pixel, so there is no arrow to put there,
-         * and wifi, Bluetooth, SD and the loader have no other home. */
+        /* MODE held: the status bar. PLAY held: stop and back to 1.1 -- a
+         * stop while stopped is the rewind. */
         if (b == B_MODE) transportbar_show(false);
+        else if (b == B_PLAY) {
+            crosspad::transportStop();
+            crosspad::transportStop();
+            transportbar_refresh();
+        }
         return;
     }
-    if (code == LV_EVENT_CLICKED) press(b);
+    if (code == LV_EVENT_SHORT_CLICKED) press(b);
 }
 
-lv_obj_t * button(uint8_t id, int32_t x, int32_t w)
+/// A key tile: an ink wash, darker under a finger, a ring under the encoder.
+lv_obj_t * tile(uint8_t id, int32_t x, int32_t w)
 {
-    lv_obj_t * o = box(T.bar, x, BTN_Y, w, BTN_H, 4);
+    lv_obj_t * o = box(T.bar, x, TILE_Y, w, TILE_H, TILE_R);
+    fill(o, INK, kWash);
+    lv_obj_set_style_bg_opa(o, kPressed, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_color(o, INK, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(o, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(o, 0, LV_STATE_FOCUS_KEY);
     lv_obj_add_flag(o, LV_OBJ_FLAG_CLICKABLE);
     /* A finger on a key must not take the encoder off the screen: the next
      * power click would then only hand the focus back (powerBack()'s
      * Transport step) instead of leaving the app. */
     lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-    lv_obj_add_event_cb(o, ev_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)id);
+    /* SHORT_CLICKED, not CLICKED: CLICKED also comes after a long press, and
+     * a held PLAY or MODE must not act twice. */
+    lv_obj_add_event_cb(o, ev_cb, LV_EVENT_SHORT_CLICKED, (void *)(uintptr_t)id);
     lv_obj_add_event_cb(o, ev_cb, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)id);
     T.btn[id] = o;
     return o;
@@ -281,15 +359,15 @@ void value_cb(lv_event_t * e)
     paint_readouts();
 }
 
-lv_obj_t * value_key(uint8_t id, int32_t x, int32_t w)
+lv_obj_t * value_tile(uint8_t id, int32_t x, int32_t w)
 {
     lv_obj_t * o = lv_CreateEditableButton(T.bar);
     lv_obj_remove_style_all(o);
-    lv_obj_set_pos(o, x, BTN_Y);
-    lv_obj_set_size(o, w, BTN_H);
-    lv_obj_set_style_radius(o, 4, 0);
-    lv_obj_set_style_bg_color(o, INK, 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+    lv_obj_set_pos(o, x, TILE_Y);
+    lv_obj_set_size(o, w, TILE_H);
+    lv_obj_set_style_radius(o, TILE_R, 0);
+    fill(o, INK, kWash);
+    lv_obj_set_style_bg_opa(o, kPressed, LV_STATE_PRESSED);
     lv_obj_set_style_outline_color(o, INK, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_width(o, 2, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_pad(o, 0, LV_STATE_FOCUS_KEY);
@@ -303,16 +381,21 @@ lv_obj_t * value_key(uint8_t id, int32_t x, int32_t w)
     return o;
 }
 
-/// A value being turned is an ink pill with the number in the bar colour,
-/// like a key that is on; otherwise it has no fill of its own.
+/// A value being turned is an ink tile with its text in the bar colour, like
+/// a key that is on; otherwise the wash of an idle key.
 void paint_value(uint8_t id)
 {
     lv_obj_t * o = T.btn[id];
-    lv_obj_t * l = id == B_BPM ? T.bpm_v : T.pos_v;
-    if (!o || !l) return;
+    if (!o) return;
     const bool ed = T.editing[id];
-    lv_obj_set_style_bg_opa(o, ed ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-    lv_obj_set_style_text_color(l, ed ? bar_color() : INK, 0);
+    const lv_color_t fg = ed ? bar_color() : INK;
+    lv_obj_set_style_bg_opa(o, ed ? (lv_opa_t)LV_OPA_COVER : kWash, 0);
+    if (id == B_BPM) {
+        lv_obj_set_style_text_color(T.bpm_v, fg, 0);
+    } else {
+        lv_obj_set_style_text_color(T.pos_v, fg, 0);
+        lv_obj_set_style_text_color(T.pos_l, fg, 0);
+    }
     /* Disabled only for the encoder's navigation: the readout stays legible.
      * BPM alone dims, with no tempo to show. */
     if (T.en[id]) lv_obj_remove_state(o, LV_STATE_DISABLED);
@@ -320,76 +403,79 @@ void paint_value(uint8_t id)
     if (id == B_BPM) lv_obj_set_style_opa(o, T.en[id] ? LV_OPA_COVER : LV_OPA_40, 0);
 }
 
-/// Active = ink tile with the glyph in the bar colour; inactive = a 36/255
-/// wash with an ink glyph. Disabled dims the whole key and leaves it in place.
-void paint_btn(uint8_t id, bool active)
+/// Active = an ink tile with the glyph in the bar colour; idle = the wash with
+/// an ink glyph. Disabled dims the key and takes it out of the rotation.
+lv_color_t paint_key(uint8_t id, bool active)
 {
     lv_obj_t * b = T.btn[id];
-    if (!b) return;
-    const lv_color_t fg = active ? bar_color() : INK;
-    lv_obj_set_style_bg_color(b, active ? INK : lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(b, active ? LV_OPA_COVER : 36, 0);
+    lv_obj_set_style_bg_opa(b, active ? (lv_opa_t)LV_OPA_COVER : kWash, 0);
     lv_obj_set_style_opa(b, T.en[id] ? LV_OPA_COVER : LV_OPA_40, 0);
-    /* The export dims an unavailable key and leaves it at that, which was
-     * enough when a key was only ever touched. In the encoder's rotation the
-     * dim is invisible to navigation -- LVGL skips LV_STATE_DISABLED, not
-     * low opacity -- so focus stopped dead on STOP while the transport was
-     * stopped. Measured on the board: a rotate off PLAY landed on STOP. The
-     * state carries the navigation, the opacity carries the look, and the
-     * keys were built with lv_obj_remove_style_all(), so no theme style
-     * rides in on the state. */
+    /* LVGL's navigation skips LV_STATE_DISABLED, not low opacity: the state
+     * carries the navigation, the opacity the look. */
     if (T.en[id]) lv_obj_remove_state(b, LV_STATE_DISABLED);
     else          lv_obj_add_state(b, LV_STATE_DISABLED);
-    /* Encoder focus is a ring in the bar colour: the fill already carries
-     * on/off, so focus cannot borrow it. */
-    lv_obj_set_style_outline_color(b, INK, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_pad(b, 0, LV_STATE_FOCUS_KEY);
-
-    if (id == B_MODE) {
-        for (int i = 0; i < 4; i++) {
-            if (T.mode_sq[i]) lv_obj_set_style_bg_color(T.mode_sq[i], fg, 0);
-        }
-        return;
-    }
-    if (!T.ico[id]) return;
-    if (id == B_REC) {
-        /* A red dot with an ink ring; on a red bar the dot itself goes ink. */
-        lv_obj_set_style_border_color(T.ico[id], fg, 0);
-        lv_obj_set_style_bg_color(T.ico[id], (T.st == BarState::Rec && !active) ? INK : C_RED, 0);
-    }
-    else if (id == B_DUB || id == B_PLAY) lv_obj_set_style_text_color(T.ico[id], fg, 0);
-    else if (id == B_CLICK) {
-        lv_obj_set_style_line_color(T.ico[id], fg, 0);
-        if (T.click_rod) lv_obj_set_style_line_color(T.click_rod, fg, 0);
-    }
-    else                                  lv_obj_set_style_bg_color(T.ico[id], fg, 0);
+    return active ? bar_color() : INK;
 }
 
-/// A drawn icon: no font here has a metronome.
-lv_obj_t * line(lv_obj_t * p, const lv_point_precise_t * pts, uint32_t n, int32_t w)
+void paint_metro()
 {
-    lv_obj_t * l = lv_line_create(p);
-    lv_line_set_points(l, pts, n);
-    lv_obj_set_style_line_width(l, w, 0);
-    lv_obj_set_style_line_rounded(l, true, 0);
-    lv_obj_set_style_line_color(l, INK, 0);
-    lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
-    return l;
+    /* On: ink tile, glyph in the bar colour. A beat flashes the whole tile in
+     * the bar colour, glyph ink. */
+    const bool on = T.click_on;
+    const bool lit = on && s_flash_lit;
+    lv_color_t fg = paint_key(B_METRO, on);
+    if (lit) {
+        fill(T.btn[B_METRO], bar_color(), LV_OPA_COVER);
+        fg = INK;
+    } else {
+        lv_obj_set_style_bg_color(T.btn[B_METRO], INK, 0);
+    }
+    lv_obj_set_style_line_color(T.mt_case, fg, 0);
+    lv_obj_set_style_line_color(T.mt_arm, fg, 0);
+    lv_obj_set_style_bg_color(T.mt_bob, fg, 0);
 }
 
 void repaint()
 {
-    lv_obj_set_style_bg_color(T.bar, bar_color(), 0);
-    paint_btn(B_MODE, mode_overlay_is_open());
-    paint_btn(B_REC,  (T.st == BarState::Rec && !T.dub_on) || T.st == BarState::Pre);
-    paint_btn(B_DUB,  T.dub_on);
-    paint_btn(B_PLAY, T.st == BarState::Play || T.st == BarState::Rec);
-    paint_btn(B_STOP, false);
-    paint_btn(B_CLICK, crosspad::transportClick());
-    /* BPM and the position are not painted like keys: the correction leaves
-     * their zone transparent and says the state in the bar colour, so there
-     * is no state word to crowd the counter and no fill to wash. */
+    const lv_color_t bc = bar_color();
+    lv_obj_set_style_bg_color(T.bar, bc, 0);
+
+    /* MODE: four outline squares, in the bar colour while the map is up */
+    const lv_color_t mfg = paint_key(B_MODE, mode_overlay_is_open());
+    for (lv_obj_t * s : T.mode_sq) lv_obj_set_style_border_color(s, mfg, 0);
+
+    /* REC: the dot, or DUB while overdubbing */
+    const bool rec_on = (T.st == BarState::Rec && !T.dub_on) || T.st == BarState::Pre;
+    const lv_color_t rfg = paint_key(B_REC, rec_on || T.dub_on);
+    if (T.dub_on) {
+        lv_obj_add_flag(T.rec_dot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(T.rec_dub, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_text_color(T.rec_dub, rfg, 0);
+    } else {
+        lv_obj_remove_flag(T.rec_dot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(T.rec_dub, LV_OBJ_FLAG_HIDDEN);
+        fill(T.rec_dot, rec_on ? bc : C_RED, LV_OPA_COVER);
+    }
+
+    /* PLAY / STOP in one key: the triangle stopped, a square while it runs */
+    const bool run = playing() || T.st == BarState::Pre;
+    const lv_color_t pfg = paint_key(B_PLAY, run);
+    if (run) {
+        lv_obj_add_flag(T.play_tri, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(T.play_sq, LV_OBJ_FLAG_HIDDEN);
+        fill(T.play_sq, pfg, LV_OPA_COVER);
+    } else {
+        lv_obj_remove_flag(T.play_tri, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(T.play_sq, LV_OBJ_FLAG_HIDDEN);
+        uint32_t n = lv_obj_get_child_count(T.play_tri);
+        for (uint32_t i = 0; i < n; i++) fill(lv_obj_get_child(T.play_tri, i), pfg, LV_OPA_COVER);
+    }
+
+    paint_metro();
+
+    static const char * const kWord[] = {"STOP", "COUNT", "PLAY", "REC"};
+    lv_label_set_text(T.pos_l, T.dub_on ? "DUB" : kWord[(uint8_t)T.st]);
+
     paint_value(B_BPM);
     paint_value(B_POS);
 }
@@ -406,46 +492,36 @@ void paint_readouts()
         else bpm = s_held_bpm;
     }
     if (bpm > 0.0f) {
-        /* The design writes "92.0", and 24 px of montserrat 10 holds exactly
-         * that. Measured on the board, a three-digit tempo with its tenth is
-         * 26 px and spills over the hairline -- and 120 is the default, so it
-         * would be the first thing seen. The tenth is kept wherever it fits
-         * and dropped where it does not, rather than clipping a digit or
-         * moving the design's hairline. */
         const int t = (int)(bpm * 10.0f + 0.5f);
-        if (bpm < 100.0f) snprintf(buf, sizeof(buf), "%d.%d", t / 10, t % 10);
-        else              snprintf(buf, sizeof(buf), "%d", (t + 5) / 10);
+        snprintf(buf, sizeof(buf), "%d.%d", t / 10, t % 10);
     } else {
         /* No tempo of its own: a dash, not a stale number from the last
          * thing that had one. */
         snprintf(buf, sizeof(buf), "--");
     }
-    if (strcmp(lv_label_get_text(T.bpm_v), buf) != 0) lv_label_set_text(T.bpm_v, buf);
+    set_fitted(T.bpm_v, buf, lv_obj_get_width(T.btn[B_BPM]) - 4);
 
-    /* bar.beat, the way the correction writes it -- no zero padding and no
-     * sub-beat field. TransportPos still carries cent because position()
-     * falls out of one float and Arrange counts finer than a beat. */
     const crosspad::TransportPos p = crosspad::transportPosition();
     snprintf(buf, sizeof(buf), "%u.%u", (unsigned)p.bar, (unsigned)p.beat);
-    if (strcmp(lv_label_get_text(T.pos_v), buf) != 0) lv_label_set_text(T.pos_v, buf);
+    set_fitted(T.pos_v, buf, lv_obj_get_width(T.btn[B_POS]) - 4);
 
     /* Sounding / the kit's ceiling. Dim with nothing sounding, and inverted
-     * -- an ink pill, the number in the bar colour -- at the ceiling, because
+     * -- an ink chip, the number in the bar colour -- at the ceiling, because
      * the next hit steals a voice and the player should know before it is
      * heard. "--" with no kit in an engine. */
     const VoiceMeter vm = getGuiPlatform().getVoiceMeter();
     const bool full = vm.limit != 0 && vm.active >= vm.limit;
     if (vm.limit == 0) snprintf(buf, sizeof(buf), "--");
-    else               snprintf(buf, sizeof(buf), "%u/%u",
-                                (unsigned)vm.active, (unsigned)vm.limit);
+    else               snprintf(buf, sizeof(buf), "%u/%u", (unsigned)vm.active, (unsigned)vm.limit);
     if (strcmp(lv_label_get_text(T.vox), buf) != 0) lv_label_set_text(T.vox, buf);
     lv_obj_set_style_text_opa(T.vox, (vm.limit != 0 && vm.active == 0) ? LV_OPA_50 : LV_OPA_COVER, 0);
     lv_obj_set_style_bg_opa(T.vox, full ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_obj_set_style_text_color(T.vox, full ? bar_color() : INK, 0);
 
+    /* The battery: up to 9 px of fill inside a 13 x 8 outline, red when low. */
     uint8_t pct = platformStatus().batteryPct;
     if (pct > 100) pct = 100;
-    int32_t w = (14 * (int32_t)pct) / 100;
+    int32_t w = (9 * (int32_t)pct) / 100;
     if (w < 1) w = 1;
     if (lv_obj_get_width(T.bat_fill) != w) lv_obj_set_width(T.bat_fill, w);
     lv_obj_set_style_bg_color(T.bat_fill, pct < 15 ? C_RED : INK, 0);
@@ -515,7 +591,7 @@ void join_current_group()
      * lv_group_remove_all_objs() on its own group drops our keys without the
      * pointer ever changing. Arrange does exactly that every time it refills
      * the track list. So the keys themselves are the test. */
-    lv_obj_t * probe = T.btn[B_MODE];
+    lv_obj_t * probe = T.btn[B_BPM];
     if (g == s_joined && probe && lv_obj_get_group(probe) == g) return;
     /* Wait until the screen has put something of its own in: joining an
      * empty group makes the first key the only member, LVGL focuses it, and
@@ -582,8 +658,31 @@ void refresh_timer_cb(lv_timer_t *)
     paint_readouts();
 }
 
-/// A tap on the battery, or the encoder's click on it: the system status
-/// icons in place of the bar.
+/// The metronome's flash: a beat seen on the transport's position lights the
+/// key, the one longer; only while the click is on and something plays.
+void beat_timer_cb(lv_timer_t *)
+{
+    if (!T.bar || T.status_page) return;
+    bool lit = false;
+    if (T.click_on && playing()) {
+        const crosspad::TransportPos p = crosspad::transportPosition();
+        if (p.beat != s_last_beat) {
+            s_last_beat = p.beat;
+            s_flash_until = lv_tick_get() + (p.beat == 1 ? kFlashDownMs : kFlashMs);
+        }
+        lit = s_flash_until && (int32_t)(s_flash_until - lv_tick_get()) > 0;
+    } else {
+        s_last_beat = 0;
+        s_flash_until = 0;
+    }
+    if (lit != s_flash_lit) {
+        s_flash_lit = lit;
+        paint_metro();
+    }
+}
+
+/// A tap on the voices and the battery, or the encoder's click on them: the
+/// system status icons in place of the bar.
 void battery_cb(lv_event_t *)
 {
     transportbar_show(false);
@@ -618,7 +717,9 @@ void bar_delete_cb(lv_event_t *)
     s_focus_return = nullptr;
     s_held_since = 0;
     if (s_timer) { lv_timer_delete(s_timer); s_timer = nullptr; }
+    if (s_beat_timer) { lv_timer_delete(s_beat_timer); s_beat_timer = nullptr; }
     T = {};
+    s_flash_lit = false;
     s_painted_valid = false;
 }
 
@@ -654,114 +755,104 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_add_event_cb(T.row, row_scroll_cb, LV_EVENT_SCROLL_END, nullptr);
 
     T.bar = box(T.row, 0, 0, 320, TB_H, 0);
+    lv_obj_set_style_bg_opa(T.bar, LV_OPA_COVER, 0);
     lv_obj_add_event_cb(T.bar, bar_delete_cb, LV_EVENT_DELETE, nullptr);
 
-    /* The five keys are 38 wide, not the export's 44: the metronome needed
-     * the room and the row had none (BPM, the position and the voices are
-     * already as narrow as their text). 42 apart, the glyphs centred in each. */
-    constexpr int32_t KW = 38, KP = 42;
+    /* BPM */
+    T.bpm_v = stack(value_tile(B_BPM, 2, 48), "BPM", nullptr);
 
-    /* MODE: 2x2 squares */
-    lv_obj_t * m = button(B_MODE, 3, KW);
-    static const int32_t sq[4][2] = { {11, 5}, {11, 13}, {19, 5}, {19, 13} };
-    for (int i = 0; i < 4; i++) T.mode_sq[i] = box(m, sq[i][0], sq[i][1], 6, 6, 1);
+    /* POS: the state word over bar.beat */
+    T.pos_v = stack(value_tile(B_POS, 52, 47), "STOP", &T.pos_l);
 
-    /* REC: a ring that fills red */
-    lv_obj_t * r = button(B_REC, 3 + KP, KW);
-    T.ico[B_REC] = box(r, 13, 6, 12, 12, LV_RADIUS_CIRCLE);
-    lv_obj_set_style_bg_color(T.ico[B_REC], C_RED, 0);
-    lv_obj_set_style_border_width(T.ico[B_REC], 2, 0);
+    /* MODE: 2x2 outline squares */
+    lv_obj_t * m = tile(B_MODE, 101, 38);
+    lv_obj_t * grid = box(m, 0, 0, 21, 21, 0);
+    lv_obj_center(grid);
+    for (int i = 0; i < 4; i++) {
+        lv_obj_t * s = box(grid, (i % 2) * 12, (i / 2) * 12, 9, 9, 2);
+        lv_obj_set_style_border_width(s, 2, 0);
+        lv_obj_set_style_border_color(s, INK, 0);
+        T.mode_sq[i] = s;
+    }
 
-    /* DUB */
-    lv_obj_t * d = button(B_DUB, 3 + 2 * KP, KW);
-    T.ico[B_DUB] = label(d, F_DUB, 0, 0, "DUB");
-    lv_obj_center(T.ico[B_DUB]);
+    /* REC: a ringed dot, or DUB */
+    lv_obj_t * r = tile(B_REC, 141, 38);
+    T.rec_dot = box(r, 0, 0, 16, 16, LV_RADIUS_CIRCLE);
+    lv_obj_center(T.rec_dot);
+    lv_obj_set_style_border_width(T.rec_dot, 2, 0);
+    lv_obj_set_style_border_color(T.rec_dot, INK, 0);
+    T.rec_dub = label(r, F14, "DUB");
+    lv_obj_center(T.rec_dub);
 
-    /* PLAY */
-    lv_obj_t * p = button(B_PLAY, 3 + 3 * KP, KW);
-    T.ico[B_PLAY] = label(p, F_VAL, 0, 0, LV_SYMBOL_PLAY);
-    lv_obj_center(T.ico[B_PLAY]);
+    /* PLAY / STOP: a 14 x 16 triangle of 1 px columns, or a 13 px square */
+    lv_obj_t * p = tile(B_PLAY, 181, 38);
+    T.play_tri = box(p, 0, 0, 14, 16, 0);
+    lv_obj_align(T.play_tri, LV_ALIGN_CENTER, 2, 0);
+    for (int x = 0; x < 14; x++) {
+        int32_t h = 16 - (x * 16) / 14;
+        if (h < 2) h = 2;
+        box(T.play_tri, x, (16 - h) / 2, 1, h, 0);
+    }
+    T.play_sq = box(p, 0, 0, 13, 13, 2);
+    lv_obj_center(T.play_sq);
 
-    /* STOP: square */
-    lv_obj_t * st = button(B_STOP, 3 + 4 * KP, KW);
-    T.ico[B_STOP] = box(st, 13, 6, 12, 12, 1);
+    /* METRO: a trapezoid case, its swinging arm and the bob on it. The points
+     * are static: lv_line keeps the pointer, not a copy. */
+    lv_obj_t * mt = tile(B_METRO, 221, 38);
+    lv_obj_t * mg = box(mt, 0, 0, 18, 20, 0);
+    lv_obj_center(mg);
+    static const lv_point_precise_t kCase[] = { {6, 1}, {1, 19}, {17, 19}, {12, 1}, {6, 1} };
+    static const lv_point_precise_t kArm[]  = { {9, 15}, {14, 4} };
+    T.mt_case = line(mg, kCase, 5, 2);
+    T.mt_arm  = line(mg, kArm, 2, 2);
+    T.mt_bob  = box(mg, 7, 13, 4, 4, LV_RADIUS_CIRCLE);
+    lv_obj_set_style_bg_opa(T.mt_bob, LV_OPA_COVER, 0);
 
-    /* CLICK: the metronome -- a case and its pendulum, lit while it clicks.
-     * The points are static: lv_line keeps the pointer, not a copy. */
-    lv_obj_t * ck = button(B_CLICK, 3 + 5 * KP, 26);
-    static const lv_point_precise_t kCase[] = { {6, 0}, {11, 15}, {1, 15}, {6, 0} };
-    static const lv_point_precise_t kRod[]  = { {6, 12}, {10, 2} };
-    T.ico[B_CLICK] = line(ck, kCase, 4, 2);
-    lv_obj_set_pos(T.ico[B_CLICK], 7, 4);
-    T.click_rod = line(ck, kRod, 2, 1);
-    lv_obj_set_pos(T.click_rod, 7, 4);
-
-    /* BPM: the value alone, no label above it any more */
-    lv_obj_t * bz = value_key(B_BPM, 242, 24);
-    T.bpm_v = label(bz, F_DUB, 2, 7, "--");
-
-    /* separator */
-    lv_obj_t * sep = box(T.bar, 268, 8, 1, 14, 0);
-    lv_obj_set_style_bg_color(sep, INK, 0);
-    lv_obj_set_style_bg_opa(sep, 90, 0);
-
-    /* Position, one line: the state is the bar colour now. y=11 rather than
-     * the design's 10 for the same reason the counter below diverges -- see
-     * there; at 6 px monospace a five-character count reaches back into this
-     * label's last column, and one pixel of separation costs nothing. */
-    /* Its key sits under the label rather than holding it: a key clips what
-     * it holds, and "123.4" is wider than the zone the design gives it. */
-    value_key(B_POS, 270, 22);
-    T.pos_v = label(T.bar, F_DUB, 273, 11, "1.1");
-
-    /* Voices above the battery. The design gives this 20 px centred, which
-     * holds four characters of a proportional montserrat 8. The pixel face is
-     * 6 px monospace, so "1/10" is 24 and wrapped onto a second line, and
-     * "16/16" is 30 -- a width no font we have fits in 20 legibly. Content
-     * width with the right edge flush to the battery's keeps the four-
-     * character case within a pixel of where it was drawn and never wraps. */
-    T.vox = label(T.bar, F_LBL, 294, 3, "--");
-    lv_obj_set_style_bg_color(T.vox, INK, 0);
-    lv_obj_set_style_radius(T.vox, 2, 0);
-    lv_obj_set_style_pad_hor(T.vox, 1, 0);
-    lv_obj_set_width(T.vox, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_align(T.vox, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(T.vox, LV_ALIGN_TOP_RIGHT, -5, 3);
-
-    /* battery: outline, nub, fill */
-    lv_obj_t * bat = box(T.bar, 295, 15, 18, 10, 2);
-    lv_obj_set_style_bg_opa(bat, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(bat, INK, 0);
-    lv_obj_set_style_border_width(bat, 1, 0);
-    lv_obj_set_style_bg_color(box(T.bar, 313, 18, 2, 4, 0), INK, 0);
-    T.bat_fill = box(T.bar, 297, 17, 12, 6, 0);
-    lv_obj_set_style_bg_color(T.bat_fill, INK, 0);
-
-    /* The battery and the counter above it are one tap target for the
-     * status icons: 9 x 16 px alone is under any finger. It is also the last
-     * key in the encoder's rotation, framed when focused (a border: an
-     * outline would fall outside the bar and be clipped). A tap must not
-     * take the encoder's focus off the screen with it. */
-    T.bat = box(T.bar, 290, 0, 30, TB_H, 4);
-    lv_obj_set_style_bg_opa(T.bat, LV_OPA_TRANSP, 0);
+    /* VOICES + battery, one tile: the caption over the count and a 15 x 8
+     * battery. A tap, or the encoder's click -- it is the last key in the
+     * rotation -- swaps in the status bar. A tap must not take the encoder's
+     * focus off the screen with it. */
+    T.bat = box(T.bar, 261, TILE_Y, 57, TILE_H, TILE_R);
+    fill(T.bat, INK, kWash);
+    lv_obj_set_style_bg_opa(T.bat, kPressed, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_color(T.bat, INK, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(T.bat, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(T.bat, 0, LV_STATE_FOCUS_KEY);
     lv_obj_add_flag(T.bat, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(T.bat, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-    lv_obj_set_style_border_color(T.bat, INK, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_border_width(T.bat, 2, LV_STATE_FOCUS_KEY);
     lv_obj_add_event_cb(T.bat, battery_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t * col = box(T.bat, 0, 0, LV_PCT(100), LV_PCT(100), 0);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    label(col, F10, "VOICES");
+    lv_obj_t * vrow = box(col, 0, 0, LV_SIZE_CONTENT, LV_SIZE_CONTENT, 0);
+    lv_obj_set_flex_flow(vrow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(vrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(vrow, 3, 0);
+    T.vox = label(vrow, F14, "--");
+    lv_obj_set_style_bg_color(T.vox, INK, 0);
+    lv_obj_set_style_radius(T.vox, 3, 0);
+    lv_obj_set_style_pad_hor(T.vox, 1, 0);
+    lv_obj_t * bw = box(vrow, 0, 0, 15, 8, 0);
+    lv_obj_t * bat = box(bw, 0, 0, 13, 8, 2);
+    lv_obj_set_style_border_width(bat, 1, 0);
+    lv_obj_set_style_border_color(bat, INK, 0);
+    T.bat_fill = box(bat, 2, 2, 9, 4, 1);
+    fill(T.bat_fill, INK, LV_OPA_COVER);
+    fill(box(bw, 13, 2, 2, 4, 1), INK, LV_OPA_COVER);
 
     /* What the status bar's loader shows, as 2 px along the bottom edge: a
      * kit loading is something the player waits for. */
     T.loading = box(T.bar, 0, TB_H - 2, 0, 2, 0);
-    lv_obj_set_style_bg_color(T.loading, INK, 0);
+    fill(T.loading, INK, LV_OPA_COVER);
     lv_obj_add_flag(T.loading, LV_OBJ_FLAG_HIDDEN);
     if (lv_subject_t * subj = statusbar_get_loading_subject()) {
         lv_subject_add_observer_obj(subj, [](lv_observer_t * o, lv_subject_t * sj) {
-            lv_obj_t * line = lv_observer_get_target_obj(o);
+            lv_obj_t * ln = lv_observer_get_target_obj(o);
             const int32_t v = lv_subject_get_int(sj);
-            if (v < 0) { lv_obj_add_flag(line, LV_OBJ_FLAG_HIDDEN); return; }
-            lv_obj_set_width(line, (320 * (v > 100 ? 100 : v)) / 100);
-            lv_obj_remove_flag(line, LV_OBJ_FLAG_HIDDEN);
+            if (v < 0) { lv_obj_add_flag(ln, LV_OBJ_FLAG_HIDDEN); return; }
+            lv_obj_set_width(ln, (320 * (v > 100 ? 100 : v)) / 100);
+            lv_obj_remove_flag(ln, LV_OBJ_FLAG_HIDDEN);
         }, T.loading, nullptr);
     }
 
@@ -777,6 +868,7 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     transportbar_refresh();
     paint_readouts();
     if (!s_timer) s_timer = lv_timer_create(refresh_timer_cb, kRefreshMs, nullptr);
+    if (!s_beat_timer) s_beat_timer = lv_timer_create(beat_timer_cb, kBeatPollMs, nullptr);
     return T.bar;
 }
 
@@ -811,18 +903,21 @@ void transportbar_refresh()
 
     T.st = st;
     T.dub_on = dub;
+    T.click_on = click;
 
-    /* MODE and BPM are the bar's own; the four commands are the holder's, and
-     * a key it cannot honour dims without moving. STOP while stopped takes
-     * the position back to 1.1, so it is offered until it is there. */
-    T.en[B_MODE] = true;
-    T.en[B_CLICK] = true;
-    T.en[B_BPM]  = crosspad::transportBpm() > 0.0f;
-    T.en[B_POS]  = (caps & crosspad::kTransportCanLocate) != 0 && st == BarState::Stop;
-    T.en[B_PLAY] = (caps & crosspad::kTransportCanPlay) != 0;
-    T.en[B_STOP] = (caps & crosspad::kTransportCanStop) != 0 && (st != BarState::Stop || !at_start);
-    T.en[B_REC]  = (caps & crosspad::kTransportCanRecord) != 0;
-    T.en[B_DUB]  = (caps & crosspad::kTransportCanOverdub) != 0;
+    /* MODE, the metronome and BPM are the bar's own; the rest are the
+     * holder's, and a key it cannot honour dims without moving. REC is a
+     * record while stopped and an overdub while playing; PLAY is a stop while
+     * anything runs. */
+    const bool run = st != BarState::Stop;
+    T.en[B_MODE]  = true;
+    T.en[B_METRO] = true;
+    T.en[B_BPM]   = crosspad::transportBpm() > 0.0f;
+    T.en[B_POS]   = (caps & crosspad::kTransportCanLocate) != 0 && st == BarState::Stop;
+    T.en[B_PLAY]  = run ? (caps & crosspad::kTransportCanStop) != 0
+                        : (caps & crosspad::kTransportCanPlay) != 0;
+    T.en[B_REC]   = (dub || st == BarState::Play) ? (caps & crosspad::kTransportCanOverdub) != 0
+                                                  : (caps & crosspad::kTransportCanRecord) != 0;
 
     /* The position is turned only while stopped: PLAY from a finger or
      * another screen ends the turn. */
@@ -861,11 +956,15 @@ uint8_t transportbar_probe(TransportBarReadout * out, uint8_t max)
     for (auto & r : rows) {
         if (n >= max) break;
         if (!r.o) continue;
+        /* The readouts sit in flex columns inside their tiles: the screen's
+         * coordinates, not the parent's. */
+        lv_area_t a;
+        lv_obj_get_coords(r.o, &a);
         out[n].id   = r.id;
-        out[n].x    = lv_obj_get_x(r.o);
-        out[n].y    = lv_obj_get_y(r.o);
-        out[n].w    = lv_obj_get_width(r.o);
-        out[n].h    = lv_obj_get_height(r.o);
+        out[n].x    = a.x1;
+        out[n].y    = a.y1;
+        out[n].w    = lv_area_get_width(&a);
+        out[n].h    = lv_area_get_height(&a);
         out[n].text = lv_label_get_text(r.o);
         n++;
     }
@@ -879,8 +978,7 @@ int32_t transportbar_row_scroll()
 
 bool transportbar_has_focus()
 {
-    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
-    lv_group_t * g = nav ? lv_indev_get_group(nav) : nullptr;
+    lv_group_t * g = nav_group();
     return g && is_ours(lv_group_get_focused(g));
 }
 
@@ -889,8 +987,7 @@ bool transportbar_toggle_focus()
     if (!T.bar || !transportbar_shown()) return false;
     join_current_group();
 
-    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
-    lv_group_t * g = nav ? lv_indev_get_group(nav) : nullptr;
+    lv_group_t * g = nav_group();
     if (!g || g != s_joined) return false;
 
     lv_obj_t * focused = lv_group_get_focused(g);
@@ -910,11 +1007,10 @@ bool transportbar_toggle_focus()
         return back != nullptr;
     }
 
-    /* Jump to the key the state makes obvious, so one press does the expected
-     * thing without rotating the whole screen first. A disabled key is
-     * skipped by LVGL's navigation and must not be the jump's destination
-     * either. */
-    lv_obj_t * target = T.btn[T.st == BarState::Stop ? B_PLAY : B_STOP];
+    /* Jump to PLAY -- the one key that starts and stops -- or MODE when the
+     * holder cannot honour it. A disabled key is skipped by LVGL's
+     * navigation and must not be the jump's destination either. */
+    lv_obj_t * target = T.btn[B_PLAY];
     if (target && (lv_obj_get_state(target) & LV_STATE_DISABLED)) target = T.btn[B_MODE];
     if (!target) return false;
     lv_group_set_editing(g, false);

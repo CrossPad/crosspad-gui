@@ -4,9 +4,10 @@
  * @file transport_bar.h
  * @brief The transport, always at the top of the screen.
  *
- * One 30 px row in place of the status bar, the same in every app:
+ * One 40 px row in place of the status bar, the same in every app, seven
+ * tiles 36 px tall ("CrossPad UX2000 Touch.html", v2):
  *
- *   [MODE] [● REC] [DUB] [▶] [■] [metronome]  BPM 120.0 | PLAY 002.3.08 | VOICES 5/10  [bat]
+ *   [BPM 120.0] [STOP 1.1] [MODE] [● REC] [▶] [metronome] [VOICES 5/10 bat]
  *
  * It paints from crosspad::transportState() / transportCaps() /
  * transportName() and sends its keys to transportPlay() / Stop() / Record() /
@@ -27,14 +28,21 @@
  * PLAY starts a bar a detent while stopped (transportLocate(), a holder with
  * kTransportCanLocate -- Arrange).
  *
+ * REC is one key for a take: a record while stopped, an overdub onto what
+ * plays (DUB in the key and over the position), the same key again ends the
+ * overdub. PLAY is play and stop in one key -- a triangle stopped, a square
+ * while anything runs; held, it stops and goes back to 1.1. The position's
+ * caption is the state: STOP, COUNT, PLAY, REC or DUB.
+ *
  * The metronome key is the click's one switch (transportClick(),
- * transportSetClick()), lit while it clicks; the Sequencer's M is the same
- * switch, and no transport command flips it.
+ * transportSetClick()), lit while it clicks and flashing on every beat while
+ * something plays (longer on the one); the Sequencer's M is the same switch,
+ * and no transport command flips it.
  *
  * The status bar is still built, with its icons, loader and timers running,
  * as the second page of one row beside this bar: a finger drags the row
  * sideways and it snaps to whichever bar it was dragged to (a flick, or past
- * half way). Tapping the battery swaps the two as well, and so does the
+ * half way). Tapping the VOICES + battery tile swaps the two as well, and so does the
  * encoder's click on it -- it is the last key in the rotation -- with the
  * status bar's arrow, then in the rotation in place of the keys, swapping
  * back. A downward swipe from the top edge opens the quick-settings drawer
@@ -42,8 +50,8 @@
  * edge.
  *
  * The keys sit in whatever group the encoder is on, appended, so turning one
- * step past the end of any screen reaches MODE / REC / DUB / PLAY / STOP /
- * metronome / BPM / position / battery. The power button's 0.5 s hold is the shortcut there.
+ * step past the end of any screen reaches BPM / position / MODE / REC / PLAY /
+ * metronome / battery. The power button's 0.5 s hold is the shortcut there.
  *
  * All functions must be called from the LVGL task.
  */
@@ -51,7 +59,7 @@
 #include "lvgl.h"
 
 #ifndef TRANSPORT_BAR_HEIGHT
-#define TRANSPORT_BAR_HEIGHT 30
+#define TRANSPORT_BAR_HEIGHT 40
 #endif
 
 namespace crosspad_gui {
@@ -65,9 +73,8 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar);
 void transportbar_refresh();
 
 /// What a MODE tap calls. mode_overlay_init() installs mode_overlay_toggle().
-/// A long press on MODE is the way to the status bar instead (see
-/// transportbar_show) -- this design has no room for an arrow, and the wifi,
-/// Bluetooth, SD and loader glyphs live nowhere else.
+/// A long press on MODE is a way to the status bar too (see
+/// transportbar_show), beside the VOICES + battery tile and a drag.
 void transportbar_set_mode_handler(void (*handler)());
 
 /// Swap with the status bar, animated. show=false reveals the icons,
@@ -103,7 +110,7 @@ int32_t transportbar_row_scroll();
 /// so turning past a screen's last field reaches them anyway. LVGL skips
 /// hidden and LV_STATE_DISABLED objects when it navigates, so a hidden bar and
 /// a key the claim holder cannot honour drop out of the rotation on their own.
-/// The jump lands on PLAY when stopped, STOP otherwise. Back from keys the
+/// The jump lands on PLAY (MODE when PLAY is disabled). Back from keys the
 /// encoder was turned onto lands on the screen's last control, the one
 /// turning past it came from.
 ///
