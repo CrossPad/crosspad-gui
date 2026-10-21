@@ -52,6 +52,26 @@ static void stm_analog_delta_cb(lv_event_t*) {
     auto* s = get_settings(); if (!s) return;
     crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_ANALOG_DELTA, s->stm.analogDelta);
 }
+static void stm_hit_window_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
+}
+static void stm_hit_mode_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_BTN_HIT_MODE, s->stm.hitMode);
+}
+static void stm_hit_min_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_BTN_HIT_MIN_MS, s->stm.hitMinMs);
+}
+static void stm_hit_drop_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_BTN_HIT_PEAK_DROP, s->stm.hitPeakDrop);
+}
+static void stm_hit_samples_cb(lv_event_t*) {
+    auto* s = get_settings(); if (!s) return;
+    crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_BTN_HIT_PEAK_SAMPLES, s->stm.hitPeakSamples);
+}
 
 // ---- Global pad fallback (CROSSPAD_PAD_EDITOR_ENABLED == 0) ----
 
@@ -188,6 +208,21 @@ void settings_detail::cat_build_analog(lv_obj_t* parent, lv_group_t* group) {
     settings_row_dropdown(parent, group, "Curve", "Linear\nExp Soft\nExp Hard",
                           &s->stm.velCurveDef, stm_vel_curve_cb);
     settings_row_slider(parent, group, "Floor", 0, 127, &s->stm.velFloorDef, stm_vel_floor_cb);
+
+    // The note-on waits for the end of the hit window (its velocity is the
+    // deepest sample inside); Adaptive ends it once the press has peaked.
+    using Stm = crosspad::Stm32Settings;
+    settings_section_header(parent, "Hit window");
+    settings_row_slider(parent, group, "Hit window (ms)", Stm::kPressDebounceMinMs,
+                        Stm::kPressDebounceMaxMs, &s->stm.pressDebounceMs, stm_hit_window_cb);
+    settings_row_dropdown(parent, group, "Mode", "Fixed\nAdaptive",
+                          &s->stm.hitMode, stm_hit_mode_cb);
+    settings_row_slider(parent, group, "Adaptive min (ms)", 0, Stm::kPressDebounceMaxMs,
+                        &s->stm.hitMinMs, stm_hit_min_cb);
+    settings_row_slider(parent, group, "Peak drop", 0, 255,
+                        &s->stm.hitPeakDrop, stm_hit_drop_cb);
+    settings_row_slider(parent, group, "Peak samples", 1, Stm::kHitPeakSamplesMax,
+                        &s->stm.hitPeakSamples, stm_hit_samples_cb);
 
     settings_section_header(parent, "Pressure / Pan CC");
     settings_row_slider(parent, group, "Pressure CC base", 0, 127,

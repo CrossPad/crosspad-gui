@@ -131,6 +131,10 @@ static void backup_import_pads_cb(lv_event_t *) {
             plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS, s->stm.analogMinMs);
             plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,  s->stm.analogDelta);
             plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
+        plat.writeStmConfig8(REG_CTL_BTN_HIT_MODE,   s->stm.hitMode);
+        plat.writeStmConfig8(REG_CTL_BTN_HIT_MIN_MS, s->stm.hitMinMs);
+        plat.writeStmConfig8(REG_CTL_BTN_HIT_PEAK_DROP,    s->stm.hitPeakDrop);
+        plat.writeStmConfig8(REG_CTL_BTN_HIT_PEAK_SAMPLES, s->stm.hitPeakSamples);
         }
     }
 }
