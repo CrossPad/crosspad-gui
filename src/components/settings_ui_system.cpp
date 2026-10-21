@@ -100,6 +100,10 @@ void settings_detail::stm_push_config(crosspad::CrosspadSettings* s) {
     plat.writeStmConfig8(REG_CTL_ANALOG_MIN_MS,  s->stm.analogMinMs);
     plat.writeStmConfig8(REG_CTL_ANALOG_DELTA,   s->stm.analogDelta);
     plat.writeStmConfig8(REG_CTL_BTN_PRESS_DB_MS, s->stm.pressDebounceMs);
+    plat.writeStmConfig8(REG_CTL_BTN_HIT_MODE,   s->stm.hitMode);
+    plat.writeStmConfig8(REG_CTL_BTN_HIT_MIN_MS, s->stm.hitMinMs);
+    plat.writeStmConfig8(REG_CTL_BTN_HIT_PEAK_DROP,    s->stm.hitPeakDrop);
+    plat.writeStmConfig8(REG_CTL_BTN_HIT_PEAK_SAMPLES, s->stm.hitPeakSamples);
     plat.writeStmConfig8(REG_CTL_AUTO_SLEEP,     s->stm.autoSleep);
     plat.writeStmConfig8(REG_CTL_KEYPAD_DIS,     s->stm.keypadEnabled ? 0 : 1);
     plat.writeStmConfig8(REG_CTL_WAKE_BRIGHT,    s->stm.wakeBrightness);

@@ -6,6 +6,18 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.3.0 — 2026-10-21
+
+The 1.x line's Hit window settings (1.29.0 there), on 2.x's split settings
+files.
+
+- Settings -> Analog / Velocity -> Hit window: the window's length (the press
+  debounce, 2..15 ms, which had no control), Mode Fixed / Adaptive (STM 1.12
+  ends the window once the press has peaked), adaptive minimum, peak drop and
+  peak samples. Each writes its register at once; `stm_push_config` and the
+  pad-tuning import carry the four new registers too.
+- Paired with crosspad-core 2.3.0.
+
 ## 2.2.0 — 2026-10-20
 
 From the UX 2000 line (Steve's 1.29.0 there), on 2.x's widgets.
