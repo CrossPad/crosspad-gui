@@ -132,6 +132,61 @@ TEST_CASE("MODE map: an app started from outside the map gets the pads", "[mode]
     reset_orchestrator();
 }
 
+namespace {
+
+/// Counts what reaches it: the instrument or the app under the map.
+class CountingLogic : public NoopLogic {
+public:
+    void onPadPress(crosspad::PadManager&, uint8_t, uint8_t) override { ++presses; }
+    void onPadRelease(crosspad::PadManager&, uint8_t) override { ++releases; }
+    int presses = 0, releases = 0;
+};
+
+} // namespace
+
+TEST_CASE("MODE map: the pads are buttons, every other note plays under the map", "[mode][pads]")
+{
+    guitest::GuiFixture f;
+    auto base = std::make_shared<CountingLogic>();
+    auto app = std::make_shared<CountingLogic>();
+    f.padManager.registerPadLogic(kBase, base);
+    f.padManager.registerPadLogic(kFirstLogic, app);
+    f.padManager.setActivePadLogic(kBase);
+    lv_obj_t* container = make_home(f, crosspad::LauncherStyle::Pads);
+    REQUIRE(f.padManager.getActivePadLogic() == kMapLogic);
+    REQUIRE(f.padManager.getPadLogic(kMapLogic)->buttonsOnly());
+
+    // At home: a finger chooses and plays nothing; a pattern and a host play
+    // the instrument under the map.
+    f.padManager.handlePadPress(15, 100);
+    f.padManager.handlePadRelease(15);
+    CHECK(base->presses == 0);
+    f.padManager.handlePadPress(3, 100, crosspad::EventSource::SequencerCallback);
+    f.padManager.handlePadRelease(3, crosspad::EventSource::SequencerCallback);
+    f.padManager.handlePadPress(4, 100, crosspad::EventSource::MidiInput);
+    f.padManager.handlePadRelease(4, crosspad::EventSource::MidiInput);
+    CHECK(base->presses == 2);
+    CHECK(base->releases == 2);
+
+    // MODE over an app: the app keeps its notes under the map.
+    App first(container, "First", nullptr, create_root, destroy_root);
+    first.setPadLogicName(kFirstLogic);
+    start_programmatically(first, container);
+    f.advance(1);
+    mode_overlay_toggle();
+    REQUIRE(f.padManager.getActivePadLogic() == kMapLogic);
+    f.padManager.handlePadPress(5, 100, crosspad::EventSource::SequencerCallback);
+    CHECK(app->presses == 1);
+    CHECK(base->presses == 2);
+
+    mode_overlay_toggle();   // MODE again: back to the app
+    f.advance(1);
+    first.destroyApp();
+    f.advance(1);
+    lv_obj_clean(container);
+    reset_orchestrator();
+}
+
 TEST_CASE("MODE map: MODE and the power click over an app", "[mode][app]")
 {
     guitest::GuiFixture f;
