@@ -6,6 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.5.0 — 2026-10-22
+
+The screen's widgets for hosts.
+
+- `crosspad_gui::ui_tree_probe()` returns the visible widgets of the active
+  screen and the top layer as flat `UiNode` data (class, LCD rectangle, text,
+  interactive / checked / disabled / focused); `ui_tree_json()` serialises
+  them for a host tool (the web twin's GUI map). `components/ui_probe.h`,
+  LVGL thread only, host-tested in `tests/test_ui_probe.cpp`.
+- Nothing existing changes; no core change.
+
 ## 2.4.2 — 2026-10-22
 
 - Paired with crosspad-core 2.6.0 (a Pitch track beside two kit tracks). No
