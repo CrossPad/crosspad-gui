@@ -6,6 +6,11 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.4.2 — 2026-10-22
+
+- Paired with crosspad-core 2.6.0 (a Pitch track beside two kit tracks). No
+  change of its own.
+
 ## 2.4.1 — 2026-10-21
 
 - Paired with crosspad-core 2.5.0 (the Slice kit). No change of its own.
