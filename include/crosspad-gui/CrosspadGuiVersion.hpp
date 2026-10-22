@@ -16,7 +16,7 @@
 
 #define CROSSPAD_GUI_VERSION_MAJOR 2
 #define CROSSPAD_GUI_VERSION_MINOR 7
-#define CROSSPAD_GUI_VERSION_PATCH 1
+#define CROSSPAD_GUI_VERSION_PATCH 2
 
 /* Built from the triple, never written out: the literal had drifted two bumps
  * behind it (Settings > Info read "1.4.0" off a 1.5.0 library) because a bump
@@ -29,7 +29,7 @@
 
 #define CROSSPAD_GUI_REQUIRES_CORE_MAJOR 2
 #define CROSSPAD_GUI_REQUIRES_CORE_MINOR 10
-#define CROSSPAD_GUI_REQUIRES_CORE_PATCH 0
+#define CROSSPAD_GUI_REQUIRES_CORE_PATCH 1
 
 namespace crosspad_gui {
 
