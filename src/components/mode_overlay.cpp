@@ -175,12 +175,12 @@ public:
     {
         for (uint8_t i = 0; i < kPads; ++i) pm.clearPadColor(i);
     }
-    void onPadPress(crosspad::PadManager& pm, uint8_t padIdx, uint8_t) override
+    /* The pads are buttons here: only a finger reaches the map. A pattern
+     * playing and a host's MIDI play the logic under it as if the map were
+     * not up, and a press on it is not a note of the take. */
+    bool buttonsOnly() const override { return true; }
+    void onPadPress(crosspad::PadManager&, uint8_t padIdx, uint8_t) override
     {
-        /* Only a finger chooses. The sequencer keeps pressing pads while the
-         * map is up -- the bar stays live -- and a host's MIDI notes arrive
-         * here too; either one used to pick an app on its own. */
-        if (pm.pressSource(padIdx) != crosspad::EventSource::PadManager) return;
         mode_overlay_select_pad(padIdx);   // pad task -> LVGL task
     }
     void onPadRelease(crosspad::PadManager&, uint8_t) override {}

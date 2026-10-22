@@ -6,6 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.6.0 — 2026-10-22
+
+The MODE map's pads are buttons. Requires crosspad-core 2.7.0.
+
+### Changed
+
+- The map's pad logic is `buttonsOnly()`: only a finger reaches it and picks
+  an app, and that press is not a note of the take. A pattern playing and a
+  host's MIDI keep sounding through the instrument or app under the map,
+  where they used to be swallowed while it was up.
+
 ## 2.5.0 — 2026-10-22
 
 The screen's widgets for hosts.
