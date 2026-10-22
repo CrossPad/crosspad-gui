@@ -6,6 +6,11 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.6.1 — 2026-10-22
+
+Paired with crosspad-core 2.8.0 (every seq track keeps a scene of its own).
+No change in crosspad-gui itself.
+
 ## 2.6.0 — 2026-10-22
 
 The MODE map's pads are buttons. Requires crosspad-core 2.7.0.
