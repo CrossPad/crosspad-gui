@@ -6,6 +6,10 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.7.1 — 2026-10-23
+
+Paired with crosspad-core 2.10.0. No change in crosspad-gui itself.
+
 ## 2.7.0 — 2026-10-22
 
 The transport bar shows the audio render's load. Requires crosspad-core 2.9.0.
