@@ -1,13 +1,13 @@
 {
     "name": "crosspad-gui",
-    "version": "2.6.1",
+    "version": "2.7.0",
     "license": "GPL-3.0-or-later",
     "description": "CrossPad shared LVGL GUI components",
     "keywords": ["crosspad", "lvgl", "gui", "embedded"],
     "frameworks": ["arduino", "espidf"],
     "platforms": ["espressif32", "native"],
     "dependencies": {
-        "crosspad-core": "^2.8.0"
+        "crosspad-core": "^2.9.0"
     },
     "build": {
         "srcDir": "src",

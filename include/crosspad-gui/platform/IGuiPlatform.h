@@ -44,6 +44,18 @@ struct PerfStats {
  * Measured on a v2, 44.1 kHz stereo: sixteen resident voices fit a 1451 us
  * block at 85 %, ten streaming ones at 78 %, and from twelve streaming the
  * engine cannot feed them all. */
+/// The audio render's load for the transport bar's CPU readout: what a pass
+/// averages and the longest one, each as a share of one block, since the bar
+/// last asked, and the passes over a block since boot. Over 85 % on average
+/// the engines stop adding voices (a new note takes an old one's place) until
+/// it is back under 75 %; over 100 % in one pass the DMA was late.
+struct DspLoad {
+    uint8_t  avgPct    = 0;
+    uint8_t  peakPct   = 0;
+    uint32_t overruns  = 0;
+    bool     measured  = false;   ///< false: the platform has no render to measure
+};
+
 /// What the sample engine is holding right now, for the VOICES readout.
 ///
 /// `limit` is the voice ceiling that applies to what is playing, so a
@@ -119,6 +131,9 @@ public:
     /// bar; a platform with no sample engine leaves `limit` at 0 and nothing
     /// is drawn.
     virtual VoiceMeter getVoiceMeter() { return {}; }
+
+    /// The render's load (DspLoad), read and reset by the transport bar.
+    virtual DspLoad getDspLoad() { return {}; }
 
     /// Called when the user interacts with the touchscreen; the platform can
     /// give haptic feedback, reset inactivity timers, etc.

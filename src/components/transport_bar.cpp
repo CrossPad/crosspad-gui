@@ -72,6 +72,7 @@ struct {
     lv_obj_t * mt_arm = nullptr;
     lv_obj_t * mt_bob = nullptr;
     lv_obj_t * vox = nullptr;
+    lv_obj_t * cpu = nullptr;          ///< the render's load over the voices ("VOICES" where none is measured)
     lv_obj_t * bat_fill = nullptr;
     lv_obj_t * bat = nullptr;         ///< VOICES + battery: the encoder's way to the status icons
     lv_obj_t * loading = nullptr;
@@ -120,6 +121,13 @@ bool     s_painted_mode = false;
 bool     s_painted_start = false;
 bool     s_painted_click = false;
 bool     s_painted_valid = false;
+
+/* The CPU readout: the render's average load smoothed over a few refreshes,
+ * the overrun count last seen and when it last moved. */
+uint32_t s_cpu_pct = 0;
+uint32_t s_cpu_overruns = UINT32_MAX;
+uint32_t s_cpu_late_at = 0;
+constexpr uint32_t kCpuLateMs = 1000;
 
 lv_color_t bar_color()
 {
@@ -518,6 +526,24 @@ void paint_readouts()
     lv_obj_set_style_bg_opa(T.vox, full ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_obj_set_style_text_color(T.vox, full ? bar_color() : INK, 0);
 
+    /* The render's load over the voices: what a pass averages of its block.
+     * An ink chip, amber from 75 % -- at 85 % the engines stop adding voices
+     * -- and red from 90 %, or for a second after a pass ran over its block:
+     * the DMA was late and a click may have been heard. */
+    const DspLoad dl = getGuiPlatform().getDspLoad();
+    if (dl.measured) {
+        s_cpu_pct = (s_cpu_pct * 3 + dl.avgPct + 2) / 4;
+        if (s_cpu_overruns != UINT32_MAX && dl.overruns != s_cpu_overruns) s_cpu_late_at = lv_tick_get() | 1;
+        s_cpu_overruns = dl.overruns;
+        const bool late = s_cpu_late_at && lv_tick_elaps(s_cpu_late_at) < kCpuLateMs;
+        snprintf(buf, sizeof(buf), "CPU %u%%", (unsigned)s_cpu_pct);
+        if (strcmp(lv_label_get_text(T.cpu), buf) != 0) lv_label_set_text(T.cpu, buf);
+        const bool red = late || s_cpu_pct >= 90;
+        const bool amber = !red && s_cpu_pct >= 75;
+        lv_obj_set_style_bg_opa(T.cpu, red || amber ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_color(T.cpu, red ? C_RED : amber ? C_AMB : INK, 0);
+    }
+
     /* The battery: up to 9 px of fill inside a 13 x 8 outline, red when low. */
     uint8_t pct = platformStatus().batteryPct;
     if (pct > 100) pct = 100;
@@ -824,7 +850,10 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_t * col = box(T.bat, 0, 0, LV_PCT(100), LV_PCT(100), 0);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    label(col, F10, "VOICES");
+    T.cpu = label(col, F10, "VOICES");
+    lv_obj_set_style_bg_color(T.cpu, INK, 0);
+    lv_obj_set_style_radius(T.cpu, 3, 0);
+    lv_obj_set_style_pad_hor(T.cpu, 1, 0);
     lv_obj_t * vrow = box(col, 0, 0, LV_SIZE_CONTENT, LV_SIZE_CONTENT, 0);
     lv_obj_set_flex_flow(vrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(vrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

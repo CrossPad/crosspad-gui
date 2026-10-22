@@ -6,6 +6,18 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.7.0 — 2026-10-22
+
+The transport bar shows the audio render's load. Requires crosspad-core 2.9.0.
+
+### Added
+
+- `IGuiPlatform::getDspLoad()` (`DspLoad`): the render's average and longest
+  pass as a share of a block, and the passes over a block since boot.
+- The VOICES tile's caption is `CPU nn%` where the platform measures it: the
+  average, smoothed; an ink chip in amber from 75 % (at 85 % the engines stop
+  adding voices) and red from 90 % or for a second after a late block.
+
 ## 2.6.1 — 2026-10-22
 
 Paired with crosspad-core 2.8.0 (every seq track keeps a scene of its own).
