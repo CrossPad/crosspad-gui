@@ -6,6 +6,14 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.7.8 — 2026-10-23
+
+### Fixed
+
+- The transport bar's tempo tile asked its font with a bare `0` for the part:
+  LVGL 9.4 (the simulator) makes `lv_part_t` an enum and the build failed;
+  `LV_PART_MAIN`.
+
 ## 2.7.7 — 2026-10-23
 
 Paired with crosspad-core 2.16.0 (built and run on the board: smoke,

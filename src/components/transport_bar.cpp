@@ -197,7 +197,7 @@ void set_fitted(lv_obj_t * l, const char * text, int32_t room)
     lv_point_t sz;
     lv_text_get_size(&sz, text, F18, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
     const lv_font_t * f = sz.x <= room ? F18 : F14;
-    if (lv_obj_get_style_text_font(l, 0) != f) lv_obj_set_style_text_font(l, f, 0);
+    if (lv_obj_get_style_text_font(l, LV_PART_MAIN) != f) lv_obj_set_style_text_font(l, f, 0);
     if (strcmp(lv_label_get_text(l), text) != 0) lv_label_set_text(l, text);
 }
 
