@@ -6,6 +6,10 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.7.3 — 2026-10-23
+
+Paired with crosspad-core 2.11.0. No change in crosspad-gui itself.
+
 ## 2.7.2 — 2026-10-23
 
 Paired with crosspad-core 2.10.1. No change in crosspad-gui itself.
