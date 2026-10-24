@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #ifdef USE_LVGL
@@ -32,6 +33,9 @@ struct LauncherConfig {
     int button_spacing = 10;                       // Spacing between buttons
     bool show_names = true;                        // Show app name labels under icons
 };
+
+// Registry name of the Power OFF app (launcher-only action; see mode_more.h).
+inline constexpr const char* kPowerOffAppName = "Power OFF";
 
 // Register the Power OFF app in AppRegistry.
 // Uses getGuiPlatform().assetPathPrefix() to build the icon path.

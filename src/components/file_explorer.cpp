@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/file_explorer.h"
@@ -5,12 +6,14 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/widgets/footer_button.h"
-#include "crosspad-gui/platform/IFileSystem.h"
 #include "crosspad-gui/components/power_gesture.h"
+#include "crosspad/platform/IFileSystem.hpp"
+#include "crosspad-gui/components/ui_toast.h"
 
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 #include "crosspad-gui/platform/IGuiPlatform.h"
 
@@ -84,6 +87,28 @@ static void SchedulePreview(const char * path) {
 static void UpdateFileList();
 static void FocusPane(int pane);
 
+/* @p path's entries, hidden ones left out, each named by @p path plus its
+ * name: the platform's storagePath() is where the listing is read, never what
+ * a row says. Out of memory halfway it is an empty listing, so the directory
+ * is closed and nothing unwinds into LVGL. False when it cannot be read. */
+static bool ListDirectory(const std::string & path, std::vector<crosspad_gui::FileItem> & out) {
+    const bool slash = !path.empty() && path.back() == '/';
+    try {
+        return crosspad::getFileSystem().forEach(
+            crosspad_gui::getGuiPlatform().storagePath(path), [&](const char * name, bool isDir) {
+                if (name[0] == '.') return;
+                crosspad_gui::FileItem item;
+                item.name = name;
+                item.path = slash ? path + name : path + "/" + name;
+                item.isFolder = isDir;
+                out.push_back(std::move(item));
+            });
+    } catch (const std::bad_alloc &) {
+        out.clear();
+        return false;
+    }
+}
+
 /* A row is not cheap -- seven widgets, their styles, an entry in the encoder
  * group -- and a directory of seventy of them held the LVGL thread long enough
  * for the task watchdog to fire. They go up a chunk at a time now: the first
@@ -94,6 +119,13 @@ static constexpr size_t   kBuildChunk  = 8;
 /* Per pane: the right one starts filling the moment the selection on the left
  * settles, which is while the left one may still be going up. One shared state
  * meant the left build was abandoned half-listed. */
+/* Rows stop going up below this much free PSRAM, and a toast says how many of
+ * the pane's are missing. The pad editor's explorer on a card of 86 kits, a
+ * kit loaded, left the board 19.6 kB of PSRAM from 290 kB at the launcher, and
+ * where that ran out first -- a kit loading under the boot's update check --
+ * the row that did not fit was an LVGL assert. What is left keeps the screen
+ * drawing; the rows that went up still work. */
+static constexpr uint32_t kBuildPsramFloor = 40 * 1024;
 static std::vector<uint16_t> s_buildOrder[2];
 static size_t       s_buildNext[2]  = {0, 0};
 static bool         s_buildRun[2]   = {false, false};
@@ -104,7 +136,7 @@ static void SubScanTimer_cb(lv_timer_t * t) {
     if (!s_subWanted[0]) return;
     subFolderPath = s_subWanted;
     subEntries.clear();
-    crosspad_gui::getFileSystem().listDirectory(subFolderPath, subEntries);
+    ListDirectory(subFolderPath, subEntries);
     UpdateFileList();
 }
 
@@ -384,13 +416,13 @@ lv_obj_t * lv_CreateFileExplorer(lv_obj_t * parent, FileFilter fileFilter,
     return cont;
 }
 
-// ── Directory scanning via IFileSystem ──────────────────────────────────────
+// ── Directory scanning ──────────────────────────────────────────────────────
 
 static bool IndexDirectory(const std::string & path) {
     if (s_beforeScanCb) s_beforeScanCb();
 
     entries.clear();
-    bool ok = crosspad_gui::getFileSystem().listDirectory(path, entries);
+    bool ok = ListDirectory(path, entries);
 
     if (s_afterScanCb) s_afterScanCb();
     return ok;
@@ -492,6 +524,15 @@ static void BuildChunk(int pane) {
     const char * fileSymbol = FilterSymbol();
     size_t built = 0;
     while (s_buildNext[pane] < s_buildOrder[pane].size() && built < kBuildChunk) {
+        const crosspad_gui::HeapStats heap = crosspad_gui::getGuiPlatform().getHeapStats();
+        if (heap.psram_total > 0 && heap.psram_free < kBuildPsramFloor) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Not enough memory: %u of %u shown",
+                     (unsigned)s_buildNext[pane], (unsigned)s_buildOrder[pane].size());
+            ui_toast_show(msg, 3000, UI_TOAST_WARNING);
+            s_buildNext[pane] = s_buildOrder[pane].size();
+            break;
+        }
         const size_t idx = s_buildOrder[pane][s_buildNext[pane]++];
         if (idx >= vec.size()) continue;
         lv_obj_t * row = lv_list_add_button(
@@ -669,7 +710,7 @@ static void ItemSelected_cb(lv_event_t * e) {
                 if (subFolderPath != item->path) {
                     subFolderPath = item->path;
                     subEntries.clear();
-                    crosspad_gui::getFileSystem().listDirectory(subFolderPath, subEntries);
+                    ListDirectory(subFolderPath, subEntries);
                     UpdateFileList();
                 }
                 FocusPane(1);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 // CrossPad GUI - Shared LVGL components
@@ -26,7 +27,7 @@
 #include "crosspad-gui/components/ui_modal.h"
 #include "crosspad-gui/components/ui_toast.h"
 #include "crosspad-gui/components/vu_meter.h"
-#include "crosspad-gui/components/radial_menu.h"
+#include "crosspad-gui/components/segment_meter.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/file_explorer.h"
 #include "crosspad-gui/components/app_launcher.h"
@@ -36,7 +37,6 @@
 
 // Platform
 #include "crosspad-gui/platform/IGuiPlatform.h"
-#include "crosspad-gui/platform/IFileSystem.h"
 
 // Virtual Device (software-rendered hardware controls)
 #include "crosspad-gui/virtual_device/VirtualPadGrid.h"

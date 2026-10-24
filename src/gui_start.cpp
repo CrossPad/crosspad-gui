@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/gui_start.h"
@@ -12,7 +13,7 @@ namespace crosspad_gui {
 GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
     GuiStartResult result{};
 
-    if (!config.platform || !config.filesystem) {
+    if (!config.platform) {
         return result;
     }
 
@@ -23,8 +24,8 @@ GuiStartResult gui_start(lv_obj_t* screen, const GuiStartConfig& config) {
         if (config.lvgl_mutex.unlock) config.lvgl_mutex.unlock();
     };
 
-    // Platform adapters first: no LVGL calls, so this is safe outside the lock.
-    bootstrap(config.platform, config.filesystem);
+    // Platform adapter first: no LVGL calls, so this is safe outside the lock.
+    bootstrap(config.platform);
 
     lock();
 

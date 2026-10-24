@@ -4,26 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**crosspad-gui** — shared LVGL 9 UI component library for CrossPad. Provides theme, styles, launcher, status bar, settings screens, AppBase CRTP template, and reusable widgets (keypad buttons, spinbox, radial menu, VU meter, file explorer, DFU panel, modals/toasts). Depends on crosspad-core.
+**crosspad-gui** — shared LVGL 9 UI component library for CrossPad. Provides theme, styles, launcher, status bar, settings screens, AppBase CRTP template, and reusable widgets (keypad buttons, spinbox, VU meter, file explorer, DFU panel, modals/toasts). Depends on crosspad-core.
 
 User-facing docs live on https://crosspad.app/docs/: [Architecture](https://crosspad.app/docs/concepts/architecture/#crosspad-gui-shared-ui), [Where code belongs](https://crosspad.app/docs/concepts/where-code-belongs/), [Platform parity](https://crosspad.app/docs/concepts/platform-parity/). The README keeps the library reference (components, widgets, platform interfaces, theme colours). A change that breaks a docs page (command, output, path) opens an issue in CrossPad/crosspad-docs.
 
 ## Consumers and Build Systems
 
-- **platform-idf** (ESP-IDF firmware): submodule at `components/crosspad-gui/`. `CMakeLists.txt` globs `src/*.cpp` and `src/*.c` (the `.c` files are the generated fonts and icons in `src/design/`) and `REQUIRES lvgl crosspad-core freertos`.
+- **platform-idf** (ESP-IDF firmware): submodule at `components/crosspad-gui/`. `CMakeLists.txt` globs `src/*.cpp` and `src/*.c` (the `.c` files are the generated fonts and icons in `src/design/` and `src/fonts/`) and `REQUIRES lvgl crosspad-core`.
 - **crosspad-pc** (simulator): submodule at `lib/crosspad-gui/`; its own CMake globs the same `.cpp`/`.c` files.
-- **PlatformIO** (`library.json`, `srcFilter +<*>`): the Arduino firmware (platform-arduino, the legacy ESP32-S3 project).
+- **PlatformIO** (`library.json`, `srcFilter +<*>`): the Arduino firmware (platform-arduino, the legacy ESP32-S3 project), a deferred port that does not track the current API.
 - Default branch is `master` (crosspad-core's is `main`).
 
 ## Portability
 
 - Most widget and component headers and sources are wrapped in `#ifdef USE_LVGL`; consumers define it (not all files: the platform interfaces, the design fonts/icons and a few components are unguarded).
-- No SDL2 or ESP-IDF calls, except the PSRAM allocation in `src/components/scope_view.cpp`, behind `#ifdef ESP_PLATFORM`. Host details go through `IGuiPlatform` / `IFileSystem`.
+- No SDL2 or ESP-IDF calls; the one `ESP_PLATFORM` branch is `CROSSPAD_GUI_PSRAM_BSS` in `platform/psram_placement.h`. Host details go through `IGuiPlatform` / crosspad-core's `IFileSystem`.
 - `IGuiPlatform`: add new virtuals at the **end** of the class — inserting one mid-class renumbers the vtable, and a translation unit built against an older header calls the wrong slot.
 
 ## Tests
 
-Host tests in `tests/`: headless LVGL 9.3.0 (fetched from GitHub, configured only by `tests/lv_conf.h`) + Catch2 v3.5.0, with PNG snapshots. They cover `ui_tile_grid` today; new widget sources must be added to `add_executable` in `tests/CMakeLists.txt`. The link uses `-Wl,--wrap=lv_malloc_core`, so it needs GNU ld (Linux). Not run in CI.
+Host tests in `tests/`: headless LVGL 9.3.0 (fetched from GitHub, configured only by `tests/lv_conf.h`) + Catch2 v3.5.0, with PNG snapshots. `tests/test_*.cpp` are globbed and the binary links every source in `src/` with crosspad-core's, so a symbol crosspad-gui expects from a platform fails the link. The link uses `-Wl,--wrap=lv_malloc_core`, so it needs GNU ld (Linux). Not run in CI.
 
 ```bash
 cmake -S tests -B tests/build

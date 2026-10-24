@@ -1,398 +1,225 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// MIDI BLE settings panel — shared LVGL UI.
-// Platform-specific BLE operations go through MidiBleCallbacks.
+// The Settings "BLE MIDI" page -- see midi_ble_panel.h.
 
 #ifdef USE_LVGL
 
-#include <crosspad-gui/components/midi_ble_panel.h>
-#include "crosspad-gui/widgets/gui_helpers.h"
-#include <crosspad-gui/platform/IGuiPlatform.h>
-#include <crosspad-gui/app/App.hpp>
-#include <crosspad-gui/styles/styles.h>
-#include <crosspad-gui/widgets/footer_button.h>
-#include <crosspad/event/IEventBus.hpp>
-#include <crosspad/pad/PadManager.hpp>
-#include <crosspad/settings/CrosspadSettings.hpp>
-#include <crosspad/status/CrosspadStatus.hpp>
-#include <crosspad/platform/PlatformServices.hpp>
+#include "crosspad-gui/components/midi_ble_panel.h"
+#include "crosspad-gui/components/settings_ui.h"
+#include "settings_ui_internal.h"
 
-#include <lvgl.h>
-#include <cstring>
+#include "crosspad/midi/BleMidiOffsets.hpp"
+#include "crosspad/settings/CrosspadSettings.hpp"
+
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace crosspad_gui {
 
-// ── Platform callbacks ──────────────────────────────────────────────────────
+using namespace settings_detail;
 
-static MidiBleCallbacks s_bleCb;
+namespace {
 
-void midi_ble_set_callbacks(const MidiBleCallbacks& cb) { s_bleCb = cb; }
-const MidiBleCallbacks& midi_ble_get_callbacks() { return s_bleCb; }
+constexpr uint32_t kPollMs = 300;
 
-// ── UI state ────────────────────────────────────────────────────────────────
+MidiBleCallbacks s_cb;
 
-static lv_obj_t * g_root = nullptr;
-static lv_obj_t * g_cont = nullptr;
-static lv_obj_t * g_status_lbl = nullptr;
-static lv_obj_t * g_ble_switch = nullptr;
-static lv_obj_t * g_filter_panel = nullptr;
-static lv_obj_t * g_cb_notes = nullptr;
-static lv_obj_t * g_cb_sysex = nullptr;
-static lv_obj_t * g_cb_other = nullptr;
-static lv_obj_t * g_log_box = nullptr;
-static lv_obj_t * g_offset_row = nullptr;
-static lv_obj_t * g_offset_buttonmatrix = nullptr;
-static lv_timer_t * g_timer = nullptr;
-static lv_group_t * g_midi_ble_group = nullptr;
-static lv_group_t * g_saved_group = nullptr;
-static App * g_thisApp = nullptr;
+/* The open page. Value labels are updated in place; the device rows are
+ * rebuilt when the set of devices changes. */
+struct Page {
+    lv_obj_t*   state = nullptr;
+    lv_obj_t*   peer = nullptr;
+    lv_obj_t*   devices = nullptr;
+    /* The Scan button, to find the encoder group by when the device rows are
+     * rebuilt: the group can be deleted before the page is (Settings
+     * closing), and LVGL then clears it from its members, so a rebuild never
+     * adds to a freed one. */
+    lv_obj_t*   scanButton = nullptr;
+    lv_timer_t* timer = nullptr;
+    std::vector<crosspad::BleMidiDevice> shown;   ///< the devices the rows show, in order
+};
+Page s_page;
 
-// Subscription handles
-static crosspad::SubscriptionHandle g_noteOnHandle = nullptr;
-static crosspad::SubscriptionHandle g_noteOffHandle = nullptr;
-static crosspad::SubscriptionHandle g_padPressedHandle = nullptr;
-static crosspad::SubscriptionHandle g_padReleasedHandle = nullptr;
-
-// Log buffers & filters
-#ifndef MIDI_BLE_LOG_SIZE
-#define MIDI_BLE_LOG_SIZE 5
-#endif
-static bool filter_notes = true;
-static bool filter_sysex = false;
-static bool filter_other = false;
-
-struct Entry { bool tx; const char * type; uint8_t ch; uint8_t d1; uint8_t d2; };
-static Entry g_log[MIDI_BLE_LOG_SIZE] = {};
-static int g_log_count = 0;
-
-static void push_entry(bool tx, const char * type, uint8_t ch, uint8_t d1, uint8_t d2) {
-    Entry e{tx, type, ch, d1, d2};
-    for (int i = MIDI_BLE_LOG_SIZE - 1; i > 0; --i) g_log[i] = g_log[i-1];
-    g_log[0] = e;
-    if (g_log_count < MIDI_BLE_LOG_SIZE) g_log_count++;
+lv_obj_t* value_label(lv_obj_t* infoRow)
+{
+    return lv_obj_get_child(infoRow, -1);
 }
 
-static bool entry_matches_filters(const Entry &e) {
-    bool isNote = (strstr(e.type, "On") || strstr(e.type, "Off"));
-    bool isSysEx = (strcmp(e.type, "SysEx") == 0);
-    bool isOther = !isNote && !isSysEx;
-    if (isNote && filter_notes) return true;
-    if (isSysEx && filter_sysex) return true;
-    if (isOther && filter_other) return true;
-    return false;
+/* Only a changed text: setting the same one still repaints the label. */
+void set_text(lv_obj_t* label, const char* text)
+{
+    if (label && strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
 }
 
-static void refresh_lists() {
-    if (!g_log_box) return;
-    lv_obj_clean(g_log_box);
-    int shown = 0;
-    for (int i = 0; i < g_log_count && shown < MIDI_BLE_LOG_SIZE; ++i) {
-        if (!entry_matches_filters(g_log[i])) continue;
-        char buf[64];
-        const char * dir = g_log[i].tx ? "TX" : "RX";
-        if (strstr(g_log[i].type, "On") || strstr(g_log[i].type, "Off")) {
-            snprintf(buf, sizeof(buf), "%s %s ch%u n%u v%u", dir, g_log[i].type, g_log[i].ch, g_log[i].d1, g_log[i].d2);
-        } else if (strcmp(g_log[i].type, "SysEx") == 0) {
-            snprintf(buf, sizeof(buf), "%s SysEx (%uB)", dir, g_log[i].d1);
-        } else {
-            snprintf(buf, sizeof(buf), "%s %s ch%u %u %u", dir, g_log[i].type, g_log[i].ch, g_log[i].d1, g_log[i].d2);
-        }
-        lv_obj_t * row = lv_label_create(g_log_box);
-        lv_label_set_text(row, buf);
-        shown++;
+bool same_devices(const std::vector<crosspad::BleMidiDevice>& a, const std::vector<crosspad::BleMidiDevice>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].address != b[i].address) return false;
     }
-    if (shown == 0) {
-        lv_obj_t * row = lv_label_create(g_log_box);
-        lv_label_set_text(row, "(empty)");
+    return true;
+}
+
+void connect_cb(lv_event_t* e);
+
+void show_devices(std::vector<crosspad::BleMidiDevice> found)
+{
+    if (same_devices(found, s_page.shown)) return;
+    s_page.shown = std::move(found);
+    const auto& shown = s_page.shown;
+
+    lv_obj_clean(s_page.devices);
+    if (shown.empty()) {
+        lv_obj_add_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
+    lv_group_t* group = lv_obj_get_group(s_page.scanButton);
+    settings_section_header(s_page.devices, "Devices found");
+    for (size_t i = 0; i < shown.size(); ++i) {
+        char label[64];
+        snprintf(label, sizeof(label), "%s (%d dBm)", shown[i].name.c_str(), (int)shown[i].rssi);
+        settings_row_action(s_page.devices, group, label, "Connect", connect_cb, (void*)(intptr_t)i);
     }
 }
 
-// ── EventBus handlers ───────────────────────────────────────────────────────
-
-static void midi_note_on_rx(const void* event_data, crosspad::EventType, void*) {
-    auto *d = static_cast<const crosspad::NoteOnData*>(event_data);
-    if (d->source == crosspad::EventSource::MidiInput) {
-        push_entry(false, LV_SYMBOL_AUDIO"On", d->channel, d->note, d->velocity);
+/* State and peer: what a press on one of the page's buttons changes at once.
+ * The device rows wait for the timer -- a Connect press must not rebuild the
+ * list its own button is in. */
+void show_status()
+{
+    if (s_cb.stateName && s_page.state) set_text(s_page.state, s_cb.stateName());
+    if (s_cb.connectedDevice && s_page.peer) {
+        const crosspad::BleMidiDevice peer = s_cb.connectedDevice();
+        set_text(s_page.peer, peer.address.empty() ? "-" : peer.address.c_str());
     }
 }
 
-static void midi_note_off_rx(const void* event_data, crosspad::EventType, void*) {
-    auto *d = static_cast<const crosspad::NoteOffData*>(event_data);
-    if (d->source == crosspad::EventSource::MidiInput) {
-        push_entry(false, LV_SYMBOL_AUDIO"Off", d->channel, d->note, d->velocity);
+void poll(lv_timer_t*)
+{
+    show_status();
+    if (s_cb.scanResults && s_page.scanButton) show_devices(s_cb.scanResults());
+}
+
+void page_deleted_cb(lv_event_t* e)
+{
+    if (lv_event_get_target(e) != s_page.devices) return;
+    if (s_page.timer) lv_timer_delete(s_page.timer);
+    s_page = Page{};
+}
+
+void enable_cb(lv_event_t*)
+{
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    if (!s) return;
+    s_cb.setEnabled(s->wireless.enableBLE);
+    save_settings();
+    show_status();
+}
+
+void mode_cb(lv_event_t*)
+{
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    if (!s) return;
+    s_cb.setMode(s->wireless.bleMidiMode);
+    save_settings();
+    show_status();
+}
+
+void tx_offset_cb(lv_event_t*)
+{
+    s_cb.applyTxOffset();
+    save_settings();
+}
+
+void scan_cb(lv_event_t*)
+{
+    s_cb.startScan();
+    show_status();
+}
+
+void disconnect_cb(lv_event_t*)
+{
+    s_cb.disconnect();
+    show_status();
+}
+
+void connect_cb(lv_event_t* e)
+{
+    const size_t i = (size_t)(intptr_t)lv_event_get_user_data(e);
+    if (i >= s_page.shown.size()) return;
+    s_cb.connect(s_page.shown[i].address);
+    show_status();
+}
+
+/* Options from crosspad-core's table, so the list and the values it selects
+ * cannot drift apart. */
+const char* tx_offset_options()
+{
+    static char options[256];
+    if (options[0]) return options;
+    size_t len = 0;
+    for (uint8_t i = 0; i < crosspad::kBleMidiTxOffsetCount; ++i) {
+        const char* name = crosspad::bleMidiTxOffsetName(i);
+        const size_t nameLen = strlen(name);
+        if (len + (i ? 1 : 0) + nameLen >= sizeof(options)) break;
+        if (i) options[len++] = '\n';
+        memcpy(options + len, name, nameLen + 1);
+        len += nameLen;
     }
+    return options;
 }
 
-static void pad_pressed_tx(const void* event_data, crosspad::EventType, void*) {
-    auto *d = static_cast<const crosspad::PadPressedData*>(event_data);
-    uint8_t note = crosspad::getPadManager().getMidiNoteForPad(d->padIdx);
-    uint8_t ch = 13;
-    auto* settings = CrosspadSettings::getInstance();
-    if (settings->keypad.send2BLE) push_entry(true, "Pad On", ch, note, d->velocity);
+} // namespace
+
+void midi_ble_set_callbacks(const MidiBleCallbacks& cb)
+{
+    s_cb = cb;
 }
 
-static void pad_released_tx(const void* event_data, crosspad::EventType, void*) {
-    auto *d = static_cast<const crosspad::PadReleasedData*>(event_data);
-    uint8_t note = crosspad::getPadManager().getMidiNoteForPad(d->padIdx);
-    uint8_t ch = 13;
-    auto* settings = CrosspadSettings::getInstance();
-    if (settings->keypad.send2BLE) push_entry(true, "Pad Off", ch, note, 0);
-}
+void midi_ble_settings_build(lv_obj_t* parent, lv_group_t* group)
+{
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    if (!s) return;
+    if (s_page.timer) lv_timer_delete(s_page.timer);
+    s_page = Page{};
 
-// ── UI callbacks ────────────────────────────────────────────────────────────
-
-static void filter_cb(lv_event_t * e) {
-    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
-    filter_notes = lv_obj_has_state(g_cb_notes, LV_STATE_CHECKED);
-    filter_sysex = lv_obj_has_state(g_cb_sysex, LV_STATE_CHECKED);
-    filter_other = lv_obj_has_state(g_cb_other, LV_STATE_CHECKED);
-    refresh_lists();
-}
-
-static const uint8_t kOffsetOptions[] = { 36, 52, 68, 84, 100 };
-static const char * offsetMap[] = {"36", "52", "68", "84", "100", ""};
-static constexpr int kOffsetCount = sizeof(kOffsetOptions) / sizeof(kOffsetOptions[0]);
-
-static int offset_index_for_value(uint8_t val) {
-    int idx = 0;
-    for (int i = 0; i < kOffsetCount; ++i) {
-        if (kOffsetOptions[i] == val) return i;
-        if (kOffsetOptions[i] < val) idx = i;
+    settings_section_header(parent, "BLE MIDI");
+    if (s_cb.setEnabled) settings_row_switch(parent, group, "Enabled", &s->wireless.enableBLE, enable_cb);
+    if (s_cb.setMode) {
+        settings_row_dropdown(parent, group, "Role", "Host (connect to)\nServer (advertise)",
+                              &s->wireless.bleMidiMode, mode_cb);
     }
-    return idx;
-}
-
-static void offset_buttonmatrix_cb(lv_event_t * e) {
-    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
-    lv_obj_t * obj = lv_event_get_target_obj(e);
-    uint32_t id = lv_buttonmatrix_get_selected_button(obj);
-    if (id < (uint32_t)kOffsetCount) {
-        auto* statusPtr = crosspad::getPlatformServices().status;
-        if (statusPtr) statusPtr->keyOffset = kOffsetOptions[id];
-        crosspad::getPadManager().applyDefaultOffsetToPadNotes();
-    }
-}
-
-static void timer_cb(lv_timer_t *) {
-    if (!g_status_lbl) return;
-    auto* settings = CrosspadSettings::getInstance();
-    bool enabled = settings->keypad.send2BLE;
-    if (!enabled) {
-        lv_label_set_text(g_status_lbl, "Status: Disabled");
-    } else {
-        bool connected = s_bleCb.isConnected ? s_bleCb.isConnected() : false;
-        lv_label_set_text_fmt(g_status_lbl, "Status: %s", connected ? "Connected" : "Disconnected");
-    }
-    refresh_lists();
-}
-
-static void ble_switch_cb(lv_event_t * e) {
-    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
-    lv_obj_t * sw = (lv_obj_t *)lv_event_get_target(e);
-    bool v = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    auto* settings = CrosspadSettings::getInstance();
-    settings->keypad.send2BLE = v;
-    if (s_bleCb.setEnabled) s_bleCb.setEnabled(v);
-    timer_cb(nullptr);
-}
-
-// ── Styles (local) ──────────────────────────────────────────────────────────
-
-static lv_style_t style_bg;
-static lv_style_t style_btn;
-static lv_style_t style_switch;
-
-// ── Create / Destroy ────────────────────────────────────────────────────────
-
-lv_obj_t* lv_CreateMidiBLE(lv_obj_t * parent, App * a) {
-    g_thisApp = a;
-    auto* settings = CrosspadSettings::getInstance();
-    auto* statusPtr = crosspad::getPlatformServices().status;
-
-    // Once: lv_style_init() on an initialised style orphans its property
-    // array, and this panel is rebuilt on every visit.
-    static bool s_stylesReady = false;
-    if (!s_stylesReady) {
-        lv_style_init(&style_bg);
-        lv_style_set_pad_all(&style_bg, 0);
-        lv_style_set_pad_gap(&style_bg, 0);
-        lv_style_set_clip_corner(&style_bg, true);
-        lv_style_set_radius(&style_bg, 3);
-        lv_style_set_border_width(&style_bg, 0);
-        lv_style_set_border_post(&style_bg, true);
-
-        lv_style_init(&style_btn);
-        lv_style_set_radius(&style_btn, 0);
-        lv_style_set_border_width(&style_btn, 1);
-        lv_style_set_border_opa(&style_btn, LV_OPA_50);
-        lv_style_set_border_color(&style_btn, lv_palette_main(LV_PALETTE_GREY));
-        lv_style_set_border_side(&style_btn, LV_BORDER_SIDE_INTERNAL);
-        lv_style_set_radius(&style_btn, 0);
-        lv_style_set_border_post(&style_btn, true);
-
-        lv_style_init(&style_switch);
-        lv_style_set_bg_color(&style_switch, lv_color_hex(0xFFFF00));
-        lv_style_set_border_color(&style_switch, lv_color_hex(0xFFFF00));
-        s_stylesReady = true;
+    if (s_cb.applyTxOffset) {
+        settings_row_dropdown(parent, group, "Send transpose", tx_offset_options(),
+                              &s->wireless.bleMidiTxOffset, tx_offset_cb);
     }
 
-    g_root = lv_obj_create(parent);
-    lv_obj_remove_style_all(g_root);
-    lv_obj_set_size(g_root, LV_PCT(100), LV_PCT(100));
-    lv_obj_update_layout(g_root);
-
-    g_cont = lv_obj_create(g_root);
-    lv_obj_set_size(g_cont, lv_obj_get_width(parent), lv_obj_get_height(parent));
-    lv_obj_center(g_cont);
-    lv_obj_add_style(g_cont, &styleAppContainer, 0);
-    lv_obj_set_style_pad_all(g_cont, 10, 0);
-    lv_obj_update_layout(g_root);
-
-    // Title
-    lv_obj_t * title = lv_label_create(g_cont);
-    lv_label_set_text(title, "MIDI BLE");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 5, 5);
-    lv_obj_update_layout(g_root);
-
-    // Back button
-    lv_obj_t * backBtn = lv_CreateFooterButton(g_cont, "Back", -80, [](lv_event_t *) {
-        if (g_thisApp && g_thisApp->isStarted()) {
-            g_thisApp->destroyApp();
-        } else if (g_root) {
-            lv_obj_delete_async(g_root);
-        }
-    });
-    lv_obj_align(backBtn, LV_ALIGN_TOP_RIGHT, -12, 8);
-
-    // BLE enable switch
-    lv_obj_t * sw = lv_switch_create(g_cont);
-    lv_obj_add_state(sw, settings->keypad.send2BLE ? LV_STATE_CHECKED : LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(sw, ble_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_add_style(sw, &style_switch, LV_PART_INDICATOR);
-    lv_obj_align_to(sw, backBtn, LV_ALIGN_OUT_LEFT_MID, -7, 0);
-    g_ble_switch = sw;
-
-    // Connection status
-    g_status_lbl = lv_label_create(g_cont);
-    lv_label_set_text(g_status_lbl, "Status: -");
-    lv_obj_align_to(g_status_lbl, title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-
-    // Note offset: fixed values via button matrix
-    g_offset_row = lv_obj_create(g_cont);
-    lv_obj_update_layout(g_root);
-    lv_obj_add_style(g_offset_row, &styleAppContainer, 0);
-    lv_obj_set_height(g_offset_row, 40);
-    lv_obj_set_width(g_offset_row, 290);
-    {
-        lv_obj_update_layout(g_cont);
-        lv_obj_t * lbl = lv_label_create(g_offset_row);
-        lv_label_set_text(lbl, "Offset:");
-        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 0, 0);
-
-        g_offset_buttonmatrix = lv_buttonmatrix_create(g_offset_row);
-        lv_buttonmatrix_set_map(g_offset_buttonmatrix, offsetMap);
-        lv_obj_add_style(g_offset_buttonmatrix, &style_bg, 0);
-        lv_obj_add_style(g_offset_buttonmatrix, &style_btn, LV_PART_ITEMS);
-        lv_obj_add_event_cb(g_offset_buttonmatrix, offset_buttonmatrix_cb, LV_EVENT_VALUE_CHANGED, NULL);
-        lv_obj_set_size(g_offset_buttonmatrix, 170, 26);
-        lv_obj_align(g_offset_buttonmatrix, LV_ALIGN_RIGHT_MID, -20, 0);
-
-        lv_buttonmatrix_set_button_ctrl_all(g_offset_buttonmatrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
-        lv_buttonmatrix_set_one_checked(g_offset_buttonmatrix, true);
-        uint8_t keyOffset = statusPtr ? statusPtr->keyOffset : 36;
-        int initial_idx = offset_index_for_value(keyOffset);
-        lv_buttonmatrix_set_button_ctrl(g_offset_buttonmatrix, initial_idx, LV_BUTTONMATRIX_CTRL_CHECKED);
+    settings_section_header(parent, "Status");
+    if (s_cb.stateName) s_page.state = value_label(settings_row_info(parent, "State", ""));
+    if (s_cb.connectedDevice) s_page.peer = value_label(settings_row_info(parent, "Peer", ""));
+    /* Both actions are always listed, whatever the link is doing: a press on
+     * one that does not apply is a no-op, and rows that came and went with
+     * the state would move the encoder's walk under the user. */
+    if (s_cb.startScan) {
+        s_page.scanButton = lv_obj_get_child(settings_row_action(parent, group, "Find devices", "Scan", scan_cb), -1);
     }
-    lv_obj_align_to(g_offset_row, g_status_lbl, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
-    lv_obj_update_layout(g_root);
+    if (s_cb.disconnect) settings_row_action(parent, group, "Connection", "Disconnect", disconnect_cb);
 
-    // Filters + unified log row
-    lv_obj_t * filter_log_row = lv_obj_create(g_cont);
-    lv_obj_set_size(filter_log_row, LV_PCT(95), 94);
-    lv_obj_set_style_pad_all(filter_log_row, 0, 0);
-    lv_obj_set_flex_flow(filter_log_row, LV_FLEX_FLOW_ROW);
-    lv_obj_align(filter_log_row, LV_ALIGN_BOTTOM_MID, 0, 0);
+    /* Always there, hidden while empty: deleting it is how the page learns it
+     * is gone. Rows only with a Scan to fill them. */
+    s_page.devices = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_page.devices);
+    lv_obj_set_size(s_page.devices, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(s_page.devices, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s_page.devices, lv_obj_get_style_pad_row(parent, LV_PART_MAIN), 0);
+    lv_obj_remove_flag(s_page.devices, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_page.devices, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(s_page.devices, page_deleted_cb, LV_EVENT_DELETE, nullptr);
 
-    // Filter panel (left)
-    g_filter_panel = lv_obj_create(filter_log_row);
-    lv_obj_set_style_pad_all(g_filter_panel, 4, 0);
-    lv_obj_set_flex_flow(g_filter_panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_width(g_filter_panel, 85);
-    g_cb_notes = lv_checkbox_create(g_filter_panel); lv_checkbox_set_text(g_cb_notes, "Notes"); lv_obj_add_state(g_cb_notes, LV_STATE_CHECKED);
-    g_cb_sysex = lv_checkbox_create(g_filter_panel); lv_checkbox_set_text(g_cb_sysex, "SysEx");
-    g_cb_other = lv_checkbox_create(g_filter_panel); lv_checkbox_set_text(g_cb_other, "Other");
-    lv_obj_add_event_cb(g_cb_notes, filter_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(g_cb_sysex, filter_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(g_cb_other, filter_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    // Log box (right)
-    g_log_box = lv_obj_create(filter_log_row);
-    lv_obj_set_style_pad_all(g_log_box, 4, 0);
-    lv_obj_set_flex_flow(g_log_box, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_grow(g_log_box, 1);
-
-    // Subscribe to events
-    auto &bus = crosspad::getEventBus();
-    g_noteOnHandle = bus.subscribe(crosspad::EventType::NoteOn, midi_note_on_rx, nullptr);
-    g_noteOffHandle = bus.subscribe(crosspad::EventType::NoteOff, midi_note_off_rx, nullptr);
-    g_padPressedHandle = bus.subscribe(crosspad::EventType::PadPressed, pad_pressed_tx, nullptr);
-    g_padReleasedHandle = bus.subscribe(crosspad::EventType::PadReleased, pad_released_tx, nullptr);
-
-    // Timer
-    g_timer = lv_timer_create(timer_cb, 200, NULL);
-
-    // Encoder focus group
-    g_midi_ble_group = lv_group_create();
-    if (g_offset_buttonmatrix) lv_group_add_obj(g_midi_ble_group, g_offset_buttonmatrix);
-    if (g_cb_notes) lv_group_add_obj(g_midi_ble_group, g_cb_notes);
-    if (g_cb_sysex) lv_group_add_obj(g_midi_ble_group, g_cb_sysex);
-    if (g_cb_other) lv_group_add_obj(g_midi_ble_group, g_cb_other);
-    if (g_ble_switch) lv_group_add_obj(g_midi_ble_group, g_ble_switch);
-    lv_group_add_obj(g_midi_ble_group, backBtn);
-    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
-    if (nav) {
-        g_saved_group = lv_indev_get_group(nav);
-        lv_indev_set_group(nav, g_midi_ble_group);
-    }
-
-    timer_cb(nullptr);
-    refresh_lists();
-    return g_root;
-}
-
-void lv_MidiBLE_destroy(lv_obj_t * obj) {
-    // Unsubscribe
-    auto &bus = crosspad::getEventBus();
-    bus.unsubscribe(g_noteOnHandle);
-    bus.unsubscribe(g_noteOffHandle);
-    bus.unsubscribe(g_padPressedHandle);
-    bus.unsubscribe(g_padReleasedHandle);
-    g_noteOnHandle = g_noteOffHandle = g_padPressedHandle = g_padReleasedHandle = nullptr;
-
-    if (g_timer) { lv_timer_del(g_timer); g_timer = nullptr; }
-
-    // Restore encoder group
-    lv_indev_t * nav = getGuiPlatform().getNavigationEncoder();
-    if (nav && g_saved_group) {
-        lv_indev_restore_group(nav, g_saved_group);
-        g_saved_group = nullptr;
-    }
-    if (g_midi_ble_group) { lv_group_del(g_midi_ble_group); g_midi_ble_group = nullptr; }
-
-    g_root = nullptr;
-    g_cont = nullptr;
-    g_status_lbl = nullptr;
-    g_offset_row = nullptr;
-    g_offset_buttonmatrix = nullptr;
-    g_filter_panel = nullptr;
-    g_cb_notes = g_cb_sysex = g_cb_other = nullptr;
-    g_log_box = nullptr;
-    g_log_count = 0;
-    g_thisApp = nullptr;
-
-    if (obj && lv_obj_is_valid(obj)) lv_obj_delete_async(obj);
+    poll(nullptr);
+    s_page.timer = lv_timer_create(poll, kPollMs, nullptr);
 }
 
 } // namespace crosspad_gui

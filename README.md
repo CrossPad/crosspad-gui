@@ -1,152 +1,292 @@
 # crosspad-gui
 
-Shared LVGL 9 UI library for CrossPad. It holds the launcher, the status bar, the settings screens, `AppBase`, the theme and the reusable widgets, and it builds on [crosspad-core](https://github.com/CrossPad/crosspad-core). The ESP-IDF firmware ([platform-idf](https://github.com/CrossPad/platform-idf), as `components/crosspad-gui`) and the PC simulator ([crosspad-pc](https://github.com/CrossPad/crosspad-pc), as `lib/crosspad-gui`) use the same copy. `library.json` keeps it buildable as a PlatformIO library too, for the [Arduino firmware](https://crosspad.app/docs/legacy/esp32-s3-arduino/).
+Shared LVGL GUI library for CrossPad: theme, styles, the launcher and main
+screen, status and transport bars, the app lifecycle, settings pages and
+reusable widgets. It depends on LVGL v9.3 and
+[crosspad-core](https://github.com/CrossPad/crosspad-core) and nothing else --
+no ESP-IDF, no FreeRTOS, no globals a platform has to define.
 
-## Quickstart
+Used by:
 
-A platform builds this library; there is nothing to run on its own. To run the host tests (headless LVGL 9.3 + Catch2; Linux, CMake 3.20+, a C/C++17 compiler with GNU ld):
+- [platform-idf](https://github.com/CrossPad/platform-idf) -- the ESP-IDF firmware (ESP32-S3)
+- [crosspad-pc](https://github.com/CrossPad/crosspad-pc) -- the desktop simulator
 
-```bash
-cmake -S tests -B tests/build
-cmake --build tests/build
-ctest --test-dir tests/build --output-on-failure
-```
+The Arduino firmware ([ESP32-S3](https://github.com/CrossPad/ESP32-S3)) is a
+deferred port and does not track the current API; [Porting to a new
+platform](#porting-to-a-new-platform) lists what it has to provide.
 
 ## Documentation
 
 - [Architecture](https://crosspad.app/docs/concepts/architecture/#crosspad-gui-shared-ui), [Where code belongs](https://crosspad.app/docs/concepts/where-code-belongs/) and [Platform parity](https://crosspad.app/docs/concepts/platform-parity/) on https://crosspad.app/docs/.
-- [Library reference](#library-reference) below; full API docs: run `doxygen` here and open `docs/doxygen/html/index.html`.
+- The library reference is this README; full API docs: run `doxygen` here and open `docs/doxygen/html/index.html`.
 - Contributor notes (build systems, tests, versioning, releases): [CLAUDE.md](CLAUDE.md).
 
-## License
-
-GPL-3.0-or-later — see [LICENSE](LICENSE).
-
-## Library reference
-
-The docs site explains the layers but has no API reference for the UI library, so this overview stays here. The headers are the source of truth.
-
-### Layout
+## Architecture
 
 ```
 include/crosspad-gui/
-  app/            AppBase CRTP template, ILvglApp (app lifecycle)
-  components/     High-level UI: launcher, status bar, settings, VU meter, scope, transport bar, etc.
-  design/         Design language: bitmap fonts and 1-bit icons
-  platform/       IGuiPlatform, IFileSystem interfaces, POSIX file system
-  styles/         Global LVGL style objects
-  theme/          Color palette, LCD resolution, per-project overrides
-  virtual_device/ On-screen encoder, pad grid and power button
-  widgets/        Low-level reusable controls
-  bootstrap.h     Framework initialization
-  gui_start.h     One-call GUI start (gui_start(), GuiStartConfig)
-  CrosspadGuiVersion.hpp  Library version + the crosspad-core it requires
-  crosspad_gui.h  Umbrella header
+  app/             App, AppBase CRTP template, ILvglApp (app lifecycle)
+  components/      Screens and building blocks: launcher, bars, settings, dialogs, ...
+  design/          Pixel fonts and 1-bit icons of the design language
+  fw/              The Firmware app: Library, Store and Updates views, kit card, actions
+  platform/        IGuiPlatform, GuiServices (what the platform provides)
+  styles/          Global LVGL style objects
+  theme/           Color palette, LCD resolution, per-project overrides
+  virtual_device/  Software-rendered encoder, pad grid and power button
+  widgets/         Low-level reusable controls
+  bootstrap.h      Framework initialization
+  gui_start.h      One-call GUI start (bootstrap + styles + orchestrator + main screen)
+  crosspad_gui.h   Umbrella header
+src/fonts/         Montserrat 10-24 with European diacritics (replaces LVGL's copies)
+cmake/             crosspad_gui_fonts.cmake: takes LVGL's Montserrat out of its build
+tools/fonts/       The font generator, its TTF/WOFF sources and their licences
+tests/             Host tests (Catch2 + headless LVGL)
 ```
 
-### Main screen and launcher
+## Fonts
 
-- **main_screen** — standard layout: status bar + app container + launcher (icon grid or list)
-- **app_launcher** — flex-wrap button grid of app icons, Power OFF dialog
+LVGL ships Montserrat as ASCII plus the FontAwesome symbols. `src/fonts/`
+carries the same fonts under the same symbol names (`lv_font_montserrat_10`,
+`_12`, `_14`, `_16`, `_18`, `_24`: same TTF, same bpp, same `LV_SYMBOL_*`
+list) plus Latin-1 Supplement and Latin Extended-A, so names with diacritics
+draw on every platform without a call site naming a special font. A size LVGL's
+configuration leaves off compiles to nothing. LVGL's own copies of those sizes
+have to leave the build:
+
+```cmake
+include(<crosspad-gui>/cmake/crosspad_gui_fonts.cmake)
+crosspad_gui_replace_lvgl_fonts(<your LVGL target>)
+```
+
+The ESP-IDF component does it for `lvgl__lvgl` and forces each enabled size
+into the link from this component. Regenerate with
+`python3 tools/fonts/generate.py` (needs node; fetches lv_font_conv through
+npx). The range and why it has holes are in the generator; the font licences
+are in `tools/fonts/font_license/`.
+
+## Components
+
+### Main Screen & Launcher
+
+- **main_screen** -- standard layout: status bar (or transport bar) + app container + launcher
+- **app_launcher** -- grid or list of app icons, Power OFF dialog
+- **app_orchestrator** -- which app runs, app factory, pre-launch hooks, foreground tracking
 
 ```cpp
 auto result = crosspad_gui::build_main_screen(parent, apps, count, config);
-// result.status_bar, result.transport_bar (with config.transport_bar), result.app_container, result.encoder_group,
-// result.launcher_grid (grid style) or result.launcher_menu (list style)
+// result.status_bar, result.app_container, result.launcher_grid
 ```
 
-### Status bar
+### Status Bar
 
-Dynamic top bar with app icons (left/right zones), a loading progress indicator and performance stats. Icons are managed by string key:
+Top bar with app icons (left/right zones), loading progress and performance
+stats. It shows the settings and status the platform handed to
+`crosspad_platform_init()` (see [GuiServices](#platform-interfaces)). Icons are
+managed by string key:
 
 ```cpp
 crosspad_gui::statusbar_add_icon("midi", LV_SYMBOL_SHUFFLE, lv_color_hex(0x00FF00), StatusIconSide::Right);
-crosspad_gui::statusbar_set_loading(50);   // 0-100 shows progress, -1 hides it
+crosspad_gui::statusbar_set_loading(50);
+```
+
+### Kit Loader
+
+A kit loading, in the context row (x 4, y 34, 312×22) under the transport bar,
+which the status bar's arc no longer is: a mint fill with the text flipping to
+ink under it, "LOADING <kit>  38%" → "KIT LOADED  16/16" (fades out after
+600 ms); an error is the bar in red until tapped or the next load. On the
+overlay layer, built on first use. `statusbar_process_loader_status()` sends
+its errors here.
+
+```cpp
+crosspad_gui::kit_loader_start("FINGERDRUMMING_BOSS");
+crosspad_gui::kit_loader_set(38);          // 0..100
+crosspad_gui::kit_loader_done(16, 16);
+crosspad_gui::kit_loader_error("MISSING open_hat.wav");
 ```
 
 ### Settings UI
 
-One settings panel for every platform. Built-in categories: Display, Audio, USB, Pads & LEDs, Vibration, MIDI, Analog / Velocity, Backup (SD) (only with `FEAT_SETTINGS_BACKUP`), Programming, Info, System. A platform can add up to 8 categories of its own, before `settings_ui_create()`:
+Settings pages shared across platforms -- built-in categories (Display, Audio,
+USB, Pads & LEDs, Vibration, MIDI, Analog / Velocity, Backup, Programming,
+Info, System), one translation unit each (`src/components/settings_ui*.cpp`),
+plus up to 8 platform categories.
 
 ```cpp
+crosspad_gui::settings_ui_create(parent, nullptr);
 crosspad_gui::settings_ui_add_category({"My Category", LV_SYMBOL_SETTINGS, my_build_fn});
-crosspad_gui::settings_ui_create(content_area, group);   // group may be nullptr (touch only)
 ```
 
-Row helpers for consistent rows: `settings_row_switch`, `settings_row_slider`, `settings_row_dropdown`, `settings_row_info`, `settings_row_action`, `settings_section_header`.
+Row builders: `settings_row_switch`, `settings_row_slider`, `settings_row_info`,
+`settings_row_action`, `settings_row_dropdown`, `settings_section_header`.
 
-### VU meter
+### Power Button
 
-Stereo level meters with logarithmic scaling and peak hold. Levels are int16 amplitudes (0–32767):
+- **power_gesture** -- what the button means for the UI. `powerBack()` (click)
+  walks dropdown -> modal/overlay -> encoder edit mode -> drawer -> top bar
+  focus -> the running app's own back -> closing the app;
+  `powerToggleQuickSettings()` is the hold. Overlays register with
+  `ui_back_push()` / `ui_back_remove()`.
+- **power_button_classifier** -- `PowerButtonClassifier`, the click/hold timing
+  as a pure class (samples with their time in, gestures out): 500 ms hold
+  threshold, 700 ms wake guard, the LIGHT-sleep cancel window. The firmware
+  feeds it from its STM32 poll, `powerButtonPress()` / `powerButtonRelease()`
+  from an emulated button.
+
+### Firmware App
+
+The firmware launcher: **Library** (packages on the card, the two slots),
+**Store** (the cached catalog, Official then Community) and **Updates** tabs,
+a full-screen **kit card** whose buttons come from `fwCardPlan()`
+(`fw/FwCardActions.hpp`), and the questions before an install. Everything the
+views need from the platform goes through `IFwViewService`: storage requests
+whose answers move in on `dataPoll()`, the slots and their install/switch
+flows, the updater's jobs, the WiFi lease, the network-mode offer and the
+FW_UI fields a test reads. The platform registers the app (`REGISTER_APP_PL`,
+pad logic `"Firmware"`) around `fw_app_create()` / `fw_app_destroy()` and may
+end the Updates tab with a block of its own (`FwAppHooks`).
 
 ```cpp
-crosspad_gui::vu_set_levels(left, right);
+crosspad_gui::setFwViewService(&myService);          // once, after bootstrap()
+lv_obj_t* create(lv_obj_t* parent, App* a) { return crosspad_gui::fw_app_create(parent, a, kHooks); }
 ```
 
-### Other components
+### Other Components
 
 | Component | Purpose |
 |-----------|---------|
-| **radial_menu** | Circular menu with encoder navigation |
-| **file_explorer** | Filesystem browser with file type filters and preview |
-| **dfu_panel** | Firmware update info screen |
-| **ui_modal** | Confirmation and selection dialogs |
+| **transport_bar** | The top transport row (MODE, REC, play/stop, BPM, position, voices, battery) |
+| **boot_splash** | The cold-boot animation: pads light up, logo rises in, backlight and pad LEDs fade along; objects and a compiled-in 6 kB alpha logo, no decoded picture |
+| **mode_overlay** | MODE + pad: a 4x4 map of apps and switches, also the home screen |
+| **ui_modal** | Confirm, choice and selection dialogs, closed by the power button's back |
 | **ui_toast** | Temporary info/success/warning/error messages |
-| **volume_overlay** | Volume control with speaker/headphone mode cycling |
-| **power_gesture** | Portable power-button resolution: `powerBack()` walks dropdown → modal/overlay → encoder edit → drawer → app `handleBack()`; `powerToggleQuickSettings()` for the hold gesture |
+| **ui_text_prompt** | Full-screen text entry (touch keyboard, encoder walk, password mode) |
+| **ui_tile_grid** | Virtual grid of tiles: LVGL objects only for the rows in view |
+| **ui_wifi_bars** | Four-bar WiFi level indicator |
+| **file_explorer** | Filesystem browser with type filters and preview |
+| **markdown_view** | Renders headings, bullets, tables and text into a flex column |
+| **scope_view** | Oscilloscope of a live audio stream (crosspad::ScopeTap), with an RMS history mode |
+| **vu_meter** | Stereo levels with logarithmic scaling and peak hold |
+| **volume_overlay** | Output volume with Out 1 / Out 2 cycling |
+| **dfu_panel** | Firmware update info screen |
+| **midi_ble_panel** | The Settings "BLE MIDI" page (role, transposes, state, scan, devices, connect, monitor) over `MidiBleCallbacks`; rows without a callback are not shown |
+| **stm_pad_editor** | Per-pad analog tuning (logic + screen) |
+| **touch_gesture** | Screen-wide swipes, recognised beneath LVGL's object layer |
+| **app_icon** | Icon path resolution against the platform's asset prefix |
+| **settings_app** | The Settings app shell around settings_ui |
 
-More live in `include/crosspad-gui/components/` (scope view, transport bar, tile grid, text prompt, MIDI/BLE panel, STM pad editor, …).
-
-### Widgets
+## Widgets
 
 | Widget | Purpose |
 |--------|---------|
-| **keypad_buttons** | 4x4 pad button grid with pad colors from PadManager |
+| **keypad_buttons** | 4x4 pad button grid in the pads' colors |
 | **spinbox_helpers** | Styled spinbox builders |
-| **settings_widgets** | Settings row builders (switch, slider, text) |
+| **settings_widgets** | Text, switch and slider rows bound to a setting |
 | **footer_button** | Styled footer action button |
-| **gui_helpers** | Color utilities, visibility helpers |
+| **gui_helpers** | Color utilities, visibility helpers, guarded encoder-group restore |
 
-### App framework
+## App Framework
 
-`AppBase<Derived>` is a CRTP template providing the full LVGL app lifecycle. Each platform defines its own `App` class inheriting from it:
+`App` (`crosspad-gui/app/App.hpp`) is the app class every platform uses:
+`AppBase<App>` (CRTP) gives it the LVGL lifecycle, and its accessors
+(`padManager()`, `ledController()`, `status()`, `settings()`) read
+crosspad-core's `PlatformServices`, so a platform implements nothing for it.
 
-```cpp
-class App : public crosspad_gui::AppBase<App> {
-    // Platform-specific accessors
-};
-```
+Lifecycle: `start()` -> `pause()` / `resume()` -> `destroyApp()`. An app that
+declares a pad logic name gets `pushPadLogic()` on start and `popPadLogic()` on
+destroy; a root deleted by someone else (a launcher rebuild) rolls the app back
+to not-started through its `LV_EVENT_DELETE` hook and calls the app's destroy
+function with `nullptr`: release timers, subscriptions and groups, delete
+nothing. A destroy function therefore deletes its root only when it gets one
+(`if (root) lv_obj_delete_async(root);`).
 
-Lifecycle: `start()` -> `pause()` / `resume()` -> `destroyApp()` (or `destroyAppAsync()` from an event callback). Supports app flags (`APP_FLAG_MSGBOX` from crosspad-core) and show/hide callbacks (`setOnShow`, `setOnHide`).
-
-### Platform interfaces
+## Platform Interfaces
 
 | Interface | Purpose |
 |-----------|---------|
-| `IGuiPlatform` | Heap stats, millis, delay, asset path prefix, power off, navigation encoder, perf stats; optional LCD brightness, volume, USB audio, STM config, audio-route, USB-transfer, factory-reset, touch-sensitivity, voice-meter, user-interaction, DAW gain and `postToGui` hooks (see the header) |
-| `IFileSystem` | Directory listing abstraction (`PosixFileSystem` provided) |
+| `IGuiPlatform` | Heap stats, millis, asset path prefix, navigation encoder, perf stats, power off, volumes, STM config, audio routing, ... |
+| `crosspad::IFileSystem` | Directory listing for the file explorer: crosspad-core's, from `PlatformServices` (`PosixFileSystem` by default); `IGuiPlatform::storagePath()` maps the explorer's card paths onto it |
+| `GuiServices` | `platformSettings()` / `platformStatus()`: the settings and status in `PlatformServices` |
+| `IFwViewService` | The Firmware app's card, slots, updater, WiFi lease and network mode (`fw/IFwViewService.h`); only for a platform that hosts it |
+| `CROSSPAD_GUI_PSRAM_BSS` | Static state placed in external RAM (`platform/psram_placement.h`): `EXT_RAM_BSS_ATTR` under ESP-IDF, empty elsewhere |
 
-Registered during bootstrap:
+## Porting to a New Platform
 
-```cpp
-crosspad_gui::bootstrap(&guiPlatform, &fileSystem);
-initStyles();  // separate call (may need LVGL mutex on ESP)
+A platform provides:
+
+1. crosspad-core initialised -- `crosspad_platform_init()` with its event bus,
+   clock, LED strip, MIDI output, pad objects, and the `CrosspadSettings` /
+   `CrosspadStatus` the GUI is to show -- before the GUI starts;
+2. an `IGuiPlatform` implementation (and a `crosspad::IFileSystem` only where
+   POSIX does not reach the files);
+3. `crosspad_gui::gui_start()` (or `bootstrap()` + `initStyles()` + the
+   orchestrator by hand), then its own LVGL loop;
+4. LVGL 9.3 with Montserrat 10, 14, 16, 18 and 24 enabled, and LVGL's own
+   copies taken out of its build ([Fonts](#fonts)).
+
+Nothing else: no global `settings`, `status` or `status_c`, no `App`
+accessors (crosspad-gui defines them; a second definition is a duplicate
+symbol).
+
+## Theme System
+
+Color palette defined in `crosspad_theme.h`:
+
+| Color | Default | Hex |
+|-------|---------|-----|
+| Primary | Neon green | `#00FF66` |
+| Secondary | White | `#FFFFFF` |
+| Accent | Pink | `#FF3399` |
+| Background | Dark | `#1A1A2E` |
+| Card | Darker | `#16213E` |
+
+Override per-project by providing `crosspad_theme_user.h` with custom `#define` values before including the theme header.
+
+## API Documentation
+
+Generate browsable API docs with [Doxygen](https://www.doxygen.nl/):
+
+```bash
+doxygen
+# open docs/doxygen/html/index.html
 ```
 
-### Theme
+## Usage
 
-`theme/crosspad_theme.h` defines the colors:
+Include as a git submodule in your platform repo:
 
-| Macro | Default | Hex |
-|-------|---------|-----|
-| `CROSSPAD_THEME_PRIMARY` | The palette entry chosen in Settings → Display → Theme Color (default Neon Green) | `#00FF88` |
-| `CROSSPAD_THEME_SECONDARY` | White | `#FFFFFF` |
-| `CROSSPAD_THEME_ACCENT` | Pink | `#FF0088` |
-| `CROSSPAD_THEME_BG_DARK` | Dark background | `#1A1A2E` |
-| `CROSSPAD_THEME_CARD_BG` | Card background | `#2A2A2A` |
-| `CROSSPAD_THEME_BG_DEEP` / `CARD_DEEP` | Deeper pair for artwork screens (kit browser) | `#0B0B18` / `#16162E` |
-| `CROSSPAD_THEME_TEXT` | Text | `#E6E4F0` |
+```bash
+# ESP-IDF component
+git submodule add <url> components/crosspad-gui
 
-Primary palette: Neon Green `#00FF88`, Yellow `#D0F009`, Cyan `#00FFFF`, Purple `#EA00FF`, Orange `#FF8C00`, Pink `#FF0088`, Blue `#0088FF`, Red `#FF3232`. The index is stored in `CrosspadSettings::themeColorIndex`.
+# Desktop (CMake)
+git submodule add <url> lib/crosspad-gui
+# Then GLOB_RECURSE lib/crosspad-gui/src/*.cpp and *.c in CMakeLists.txt,
+# and crosspad_gui_replace_lvgl_fonts() on the LVGL target (see Fonts)
+```
 
-Override per project with a `crosspad_theme_user.h` on the include path: it can `#define` any of the macros above, or `CROSSPAD_THEME_DEFAULT_INDEX` to pick another default palette entry. A project that defines `CROSSPAD_THEME_PRIMARY` gets a fixed primary color instead of the palette.
+## Tests
+
+Host tests: Catch2 and LVGL 9.3 built headless, linked with crosspad-core's
+portable sources. The binary links every source in `src/`, so the build also
+fails if crosspad-gui expects a symbol from a platform.
+
+```bash
+cmake -S tests -B tests/build                 # crosspad-core beside this repo, or
+cmake -S tests -B tests/build -DCROSSPAD_CORE_DIR=/path/to/crosspad-core
+cmake --build tests/build -j8
+ctest --test-dir tests/build --output-on-failure
+```
+
+## Contributing / CI
+
+- `.github/workflows/docs.yml` builds the Doxygen pages on pushes to `master`.
+- `.github/workflows/notify-downstream.yml` tells the platform repos that
+  crosspad-gui moved (on a `v*` tag, a merged PR, or by hand). It needs the
+  repository secret `DOWNSTREAM_PAT` (a token that can dispatch to those
+  repos); the optional repository variable `CI_SECRETS_RUNNER` picks its runner.
+  Without the secret -- in a fork -- the job leaves a notice and does nothing.
+
+## License
+
+GPL-3.0-or-later — see [LICENSE](LICENSE).

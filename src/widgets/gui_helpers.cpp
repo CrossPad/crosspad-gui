@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/widgets/gui_helpers.h"
@@ -23,6 +24,10 @@ void lv_list_cleanup(lv_obj_t * list) {
     LV_LOG_INFO("List cleaned up");
 }
 
+// lv_group_delete() detaches the indev from a group it is deleting, but
+// nothing stops a later write from putting the freed pointer back -- and the
+// next encoder read then dereferences it (lv_group_get_focused,
+// LoadProhibited). lv_indev_restore_group() is that write, made safe.
 bool lv_group_is_alive(const lv_group_t * group) {
     if (group == NULL) return false;
     const uint32_t count = lv_group_get_count();
@@ -41,6 +46,9 @@ void lv_indev_restore_group(lv_indev_t * indev, lv_group_t * group) {
     lv_indev_set_group(indev, group);
 }
 
+// A group deleted in its own button's CLICKED handler is freed memory by the
+// time LVGL sends it LV_KEY_ENTER (indev_encoder_proc) -- a LoadProhibited in
+// lv_obj_get_state on the LVGL task. Hence the deferral.
 void lv_group_delete_deferred(lv_group_t * group) {
     if (group == NULL) return;
     lv_async_call([](void * g) {

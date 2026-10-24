@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "crosspad-gui/components/stm_pad_editor_logic.h"
 #include "crosspad/pad/PadManager.hpp"
 #include "crosspad/led/RgbColor.hpp"

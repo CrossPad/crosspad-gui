@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef USE_LVGL
 
 #include "crosspad-gui/components/touch_gesture.h"
@@ -21,7 +22,15 @@ struct Contact {
     bool     fired   = false;
     int32_t  x0 = 0, y0 = 0;
     uint32_t t0      = 0;
+    int32_t  lastX = 0, lastY = 0;   ///< the last sample taken for classification
 } s_c;
+
+/* The FT6x36 now and then reports one sample at y = 0 in the middle of a
+ * contact: a 200 px jump no finger made, which on its own read as an upward
+ * swipe and closed the drawer a tap inside it was meant for. 73 traced
+ * contacts on the board moved at most 70 px between two reads; a jump past
+ * this is not the finger. */
+constexpr int32_t kMaxStepPx = 120;
 
 lv_obj_t* s_pressed = nullptr;   // object under the press, for the widget veto
 SwipeDir  s_last    = SwipeDir::None;
@@ -41,6 +50,10 @@ const char* s_fwdResult = "-";
  * it actually has somewhere to scroll. */
 bool consumesHorizontal(lv_obj_t* obj)
 {
+    /* The press's object can be gone by now: a tap on the drawer's backdrop
+     * deletes it, and the next contact is classified before LVGL has named
+     * its own object. */
+    if (!obj || !lv_obj_is_valid(obj)) return false;
     for (lv_obj_t* o = obj; o; o = lv_obj_get_parent(o)) {
         if (lv_obj_check_type(o, &lv_slider_class) ||
             lv_obj_check_type(o, &lv_bar_class) ||
@@ -62,6 +75,19 @@ bool consumesHorizontal(lv_obj_t* obj)
     return false;
 }
 
+/* What the contact started on. LVGL's PRESSED names it, but LVGL sends no
+ * PRESSED for an object in LV_STATE_DISABLED -- and the transport bar's keys
+ * are disabled whenever nothing holds the transport, so a drag starting on
+ * one carried no object and the veto let the swipe through. The same search
+ * the indev does finds it. */
+lv_obj_t* pressedObj()
+{
+    if (s_pressed) return s_pressed;
+    lv_point_t p = { s_c.x0, s_c.y0 };
+    lv_obj_t* o = lv_indev_search_obj(lv_layer_top(), &p);
+    return o ? o : lv_indev_search_obj(lv_screen_active(), &p);
+}
+
 /* Runs one LVGL tick after recognition rather than inside the read: powerBack()
  * deletes objects, and the indev is mid-read when the swipe is spotted. */
 void act(void* param)
@@ -71,7 +97,13 @@ void act(void* param)
             powerBack();
             break;
         case SwipeDir::Down:
-            powerToggleQuickSettings();
+            /* Opens the drawer, never closes it: the drawer grows for 400 ms
+             * after the pull is recognised, and a second pull made because
+             * the first seemed to do nothing used to close it again. */
+            if (!statusbar_drawer_is_open()) statusbar_toggle_drawer();
+            break;
+        case SwipeDir::Up:
+            statusbar_close_drawer();
             break;
         case SwipeDir::Left:
             /* Forward. The platform gets it first, because a screen the
@@ -112,7 +144,11 @@ bool actionable(SwipeDir d)
     switch (d) {
         case SwipeDir::Right: return true;
         case SwipeDir::Left:  return true;
-        case SwipeDir::Down:  return s_c.y0 <= s_cfg.topBand;
+        case SwipeDir::Down:  return !statusbar_drawer_is_open() &&
+                                     s_c.y0 - s_cfg.area.y1 <= s_cfg.topBand;
+        /* An open drawer covers the screen, so pushing it back up starts
+         * anywhere; with none open an upward drag is a list's. */
+        case SwipeDir::Up:    return statusbar_drawer_is_open();
         default:              return false;
     }
 }
@@ -124,7 +160,12 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     const bool down = data->state == LV_INDEV_STATE_PRESSED;
 
     if (down && !s_c.down) {
-        s_c = Contact{true, true, false, data->point.x, data->point.y, lv_tick_get()};
+        const lv_area_t& a = s_cfg.area;
+        const bool inside = data->point.x >= a.x1 && data->point.x <= a.x2 &&
+                            data->point.y >= a.y1 && data->point.y <= a.y2;
+        s_c = Contact{true, inside, false, data->point.x, data->point.y, lv_tick_get(),
+                      data->point.x, data->point.y};
+        s_pressed = nullptr;   // this contact's, from LVGL's PRESSED after this read
         return;
     }
     if (!down) {
@@ -133,6 +174,10 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     }
     if (s_c.fired) return;   // lv_indev_wait_release() ignores the rest of the contact
     if (!s_c.armed) return;
+    if (LV_ABS(data->point.x - s_c.lastX) > kMaxStepPx ||
+        LV_ABS(data->point.y - s_c.lastY) > kMaxStepPx) return;
+    s_c.lastX = data->point.x;
+    s_c.lastY = data->point.y;
 
     const SwipeDir d = classify(data->point.x - s_c.x0, data->point.y - s_c.y0,
                                 lv_tick_elaps(s_c.t0));
@@ -142,7 +187,7 @@ void gesture_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
         return;
     }
     if (!actionable(d)) { s_c.armed = false; return; }
-    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(s_pressed)) {
+    if ((d == SwipeDir::Right || d == SwipeDir::Left) && consumesHorizontal(pressedObj())) {
         s_c.armed = false;
         return;
     }

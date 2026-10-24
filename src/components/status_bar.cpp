@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "crosspad-gui/components/status_bar.h"
+#include "crosspad-gui/components/kit_loader.h"
 #include "crosspad-gui/components/ui_wifi_bars.h"
 #include "crosspad-gui/styles/styles.h"
 #include "crosspad-gui/widgets/gui_helpers.h"
 #include "crosspad-gui/platform/IGuiPlatform.h"
+#include "crosspad-gui/platform/GuiServices.h"
 #include "crosspad-gui/theme/crosspad_theme.h"
 
 #include "crosspad/net/WifiTypes.hpp"
@@ -25,26 +28,33 @@
 
 using namespace crosspad;
 
-// Maximum drawer height = parent content height minus status bar (cap so it doesn't exceed screen)
-#define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(status_c)) - lv_obj_get_height(status_c))
+// Maximum drawer height = parent content height minus the row it hangs from (cap so it doesn't exceed screen)
+#define LV_DRAWER_MAX_HEIGHT (int32_t)(lv_obj_get_content_height(lv_obj_get_parent(drawer_anchor())) - lv_obj_get_height(drawer_anchor()))
 
-extern CrosspadSettings * settings;
-extern CrosspadStatus status;
-extern lv_obj_t * status_c; // status bar container
+using crosspad_gui::platformSettings;
+using crosspad_gui::platformStatus;
+
+static lv_obj_t * status_c = NULL; // status bar container
 
 static bool quickSettingsPanelVisible = false;
 
-/* The arrow used to be the drawer's open button and nothing else; it is now
- * the bar's mode switch, and the drawer is off by default. Everything that
- * reached the drawer -- the power button's 0.5 s hold included -- goes
- * through s_drawer_enabled, so the arrow survives the drawer being disabled
- * instead of disappearing with it. */
+/* The arrow used to be the drawer's open button and nothing else; with a
+ * handler installed it is the bar's mode switch instead. Everything that
+ * reaches the drawer -- the downward swipe from the top edge and the power
+ * button's 0.5 s hold -- goes through s_drawer_enabled, which follows
+ * Settings -> Display -> Quick Settings Drawer, so the arrow survives the
+ * drawer being disabled instead of disappearing with it. */
 static bool s_drawer_enabled = false;
 /* What the arrow does instead of opening the drawer: the transport bar
- * installs transportbar_show(true) here, so the icons are one tap from the
- * row that replaced them. Nothing installed = the arrow does nothing, which
- * is why it is only built when something has. */
+ * installs transportbar_show(true) here, so the transport is one tap (or one
+ * encoder click) from the icons. Nothing installed = the arrow opens the
+ * drawer, as it always did. */
 static void (*s_arrow_handler)() = NULL;
+/* The row the drawer hangs from. The status bar itself unless a caller put
+ * it in a row of its own -- the transport bar's, where the status bar is one
+ * page of two and may be scrolled off screen when the drawer opens. */
+static lv_obj_t * s_drawer_anchor = NULL;
+static lv_obj_t * drawer_anchor() { return s_drawer_anchor ? s_drawer_anchor : status_c; }
 
 // subjects
 static lv_subject_t s_loading;
@@ -82,11 +92,19 @@ static lv_obj_t * status_loading_arc;
  * the engine starts cutting tails to keep up. */
 static lv_obj_t * s_voice_meter = NULL;
 
-static lv_obj_t * s_perf_fps_col = NULL;   // FPS column
-static lv_obj_t * s_perf_cpu_col = NULL;   // CPU column
-static lv_obj_t * s_perf_mem_col = NULL;   // MEM column
+/* Two lines each, in the logo's place while any is on (there is no room for
+ * both): FPS; CPU = both cores and the audio render; MEM = internal RAM and
+ * PSRAM in kilobytes. A column near its limit inverts, as the transport bar's
+ * voice counter does at the ceiling. */
+static lv_obj_t * s_perf_fps_col = NULL;   // FPS
+static lv_obj_t * s_perf_cpu_col = NULL;   // CPU: core 0, core 1
+static lv_obj_t * s_perf_dsp_col = NULL;   // CPU: the audio render's longest pass, overruns
+static lv_obj_t * s_perf_ram_col = NULL;   // MEM: internal RAM free, its low-water mark
+static lv_obj_t * s_perf_ps_col  = NULL;   // MEM: PSRAM free, its largest block
 static lv_timer_t * t_perf_stats = NULL;
 static uint8_t s_perf_flags = 0; // bitfield: bit0=FPS, bit1=CPU, bit2=MEM
+static uint32_t s_perf_overruns = UINT32_MAX;   // the count last read; MAX = none yet
+static uint32_t s_perf_overrun_at = 0;          // lv_tick when it last grew
 
 // dynamic app icon slots
 struct StatusBarAppIcon {
@@ -144,6 +162,7 @@ static void anim_translate_x_cb(void * var, int32_t v) {
 // Forward declarations
 static void drawer_open_event_cb(lv_event_t * e);
 static void drawer_close_event_cb(lv_event_t * e);
+static void drawer_backdrop_event_cb(lv_event_t * e);
 static void drawer_open();
 static void drawer_close();
 static void drawer_open_end_cb(lv_anim_t * a);
@@ -154,7 +173,6 @@ static void drawer_close_end_cb(lv_anim_t * a);
 static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * parent);
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont);
 static void create_open_button();
-static void delete_open_button();
 
 // ── Loading API ─────────────────────────────────────────────────────────────
 
@@ -194,9 +212,8 @@ void statusbar_show_loader_message(const char * title, const char * message, boo
 void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg) {
     if (done) {
         statusbar_set_loading(-1);
-        if (error) {
-            statusbar_show_loader_message("Error", msg, true);
-        }
+        /* In the context row, where the load was shown -- not a box to close. */
+        if (error) kit_loader_error(msg);
     } else {
         statusbar_set_loading(progress);
     }
@@ -359,47 +376,88 @@ static void voice_meter_timer_cb(lv_timer_t * timer) {
              : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
 }
 
-static void perf_stats_timer_cb(lv_timer_t * timer) {
-    if (s_perf_flags == 0) return;
+/* Where a column inverts. 85 % of a block is where the pitched engine starts
+ * shedding voices (audio_task.cpp); 128 kB is the PSRAM the song rings and the
+ * screen mirror leave the UI; 32 kB of internal RAM is under what BLE or the
+ * WiFi radio needs to start. An overrun stays lit for 10 s, so one that
+ * happened while nobody looked is still seen. */
+static constexpr uint32_t kPerfCpuWarnPct = 90;
+static constexpr uint32_t kPerfDspWarnPct = 85;
+static constexpr uint32_t kPerfSramWarnKb = 32;
+static constexpr uint32_t kPerfPsramWarnKb = 128;
+static constexpr uint32_t kPerfOverrunLitMs = 10000;
 
-    crosspad_gui::PerfStats ps = crosspad_gui::getGuiPlatform().getPerfStats();
+static void perf_paint(lv_obj_t * col, bool warn) {
+    lv_obj_set_style_bg_opa(col, warn ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_color(col, warn ? CROSSPAD_THEME_PRIMARY
+                                          : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+}
+
+/// "411k", "1.2M" from a thousand up (the column is as wide as "999k"), or
+/// "--" where the platform does not measure it (0).
+static const char * perf_kb(char * buf, size_t n, uint32_t kb) {
+    if (!kb)              snprintf(buf, n, "--");
+    else if (kb < 1000)   snprintf(buf, n, "%" LV_PRIu32 "k", kb);
+    else                  snprintf(buf, n, "%" LV_PRIu32 ".%" LV_PRIu32 "M", kb / 1024, (kb % 1024) * 10 / 1024);
+    return buf;
+}
+
+static void perf_stats_timer_cb(lv_timer_t * timer) {
+    (void)timer;
+    /* Hidden behind the transport bar most of the time: nothing to paint. */
+    if (!status_c || lv_obj_has_flag(status_c, LV_OBJ_FLAG_HIDDEN)) return;
+
+    const crosspad_gui::PerfStats ps = crosspad_gui::getGuiPlatform().getPerfStats();
+    char a[12], b[12];
 
     if (s_perf_fps_col && (s_perf_flags & PERF_FLAG_FPS)) {
-        lv_label_set_text_fmt(s_perf_fps_col,
-            "fps\n%" LV_PRIu32, ps.fps);
+        lv_label_set_text_fmt(s_perf_fps_col, "FPS\n%" LV_PRIu32, ps.fps);
     }
-    if (s_perf_cpu_col && (s_perf_flags & PERF_FLAG_CPU)) {
-        lv_label_set_text_fmt(s_perf_cpu_col,
-            "%02" LV_PRIu32 "%%\n%02" LV_PRIu32 "%%",
-            ps.cpu0_pct, ps.cpu1_pct);
+    if (s_perf_flags & PERF_FLAG_CPU) {
+        if (s_perf_cpu_col) {
+            lv_label_set_text_fmt(s_perf_cpu_col, "C0 %" LV_PRIu32 "%%\nC1 %" LV_PRIu32 "%%",
+                                  ps.cpu0_pct, ps.cpu1_pct);
+            perf_paint(s_perf_cpu_col, ps.cpu0_pct >= kPerfCpuWarnPct || ps.cpu1_pct >= kPerfCpuWarnPct);
+        }
+        if (s_perf_dsp_col) {
+            if (s_perf_overruns != UINT32_MAX && ps.dsp_overruns != s_perf_overruns) {
+                s_perf_overrun_at = lv_tick_get() | 1;   // 0 is "never"
+            }
+            s_perf_overruns = ps.dsp_overruns;
+            const bool fresh = s_perf_overrun_at && lv_tick_elaps(s_perf_overrun_at) < kPerfOverrunLitMs;
+            lv_label_set_text_fmt(s_perf_dsp_col, "DSP %" LV_PRIu32 "%%\nXR %" LV_PRIu32,
+                                  ps.dsp_pct, ps.dsp_overruns);
+            perf_paint(s_perf_dsp_col, ps.dsp_pct >= kPerfDspWarnPct || fresh);
+        }
     }
-    if (s_perf_mem_col && (s_perf_flags & PERF_FLAG_MEM)) {
-        lv_label_set_text_fmt(s_perf_mem_col,
-            "S%" LV_PRIu32 "\nP%" LV_PRIu32,
-            ps.sram_pct, ps.psram_pct);
+    if (s_perf_flags & PERF_FLAG_MEM) {
+        if (s_perf_ram_col) {
+            lv_label_set_text_fmt(s_perf_ram_col, "RAM %s\nMIN %s",
+                                  perf_kb(a, sizeof(a), ps.sram_free_kb), perf_kb(b, sizeof(b), ps.sram_min_kb));
+            perf_paint(s_perf_ram_col, ps.sram_free_kb && ps.sram_free_kb < kPerfSramWarnKb);
+        }
+    }
+    /* PSRAM always, whatever the flags: it is what the UI and every app run
+     * out of first, and the sample engine now takes it as it needs it. */
+    if (s_perf_ps_col) {
+        lv_label_set_text_fmt(s_perf_ps_col, "PS %s\nBLK %s",
+                              perf_kb(a, sizeof(a), ps.psram_free_kb), perf_kb(b, sizeof(b), ps.psram_block_kb));
+        perf_paint(s_perf_ps_col, ps.psram_block_kb && ps.psram_block_kb < kPerfPsramWarnKb);
     }
 }
 
 static void apply_perf_column_visibility() {
-    if (s_perf_fps_col) {
-        if (s_perf_flags & PERF_FLAG_FPS) lv_obj_remove_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_fps_col, LV_OBJ_FLAG_HIDDEN);
+    struct { lv_obj_t * col; uint8_t flag; } cols[] = {
+        { s_perf_fps_col, PERF_FLAG_FPS }, { s_perf_cpu_col, PERF_FLAG_CPU },
+        { s_perf_dsp_col, PERF_FLAG_CPU }, { s_perf_ram_col, PERF_FLAG_MEM },
+    };
+    for (auto & c : cols) {
+        if (c.col) lv_obj_set_hidden(c.col, !(s_perf_flags & c.flag));
     }
-    if (s_perf_cpu_col) {
-        if (s_perf_flags & PERF_FLAG_CPU) lv_obj_remove_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_cpu_col, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (s_perf_mem_col) {
-        if (s_perf_flags & PERF_FLAG_MEM) lv_obj_remove_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_perf_mem_col, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (status_logo) lv_obj_set_hidden(status_logo, s_perf_flags != 0);
 
-    if (s_perf_flags && t_perf_stats) {
-        lv_timer_resume(t_perf_stats);
-        lv_timer_ready(t_perf_stats);
-    } else if (!s_perf_flags && t_perf_stats) {
-        lv_timer_pause(t_perf_stats);
-    }
+    /* The PSRAM column is always up, so its timer always runs. */
+    if (t_perf_stats) lv_timer_ready(t_perf_stats);
 
 #if LV_USE_SYSMON && LV_USE_PERF_MONITOR
     lv_sysmon_hide_performance(NULL);
@@ -490,6 +548,14 @@ void statusbar_set_arrow_handler(void (*handler)()) {
     if (handler && !openButton) create_open_button();
 }
 
+lv_obj_t * statusbar_get_arrow() {
+    return openButton;
+}
+
+void statusbar_set_drawer_anchor(lv_obj_t * row) {
+    s_drawer_anchor = row;
+}
+
 } // namespace crosspad_gui
 
 // ── Status check timer ──────────────────────────────────────────────────────
@@ -507,6 +573,7 @@ static int16_t s_lastBatteryPct = kBatteryUnknown;
 static bool s_lastBatteryLow = false;
 
 static void check_status_timer_cb(lv_timer_t * timer) {
+    const CrosspadStatus & status = platformStatus();
     // SD card — ESP filesystem mount state is authoritative; STM32 detect is fallback
     bool sd = status.sdCardDetected;
     if (sd != s_lastSd) {
@@ -587,14 +654,14 @@ static void check_status_timer_cb(lv_timer_t * timer) {
  * swaps the focus group mid-click, and the release half lands on whatever the
  * other group had focused — closing the drawer launched an app that way. */
 
-/* The arrow is the bar's mode switch now: status icons on one side of it,
- * the four transport keys on the other. The drawer is off (its five controls
- * all live in Settings and the Mixer) and, while it is off, has no touch
- * entry point at all — only the power button's 0.5 s hold, which
- * s_drawer_enabled turns away too. */
+/* With a handler the arrow is the bar's mode switch, drawer or no drawer:
+ * it is the only way back to the transport a finger can tap and the encoder
+ * can click, so it cannot also be the drawer's. The drawer then opens with a
+ * downward swipe from the top edge (touch_gesture) or the power button's
+ * 0.5 s hold. */
 static void drawer_open_event_cb(lv_event_t * e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    if (!s_drawer_enabled) { if (s_arrow_handler) s_arrow_handler(); return; }
+    if (s_arrow_handler) { s_arrow_handler(); return; }
     /* Tapping the arrow opens instantly — it never charged, so there is
      * nothing for drawer_open() to find but an unhidden, unmoved button. */
     drawer_open();
@@ -611,7 +678,10 @@ static void drawer_open() {
      * off independently of the arrow now that the arrow switches modes. */
     if (!s_drawer_enabled || !openButton) return;
 
-    lv_obj_t * parent = lv_obj_get_parent(status_c);
+    lv_obj_t * anchor = drawer_anchor();
+    /* On the overlay layer, not beside the bar: the home screen's MODE map
+     * lives there and covered a drawer opened on the screen below it. */
+    lv_obj_t * parent = crosspad_gui::getOverlayParent();
 
     /* Click catcher under the drawer, so a tap that misses the panel closes it
      * instead of reaching what is below. The close arrow sits in the corner,
@@ -624,12 +694,13 @@ static void drawer_open() {
     lv_obj_remove_flag(s_drawer_backdrop, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(s_drawer_backdrop, lv_obj_get_width(parent), lv_obj_get_height(parent));
     lv_obj_set_pos(s_drawer_backdrop, 0, 0);
-    lv_obj_add_event_cb(s_drawer_backdrop, drawer_close_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_drawer_backdrop, drawer_backdrop_event_cb, LV_EVENT_CLICKED, NULL);
 
-    // Create floating overlay on the parent screen
+    // Create floating overlay on the overlay layer
     s_drawer_overlay = lv_obj_create(parent);
     lv_obj_add_flag(s_drawer_overlay, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(status_c));
+    lv_obj_set_width(s_drawer_overlay, lv_obj_get_width(anchor));
     /* Dark under the bar, the accent along its foot: the look of the
      * Settings rows, not a second status bar. */
     lv_obj_set_style_bg_color(s_drawer_overlay, lv_color_make(20, 20, 20), 0);
@@ -656,8 +727,8 @@ static void drawer_open() {
     // Set initial height to 0 for animation
     lv_obj_set_height(s_drawer_overlay, 0);
 
-    // Position directly below the status bar (relative alignment)
-    lv_obj_align_to(s_drawer_overlay, status_c, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
+    // Position directly below the bar's row (relative alignment)
+    lv_obj_align_to(s_drawer_overlay, anchor, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
 
     // Ensure drawn on top of siblings
     lv_obj_move_to_index(s_drawer_overlay, -1);
@@ -694,6 +765,24 @@ static void drawer_open_end_cb(lv_anim_t * a) {
         lv_timer_resume(t_ramUpdate);
         lv_timer_ready(t_ramUpdate);
     }
+}
+
+/* The backdrop closes the drawer on a tap beside it, not on a drag: LVGL
+ * sends CLICKED after any press that scrolled nothing, and a second pull from
+ * the top edge -- made because the drawer was still growing -- landed on the
+ * backdrop and shut the drawer it was meant to open. */
+static lv_point_t s_backdrop_press;
+#define DRAWER_TAP_SLOP_PX 12
+
+static void drawer_backdrop_event_cb(lv_event_t * e) {
+    lv_indev_t * indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) { s_backdrop_press = p; return; }
+    if (LV_ABS(p.x - s_backdrop_press.x) > DRAWER_TAP_SLOP_PX ||
+        LV_ABS(p.y - s_backdrop_press.y) > DRAWER_TAP_SLOP_PX) return;
+    drawer_close();
 }
 
 static void drawer_close_event_cb(lv_event_t * e) {
@@ -792,18 +881,14 @@ static void create_open_button() {
     lv_obj_align(openButton, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(openButton, drawer_open_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_ext_click_area(openButton, 8);
+    /* styleStatusBar zeroes the outline, and the arrow is in the encoder's
+     * rotation under the transport bar: a border shows where it is. */
+    lv_obj_set_style_border_color(openButton, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_border_width(openButton, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_radius(openButton, 4, LV_STATE_FOCUS_KEY);
     lv_obj_add_flag(openButton, LV_OBJ_FLAG_IGNORE_LAYOUT);
     if (s_app_icon_zone_right) {
         lv_obj_set_style_pad_right(s_app_icon_zone_right, (QUICK_BUTTON_SIZE * 3 / 2) + 4, 0);
-    }
-}
-
-static void delete_open_button() {
-    if (!openButton) return;
-    lv_obj_delete(openButton);
-    openButton = NULL;
-    if (s_app_icon_zone_right) {
-        lv_obj_set_style_pad_right(s_app_icon_zone_right, 4, 0);
     }
 }
 
@@ -819,6 +904,11 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     drawer_release_encoder();
     openButton = NULL;
     closeButton = NULL;
+    s_drawer_anchor = NULL;
+    /* The drawer is not in that tree: it lives on the overlay layer, and an
+     * open one would outlive the bar it hangs from. */
+    if (s_drawer_overlay && lv_obj_is_valid(s_drawer_overlay)) lv_obj_delete(s_drawer_overlay);
+    if (s_drawer_backdrop && lv_obj_is_valid(s_drawer_backdrop)) lv_obj_delete(s_drawer_backdrop);
     s_drawer_overlay = NULL;
     s_drawer_backdrop = NULL;
     quickSettingsPanelVisible = false;
@@ -828,6 +918,7 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     }
 
     lv_obj_t * cont = lv_obj_create(parent);
+    status_c = cont;
     lv_obj_set_width(cont, LV_PCT(100));
     lv_obj_set_height(cont, LV_STATUS_BAR_HEIGHT);
     lv_obj_add_style(cont, &styleStatusBar, 0);
@@ -840,7 +931,9 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     // Status bar panel (icons row)
     statusBarPanel = lv_obj_create(cont);
     lv_obj_set_width(statusBarPanel, LV_PCT(100));
-    lv_obj_set_height(statusBarPanel, LV_STATUS_BAR_HEIGHT);
+    /* The container's height, not LV_STATUS_BAR_HEIGHT: as a page of the
+     * transport bar's row the bar is as tall as that row, icons centred. */
+    lv_obj_set_height(statusBarPanel, LV_PCT(100));
     lv_obj_add_style(statusBarPanel, &styleStatusBar, 0);
     lv_obj_set_style_pad_left(statusBarPanel, 4, 0);
     lv_obj_set_style_pad_right(statusBarPanel, 4, 0);
@@ -848,12 +941,11 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
     lv_obj_set_scrollbar_mode(statusBarPanel, LV_SCROLLBAR_MODE_OFF);
     lv_CreateStatusBarTop(statusBarPanel);
 
-    /* The drawer is off, and the setting is left alone so it can come back
-     * without the user having to find it again: every control it held (both
-     * outputs, the speaker switch, pad RGB, screen brightness) is in Settings
-     * and the Mixer already. The arrow outlives it as the swap back to the
-     * transport bar, so it is built whenever either has something to do. */
-    s_drawer_enabled = false;
+    /* The drawer follows its setting (on unless switched off). The arrow is
+     * built whenever either the drawer or the swap back to the transport bar
+     * has something to do with it. */
+    const crosspad::CrosspadSettings * cfg = crosspad::CrosspadSettings::getInstance();
+    crosspad_gui::statusbar_set_drawer_enabled(cfg && cfg->quickSettingsEnabled);
     if (s_drawer_enabled || s_arrow_handler) create_open_button();
 
     // Init RAM subjects once (reused across open/close cycles)
@@ -989,15 +1081,24 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     extern lv_style_t styleLoadingArc;
     lv_obj_add_style(status_loading_arc, &styleLoadingArc, LV_PART_INDICATOR);
 
-    // Performance stats: 3 vertical columns in right icon zone
-    // Each column is a label with 2 lines, narrow and tall
-    auto make_perf_col = [](lv_obj_t * parent) -> lv_obj_t * {
+    // Performance stats: two-line columns in the right icon zone, each as
+    // wide as its widest text, so a digit more or less does not shift the row.
+    auto make_perf_col = [](lv_obj_t * parent, const char * widest) -> lv_obj_t * {
         lv_obj_t * lbl = lv_label_create(parent);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+        const lv_font_t * font = &lv_font_montserrat_10;
+        lv_obj_set_style_text_font(lbl, font, 0);
         // Match status bar text color (styleStatusBar uses lv_color_bw_from_color)
         lv_obj_set_style_text_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
-        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_bg_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+        lv_obj_set_style_radius(lbl, 2, 0);
+        lv_obj_set_style_pad_hor(lbl, 1, 0);
         lv_obj_set_style_text_line_space(lbl, -2, 0);
+        lv_point_t sz;
+        lv_text_get_size(&sz, widest, font, 0, -2, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_obj_set_width(lbl, sz.x + 2);
+        /* A value wider than the template (100 %, five digits of overruns)
+         * loses its last pixels rather than growing a third line. */
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
         lv_label_set_text(lbl, "");
         return lbl;
     };
@@ -1014,9 +1115,16 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
      * repainting the bar on every block. */
     t_voice_meter = lv_timer_create(voice_meter_timer_cb, 150, NULL);
 
-    s_perf_fps_col = make_perf_col(s_app_icon_zone_right);
-    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right);
-    s_perf_mem_col = make_perf_col(s_app_icon_zone_right);
+    /* Between the system icons and the arrow there are ~230 px: the five
+     * columns at these widths fill ~205 of them. */
+    lv_obj_set_style_pad_column(s_app_icon_zone_right, 1, 0);   // each column pads itself by 1
+    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right, "C0 99%\nC1 99%");
+    s_perf_dsp_col = make_perf_col(s_app_icon_zone_right, "DSP 99%\nXR 999");
+    s_perf_ram_col = make_perf_col(s_app_icon_zone_right, "RAM 999k\nMIN 999k");
+    s_perf_ps_col  = make_perf_col(s_app_icon_zone_right, "PS 999k\nBLK 999k");
+    s_perf_fps_col = make_perf_col(s_app_icon_zone_right, "FPS\n99");
+    s_perf_overruns = UINT32_MAX;
+    s_perf_overrun_at = 0;
 
     // Perf stats timer (500ms update)
     if (t_perf_stats) {
@@ -1026,7 +1134,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     t_perf_stats = lv_timer_create(perf_stats_timer_cb, 500, NULL);
 
     // Apply initial flags from settings
-    uint8_t perf_flags = settings ? settings->perfStatsFlags : 0;
+    uint8_t perf_flags = platformSettings().perfStatsFlags;
     crosspad_gui::statusbar_set_perf_level(perf_flags);
 
     // Status check timer — delete previous if status bar is being re-created
@@ -1035,6 +1143,7 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
         t_check_status = NULL;
     }
     // Reset cached values so icons are refreshed on first tick
+    const CrosspadStatus & status = platformStatus();
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
@@ -1179,13 +1288,13 @@ static void drawer_switch_event_cb(lv_event_t * e)
 {
     auto * ctx = static_cast<DrawerSwitchCtx *>(lv_event_get_user_data(e));
     auto * sw = static_cast<lv_obj_t *>(lv_event_get_target(e));
-    if (!ctx || !ctx->setting || !settings) return;
+    if (!ctx || !ctx->setting) return;
 
     const bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
     *ctx->setting = on;
-    settings->stm.audioEn = on ? 1 : 0;
+    platformSettings().stm.audioEn = on ? 1 : 0;
     if (on) {
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
     } else {
         crosspad_gui::getGuiPlatform().writeStmConfig8(REG_CTL_AUDIO_EN, 0);
     }
@@ -1303,30 +1412,30 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
      * (REG_CTL_AUDIO_EN). Hence a switch below them, not a slider. */
     auto line_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setHeadphoneVolume(settings->masterFX.outVolumeCodec[1][0]);
+        crosspad_gui::getGuiPlatform().setHeadphoneVolume(platformSettings().masterFX.outVolumeCodec[1][0]);
     };
     auto phones_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(settings->masterFX.outVolumeCodec[0][0]);
+        crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
     };
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad::getPadLedController().setBrightness(settings->RGBbrightness);
+        crosspad::getPadLedController().setBrightness(platformSettings().RGBbrightness);
     };
     auto lcd_apply = [](lv_event_t * e) {
         (void)e;
-        crosspad_gui::getGuiPlatform().setLcdBrightness(settings->LCDbrightness);
+        crosspad_gui::getGuiPlatform().setLcdBrightness(platformSettings().LCDbrightness);
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
     lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Out 1", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[1][0]), line_apply);
+                        &(platformSettings().masterFX.outVolumeCodec[1][0]), line_apply);
     lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
-                        &(settings->masterFX.outVolumeCodec[0][0]), phones_apply);
+                        &(platformSettings().masterFX.outVolumeCodec[0][0]), phones_apply);
     lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
-                        &(settings->masterFX.speakersEnabled));
-    lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(settings->RGBbrightness), rgb_apply);
-    lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(settings->LCDbrightness), lcd_apply);
+                        &(platformSettings().masterFX.speakersEnabled));
+    lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(platformSettings().RGBbrightness), rgb_apply);
+    lv_create_my_slider(cont, LV_SYMBOL_EYE_OPEN, "Screen", 5, 100, &(platformSettings().LCDbrightness), lcd_apply);
 
     /* Memory, small and dim, and the way back up. */
     lv_obj_t * footer = lv_obj_create(cont);

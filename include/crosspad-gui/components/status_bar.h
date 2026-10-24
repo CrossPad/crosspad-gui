@@ -1,11 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include "lvgl.h"
 #include <cstdint>
 
-// Status bar height (shared define, can be overridden)
+// Status bar height (shared define, can be overridden). The transport bar's,
+// which it swaps with in place: at 22 the app container below moved up 8 px on
+// every swap. The boards' CrossPad.h said 30 all along, but this header is
+// compiled without it.
 #ifndef LV_STATUS_BAR_HEIGHT
-#define LV_STATUS_BAR_HEIGHT 22
+#define LV_STATUS_BAR_HEIGHT 30
 #endif
 
 #ifndef QUICK_BUTTON_SIZE
@@ -33,7 +37,8 @@ lv_subject_t * statusbar_get_loading_subject();
 void statusbar_show_loader_message(const char * title, const char * message, bool isError);
 
 // Process a single loading status update from any background loader.
-// Call from GUI thread only. Hides loading indicator when done, shows error message if needed.
+// Call from GUI thread only. Hides loading indicator when done; an error goes to
+// the kit loader's red bar (kit_loader.h).
 void statusbar_process_loader_status(uint8_t progress, bool done, bool error, const char * msg);
 
 // ── Dynamic App Icon API ────────────────────────────────────────────────────
@@ -91,8 +96,10 @@ void statusbar_hide_title();
 
 // ── Performance Stats ────────────────────────────────────────────────────────
 
-// Set performance stats display flags (bitfield).
-// bit 0 = FPS column, bit 1 = CPU column, bit 2 = MEM column
+// Set performance stats display flags (bitfield), from IGuiPlatform::getPerfStats().
+// bit 0 = FPS; bit 1 = CPU: both cores and the audio render (DSP %, overruns);
+// bit 2 = MEM: internal RAM free + low-water mark, PSRAM free + largest block.
+// While any is on they take the logo's place.
 #define PERF_FLAG_FPS  (1 << 0)
 #define PERF_FLAG_CPU  (1 << 1)
 #define PERF_FLAG_MEM  (1 << 2)
@@ -100,19 +107,31 @@ void statusbar_set_perf_level(uint8_t flags);
 
 // ── Arrow handler ────────────────────────────────────────────────────────────
 
-/* The arrow on the bar's right used to be the quick-settings drawer's open
- * button. The drawer is off, and the arrow is now the way back to whatever
- * replaced the bar: the transport bar installs transportbar_show(true) here.
+/* The arrow on the bar's right is the quick-settings drawer's open button
+ * until a handler is installed; then it is the way back to whatever replaced
+ * the bar -- the transport bar installs transportbar_show(true) here -- and
+ * the drawer opens with the downward swipe from the top edge instead.
  *
  * Installing a handler builds the arrow if the drawer had not already. With
  * no handler and no drawer the arrow is not built at all, rather than sitting
  * there doing nothing. */
 void statusbar_set_arrow_handler(void (*handler)());
 
+/* The arrow itself, or nullptr when it is not built: the transport bar puts
+ * it in the encoder's rotation while the status icons are on screen. */
+lv_obj_t * statusbar_get_arrow();
+
+/* The row the drawer hangs from and takes its width from: the status bar
+ * itself by default. The transport bar sets its own row of two pages, where
+ * the status bar can be scrolled off screen when the drawer opens. Reset by
+ * every lv_CreateStatusBar(). */
+void statusbar_set_drawer_anchor(lv_obj_t * row);
+
 // ── Drawer (quick-settings) toggle ───────────────────────────────────────────
 
-// Enable/disable the status-bar drawer (header dropdown + arrow button).
-// When disabled: the open arrow is hidden and any open drawer is closed.
+// Enable/disable the status-bar drawer (Settings -> Quick Settings Drawer;
+// every lv_CreateStatusBar() reads the setting again). When disabled, any
+// open drawer is closed; the arrow stays if it has a handler.
 // Must be called from LVGL task context.
 void statusbar_set_drawer_enabled(bool enabled);
 
@@ -140,10 +159,8 @@ void statusbar_arrow_hold_cancel();
 
 } // namespace crosspad_gui
 
-// Create the status bar as a child of the given parent.
-// Requires: extern CrosspadSettings * settings;
-//           extern CrosspadStatus status;
-//           extern lv_obj_t * status_c;
+// Create the status bar as a child of the given parent. It shows the
+// settings and status in crosspad::PlatformServices (crosspad-gui/platform/GuiServices.h).
 // @param parent  Parent object (typically the main screen flex column)
 // @return The created status bar container
 lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent);

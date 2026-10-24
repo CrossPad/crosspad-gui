@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #ifdef USE_LVGL
@@ -9,6 +10,10 @@ namespace crosspad_gui {
 // Set audio levels for the VU meter (call from audio task)
 // Values are int16 amplitude (0-32767)
 void vu_set_levels(int16_t left, int16_t right);
+
+// The loudest levels given to vu_set_levels() since the last call, and start
+// again from zero (LVGL thread). One reader: two would split the peaks.
+void vu_take_peaks(int16_t& left, int16_t& right);
 
 } // namespace crosspad_gui
 

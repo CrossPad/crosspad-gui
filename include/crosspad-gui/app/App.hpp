@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <cstddef>
@@ -5,24 +6,20 @@
 #include <memory>  // For std::enable_shared_from_this
 
 #include "crosspad/app/AppFlags.hpp"
-// Forward declarations for crosspad-core types used in convenience accessors
-namespace crosspad { class PadManager; class PadLedController; }
 
 #include "lvgl.h"
 #include "crosspad-gui/app/AppBase.hpp"
 
-// Forward declarations for enhanced app system
-struct console_entry_s;
-namespace crosspad { class CrosspadSettings; class CrosspadStatus; }
+namespace crosspad { class PadManager; class PadLedController; class CrosspadSettings; class CrosspadStatus; }
 using crosspad::CrosspadSettings;
 using crosspad::CrosspadStatus;
 
 /**
- * @brief Platform App class for P4 / 2playerCrosspad.
+ * @brief The App class every platform builds its apps from.
  *
- * Inherits LVGL lifecycle from crosspad_gui::AppBase<App> (CRTP) and adds:
- * - std::enable_shared_from_this for safe async destruction
- * - Platform-specific resource accessors
+ * Inherits the LVGL lifecycle from crosspad_gui::AppBase<App> (CRTP) and adds
+ * convenience accessors for crosspad-core's singletons. A platform supplies nothing here: the accessors read
+ * PlatformServices, which crosspad_platform_init() filled.
  */
 class App : public crosspad_gui::AppBase<App>,
             public std::enable_shared_from_this<App> {
@@ -31,25 +28,12 @@ public:
 
     virtual ~App() = default;
 
-    // destroyAppAsync() now lives in AppBase, where every platform gets the
-    // same deferred, orchestrator-aware close path.
-
-    // ── Platform-specific resource accessors ─────────────────────────────
-    class Sequencer& sequencer();
+    /// The platform's PadManager.
     crosspad::PadManager& padManager();
+    /// The platform's PadLedController.
     crosspad::PadLedController& ledController();
+    /// The device status (battery, connections, ...).
     CrosspadStatus& status();
+    /// The device settings.
     CrosspadSettings& settings();
-
-    void addCLICommand(const char* name, void (*handler)(char* argv[], int argc));
-    void sendEvent(int eventType, const void* eventData = nullptr);
-    void postGuiUpdate() { sendEvent(8); }
-
-    virtual void registerCLICommands() {}
-
-private:
-    void initializeResources();
-
-    static struct console_entry_s* commands[64];
-    static size_t commandCount;
 };

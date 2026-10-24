@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 /**
@@ -35,9 +36,9 @@ using IconResolverFn = const char* (*)(size_t index, const char* icon);
 /// Factory that creates a platform-specific App (which inherits ILvglApp)
 /// from an AppEntry.  Called once per registered LVGL app during populateApps().
 ///
-/// Must return a std::shared_ptr so that App (which uses
-/// std::enable_shared_from_this) can call shared_from_this() at runtime —
-/// required by App::destroyAppAsync(). Use crosspad_gui::defaultAppFactory<App>.
+/// Returns a std::shared_ptr, and should hand the app a weak reference to it
+/// (ILvglApp::setSelfRef()) so destroyAppAsync() can keep the app alive
+/// across the deferred close. Use crosspad_gui::defaultAppFactory<App>.
 using AppFactoryFn = std::shared_ptr<ILvglApp> (*)(lv_obj_t* container,
                                     const char* name,
                                     const char* icon,
@@ -94,10 +95,33 @@ public:
     void noteAppStarted(ILvglApp* app);
     void noteAppStopped(ILvglApp* app);
 
+    /// The way back: the registered apps opened since the last one opened from
+    /// home, oldest first. Every start of a registered app goes on top, and a
+    /// start of one already in it drops what was opened after it -- so an app
+    /// handing the screen back (the Recorder to Arrange) is a step back, not a
+    /// step forward. Home (the launcher, mode_overlay_go_home(), a rebuilt
+    /// main screen) starts it again.
+    void clearHistory() { history_.clear(); }
+
+    /// One step back from @p current, which owns the screen: it leaves the
+    /// history and the app under it is returned, or nullptr when the next step
+    /// back is home (or @p current is not the history's top -- a hand-built
+    /// overlay -- and the history is left alone). powerBack() opens what this
+    /// returns; a screen with its own way out (the kit browser) does the same.
+    ILvglApp* historyBack(ILvglApp* current);
+
     /// Told every time an app starts or stops, from inside start() or
     /// destroyApp() -- so it must not start or destroy apps itself; defer.
     /// The MODE map uses it to come up as home when nothing is left on screen.
     void setForegroundChangedHandler(void (*fn)()) { onForegroundChanged_ = fn; }
+
+    /// Told by onAppSelected() before it does anything else, however the app
+    /// was asked for (the launcher, a MODE map cell, CDC APP_START, the
+    /// simulator's app_start, one app handing over to another). A screen that
+    /// holds the pads above every app -- the MODE map -- closes there, so the
+    /// previous app's teardown and the next one's start find their own entry
+    /// on top of the pad-logic stack.
+    void setBeforeLaunchHandler(void (*fn)()) { onBeforeLaunch_ = fn; }
 
     const std::vector<std::shared_ptr<ILvglApp>>& getApps() const { return apps_; }
     const std::vector<LauncherAppInfo>& getAppInfos() const { return infos_; }
@@ -107,7 +131,10 @@ private:
 
     OrchestratorConfig config_{};
     ILvglApp* runningApp_ = nullptr;
+    std::vector<ILvglApp*> history_;               ///< see clearHistory()
+    bool isRegistered(const ILvglApp* app) const;
     void (*onForegroundChanged_)() = nullptr;
+    void (*onBeforeLaunch_)() = nullptr;
 
     std::vector<ILvglApp*> started_;               ///< Start order, newest last
     std::vector<std::shared_ptr<ILvglApp>> apps_;   ///< Owned App objects
