@@ -3,6 +3,7 @@
 
 #include "crosspad-gui/components/transport_bar.h"
 
+#include "crosspad-gui/components/metronome_popup.h"
 #include "crosspad-gui/components/mode_overlay.h"
 #include "crosspad-gui/components/status_bar.h"
 #include "crosspad-gui/components/ui_toast.h"
@@ -22,8 +23,9 @@ namespace crosspad_gui {
 namespace {
 
 /* ── Geometry and palette, 1:1 with "CrossPad UX2000 Touch.html" (v2) ──── *
- *   BPM 2..50 | POS 52..99 | MODE 101..139 | REC 141..179 | PLAY 181..219 |
- *   METRO 221..259 | VOICES + BATTERY 261..318, every tile 36 tall at y 2. */
+ *   BPM 2..42 | POS 44..82 | MODE 84..122 | REC 124..162 | DUB 164..202 |
+ *   PLAY 204..242 | METRO 244..272 | VOICES + BATTERY 274..318, every tile
+ *   36 tall at y 2; the transport keys stay 38 wide. */
 
 constexpr int32_t TB_H   = TRANSPORT_BAR_HEIGHT;   // 40
 constexpr int32_t TILE_Y = 2;
@@ -37,17 +39,18 @@ constexpr int32_t TILE_R = 6;
 
 #define F10 (&lv_font_montserrat_10)
 #define F14 (&lv_font_montserrat_14)
-#define F18 (&lv_font_montserrat_18)
+#define F16 (&lv_font_montserrat_16)
 
 constexpr lv_opa_t kWash    = 36;   // an idle tile: 14 % ink
+constexpr int32_t  kBatFill = 12;   // the battery's inside: 18 wide, a 1 px outline and 2 px in
 constexpr lv_opa_t kPressed = 72;   // a finger on it: 28 %
 
 /* In the encoder's order, left to right; the VOICES + battery tile (T.bat)
  * comes last, the way to the status icons. */
-enum Btn : uint8_t { B_BPM = 0, B_POS, B_MODE, B_REC, B_PLAY, B_METRO, B_COUNT };
+enum Btn : uint8_t { B_BPM = 0, B_POS, B_MODE, B_REC, B_DUB, B_PLAY, B_METRO, B_COUNT };
 
 /// What the bar paints from: an overdub is a take like a record, red, with
-/// DUB in the REC key and the POS label.
+/// the DUB key lit and DUB in the POS label.
 enum class BarState : uint8_t { Stop = 0, Pre, Play, Rec };
 
 constexpr uint32_t kRefreshMs = 120;
@@ -65,7 +68,9 @@ struct {
     lv_obj_t * pos_v = nullptr;
     lv_obj_t * mode_sq[4] = {};
     lv_obj_t * rec_dot = nullptr;
-    lv_obj_t * rec_dub = nullptr;
+    lv_obj_t * dub_ring = nullptr;
+    lv_obj_t * dub_dot = nullptr;
+    lv_obj_t * dub_l = nullptr;
     lv_obj_t * play_tri = nullptr;
     lv_obj_t * play_sq = nullptr;
     lv_obj_t * mt_case = nullptr;
@@ -178,25 +183,29 @@ lv_obj_t * line(lv_obj_t * p, const lv_point_precise_t * pts, uint32_t n, int32_
     return l;
 }
 
-/// A two-line readout: a 10 px caption over a value, centred in the tile.
-lv_obj_t * stack(lv_obj_t * tile, const char * caption, lv_obj_t ** caption_out)
+/// A two-line readout: a 10 px caption over a value in @p font, centred in
+/// the tile.
+lv_obj_t * stack(lv_obj_t * tile, const char * caption, const lv_font_t * font, lv_obj_t ** caption_out)
 {
     lv_obj_t * c = box(tile, 0, 0, LV_PCT(100), LV_PCT(100), 0);
     lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t * a = label(c, F10, caption);
-    lv_obj_t * v = label(c, F18, "");
+    lv_obj_t * v = label(c, font, "");
+    lv_obj_set_style_text_line_space(v, 0, 0);
     if (caption_out) *caption_out = a;
     return v;
 }
 
-/// @p text in 18 px where it fits the tile, else 14: "123.4" and a three-digit
-/// tempo with its tenth are wider than 18 px allows in 47-48.
-void set_fitted(lv_obj_t * l, const char * text, int32_t room)
+/// @p text in @p big where it fits the tile, else @p small: BPM is 14 px
+/// ("120.0" fits 40 with the letters drawn 1 px closer), POS 16 px until a
+/// bar number of three digits.
+void set_fitted(lv_obj_t * l, const char * text, int32_t room, const lv_font_t * big, const lv_font_t * small)
 {
     lv_point_t sz;
-    lv_text_get_size(&sz, text, F18, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    const lv_font_t * f = sz.x <= room ? F18 : F14;
+    const int32_t ls = lv_obj_get_style_text_letter_space(l, LV_PART_MAIN);
+    lv_text_get_size(&sz, text, big, ls, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const lv_font_t * f = sz.x <= room ? big : small;
     if (lv_obj_get_style_text_font(l, LV_PART_MAIN) != f) lv_obj_set_style_text_font(l, f, 0);
     if (strcmp(lv_label_get_text(l), text) != 0) lv_label_set_text(l, text);
 }
@@ -209,10 +218,13 @@ void press(uint8_t b)
             if (s_mode_handler) s_mode_handler();
             return;   // the overlay repaints us
         case B_REC:
-            /* One key for a take: REC while stopped, DUB onto what plays, and
-             * the same key again ends the overdub. */
-            if (T.dub_on || T.st == BarState::Play) crosspad::transportOverdub();
-            else                                     crosspad::transportRecord();
+            /* The holder decides what a REC is from where it stands: a take
+             * from a stop, a punch-in while playing, out again in a REC. */
+            crosspad::transportRecord();
+            break;
+        case B_DUB:
+            /* Layered onto what plays; again, and the layering stops. */
+            crosspad::transportOverdub();
             break;
         case B_PLAY:
             if (playing() || T.st == BarState::Pre) crosspad::transportStop();
@@ -237,9 +249,14 @@ void ev_cb(lv_event_t * e)
 
     if (code == LV_EVENT_LONG_PRESSED) {
         /* MODE held: the status bar. PLAY held: stop and back to 1.1 -- a
-         * stop while stopped is the rewind. */
+         * stop while stopped is the rewind. METRO held: its options. The
+         * press that opened them must not land on the popup as well (a tap
+         * beside its card closes it, the encoder's click would edit). */
         if (b == B_MODE) transportbar_show(false);
-        else if (b == B_PLAY) {
+        else if (b == B_METRO) {
+            if (lv_indev_t * in = lv_indev_active()) lv_indev_wait_release(in);
+            metronome_popup_open();
+        } else if (b == B_PLAY) {
             crosspad::transportStop();
             crosspad::transportStop();
             transportbar_refresh();
@@ -452,18 +469,17 @@ void repaint()
     const lv_color_t mfg = paint_key(B_MODE, mode_overlay_is_open());
     for (lv_obj_t * s : T.mode_sq) lv_obj_set_style_border_color(s, mfg, 0);
 
-    /* REC: the dot, or DUB while overdubbing */
+    /* REC: the dot, in the bar colour while a take records or counts in */
     const bool rec_on = (T.st == BarState::Rec && !T.dub_on) || T.st == BarState::Pre;
-    const lv_color_t rfg = paint_key(B_REC, rec_on || T.dub_on);
-    if (T.dub_on) {
-        lv_obj_add_flag(T.rec_dot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(T.rec_dub, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_text_color(T.rec_dub, rfg, 0);
-    } else {
-        lv_obj_remove_flag(T.rec_dot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(T.rec_dub, LV_OBJ_FLAG_HIDDEN);
-        fill(T.rec_dot, rec_on ? bc : C_RED, LV_OPA_COVER);
-    }
+    paint_key(B_REC, rec_on);
+    fill(T.rec_dot, rec_on ? bc : C_RED, LV_OPA_COVER);
+
+    /* DUB: a ring and a dot laid on it over the word, in the bar colour
+     * while it layers */
+    const lv_color_t dfg = paint_key(B_DUB, T.dub_on);
+    lv_obj_set_style_border_color(T.dub_ring, dfg, 0);
+    fill(T.dub_dot, dfg, LV_OPA_COVER);
+    lv_obj_set_style_text_color(T.dub_l, dfg, 0);
 
     /* PLAY / STOP in one key: the triangle stopped, a square while it runs */
     const bool run = playing() || T.st == BarState::Pre;
@@ -507,11 +523,11 @@ void paint_readouts()
          * thing that had one. */
         snprintf(buf, sizeof(buf), "--");
     }
-    set_fitted(T.bpm_v, buf, lv_obj_get_width(T.btn[B_BPM]) - 4);
+    set_fitted(T.bpm_v, buf, lv_obj_get_width(T.btn[B_BPM]) - 2, F14, F10);
 
     const crosspad::TransportPos p = crosspad::transportPosition();
     snprintf(buf, sizeof(buf), "%u.%u", (unsigned)p.bar, (unsigned)p.beat);
-    set_fitted(T.pos_v, buf, lv_obj_get_width(T.btn[B_POS]) - 4);
+    set_fitted(T.pos_v, buf, lv_obj_get_width(T.btn[B_POS]) - 2, F16, F14);
 
     /* Sounding / the kit's ceiling. Dim with nothing sounding, and inverted
      * -- an ink chip, the number in the bar colour -- at the ceiling, because
@@ -544,10 +560,11 @@ void paint_readouts()
         lv_obj_set_style_text_color(T.cpu, red ? C_RED : amber ? C_AMB : INK, 0);
     }
 
-    /* The battery: up to 9 px of fill inside a 13 x 8 outline, red when low. */
+    /* The battery: up to kBatFill px of fill inside an 18 x 8 outline, red
+     * when low. */
     uint8_t pct = platformStatus().batteryPct;
     if (pct > 100) pct = 100;
-    int32_t w = (9 * (int32_t)pct) / 100;
+    int32_t w = (kBatFill * (int32_t)pct) / 100;
     if (w < 1) w = 1;
     if (lv_obj_get_width(T.bat_fill) != w) lv_obj_set_width(T.bat_fill, w);
     lv_obj_set_style_bg_color(T.bat_fill, pct < 15 ? C_RED : INK, 0);
@@ -785,13 +802,14 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_add_event_cb(T.bar, bar_delete_cb, LV_EVENT_DELETE, nullptr);
 
     /* BPM */
-    T.bpm_v = stack(value_tile(B_BPM, 2, 48), "BPM", nullptr);
+    T.bpm_v = stack(value_tile(B_BPM, 2, 40), "BPM", F14, nullptr);
+    lv_obj_set_style_text_letter_space(T.bpm_v, -1, 0);
 
     /* POS: the state word over bar.beat */
-    T.pos_v = stack(value_tile(B_POS, 52, 47), "STOP", &T.pos_l);
+    T.pos_v = stack(value_tile(B_POS, 44, 38), "STOP", F16, &T.pos_l);
 
     /* MODE: 2x2 outline squares */
-    lv_obj_t * m = tile(B_MODE, 101, 38);
+    lv_obj_t * m = tile(B_MODE, 84, 38);
     lv_obj_t * grid = box(m, 0, 0, 21, 21, 0);
     lv_obj_center(grid);
     for (int i = 0; i < 4; i++) {
@@ -801,17 +819,26 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
         T.mode_sq[i] = s;
     }
 
-    /* REC: a ringed dot, or DUB */
-    lv_obj_t * r = tile(B_REC, 141, 38);
+    /* REC: a ringed dot */
+    lv_obj_t * r = tile(B_REC, 124, 38);
     T.rec_dot = box(r, 0, 0, 16, 16, LV_RADIUS_CIRCLE);
     lv_obj_center(T.rec_dot);
     lv_obj_set_style_border_width(T.rec_dot, 2, 0);
     lv_obj_set_style_border_color(T.rec_dot, INK, 0);
-    T.rec_dub = label(r, F14, "DUB");
-    lv_obj_center(T.rec_dub);
+
+    /* DUB: an open ring and a filled dot -- a layer on what is there --
+     * over the word */
+    lv_obj_t * d = tile(B_DUB, 164, 38);
+    lv_obj_t * dg = box(d, 0, 0, 20, 11, 0);
+    lv_obj_align(dg, LV_ALIGN_CENTER, 0, -6);
+    T.dub_ring = box(dg, 1, 1, 9, 9, LV_RADIUS_CIRCLE);
+    lv_obj_set_style_border_width(T.dub_ring, 2, 0);
+    T.dub_dot = box(dg, 10, 1, 9, 9, LV_RADIUS_CIRCLE);
+    T.dub_l = label(d, F10, "DUB");
+    lv_obj_align(T.dub_l, LV_ALIGN_CENTER, 0, 7);
 
     /* PLAY / STOP: a 14 x 16 triangle of 1 px columns, or a 13 px square */
-    lv_obj_t * p = tile(B_PLAY, 181, 38);
+    lv_obj_t * p = tile(B_PLAY, 204, 38);
     T.play_tri = box(p, 0, 0, 14, 16, 0);
     lv_obj_align(T.play_tri, LV_ALIGN_CENTER, 2, 0);
     for (int x = 0; x < 14; x++) {
@@ -823,22 +850,22 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_center(T.play_sq);
 
     /* METRO: a trapezoid case, its swinging arm and the bob on it. The points
-     * are static: lv_line keeps the pointer, not a copy. */
-    lv_obj_t * mt = tile(B_METRO, 221, 38);
-    lv_obj_t * mg = box(mt, 0, 0, 18, 20, 0);
+     * are static: lv_line keeps the pointer, not a copy. Held: its options. */
+    lv_obj_t * mt = tile(B_METRO, 244, 28);
+    lv_obj_t * mg = box(mt, 0, 0, 16, 18, 0);
     lv_obj_center(mg);
-    static const lv_point_precise_t kCase[] = { {6, 1}, {1, 19}, {17, 19}, {12, 1}, {6, 1} };
-    static const lv_point_precise_t kArm[]  = { {9, 15}, {14, 4} };
+    static const lv_point_precise_t kCase[] = { {5, 1}, {1, 17}, {15, 17}, {11, 1}, {5, 1} };
+    static const lv_point_precise_t kArm[]  = { {8, 13}, {12, 4} };
     T.mt_case = line(mg, kCase, 5, 2);
     T.mt_arm  = line(mg, kArm, 2, 2);
-    T.mt_bob  = box(mg, 7, 13, 4, 4, LV_RADIUS_CIRCLE);
+    T.mt_bob  = box(mg, 6, 11, 4, 4, LV_RADIUS_CIRCLE);
     lv_obj_set_style_bg_opa(T.mt_bob, LV_OPA_COVER, 0);
 
-    /* VOICES + battery, one tile: the caption over the count and a 15 x 8
-     * battery. A tap, or the encoder's click -- it is the last key in the
-     * rotation -- swaps in the status bar. A tap must not take the encoder's
-     * focus off the screen with it. */
-    T.bat = box(T.bar, 261, TILE_Y, 57, TILE_H, TILE_R);
+    /* VOICES + battery, one tile: the CPU caption, the count and a 20 x 8
+     * battery under it. A tap, or the encoder's click -- it is the last key
+     * in the rotation -- swaps in the status bar. A tap must not take the
+     * encoder's focus off the screen with it. */
+    T.bat = box(T.bar, 274, TILE_Y, 44, TILE_H, TILE_R);
     fill(T.bat, INK, kWash);
     lv_obj_set_style_bg_opa(T.bat, kPressed, LV_STATE_PRESSED);
     lv_obj_set_style_outline_color(T.bat, INK, LV_STATE_FOCUS_KEY);
@@ -854,21 +881,20 @@ lv_obj_t * transportbar_create(lv_obj_t * parent, lv_obj_t * status_bar)
     lv_obj_set_style_bg_color(T.cpu, INK, 0);
     lv_obj_set_style_radius(T.cpu, 3, 0);
     lv_obj_set_style_pad_hor(T.cpu, 1, 0);
-    lv_obj_t * vrow = box(col, 0, 0, LV_SIZE_CONTENT, LV_SIZE_CONTENT, 0);
-    lv_obj_set_flex_flow(vrow, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(vrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(vrow, 3, 0);
-    T.vox = label(vrow, F14, "--");
+    lv_obj_set_style_text_line_space(T.cpu, 0, 0);
+    T.vox = label(col, F14, "--");
+    lv_obj_set_style_text_letter_space(T.vox, -1, 0);
+    lv_obj_set_style_text_line_space(T.vox, 0, 0);
     lv_obj_set_style_bg_color(T.vox, INK, 0);
     lv_obj_set_style_radius(T.vox, 3, 0);
     lv_obj_set_style_pad_hor(T.vox, 1, 0);
-    lv_obj_t * bw = box(vrow, 0, 0, 15, 8, 0);
-    lv_obj_t * bat = box(bw, 0, 0, 13, 8, 2);
+    lv_obj_t * bw = box(col, 0, 0, 20, 8, 0);
+    lv_obj_t * bat = box(bw, 0, 0, 18, 8, 2);
     lv_obj_set_style_border_width(bat, 1, 0);
     lv_obj_set_style_border_color(bat, INK, 0);
-    T.bat_fill = box(bat, 2, 2, 9, 4, 1);
+    T.bat_fill = box(bat, 2, 2, kBatFill, 4, 1);
     fill(T.bat_fill, INK, LV_OPA_COVER);
-    fill(box(bw, 13, 2, 2, 4, 1), INK, LV_OPA_COVER);
+    fill(box(bw, 18, 2, 2, 4, 1), INK, LV_OPA_COVER);
 
     /* What the status bar's loader shows, as 2 px along the bottom edge: a
      * kit loading is something the player waits for. */
@@ -935,9 +961,8 @@ void transportbar_refresh()
     T.click_on = click;
 
     /* MODE, the metronome and BPM are the bar's own; the rest are the
-     * holder's, and a key it cannot honour dims without moving. REC is a
-     * record while stopped and an overdub while playing; PLAY is a stop while
-     * anything runs. */
+     * holder's, and a key it cannot honour dims without moving. PLAY is a
+     * stop while anything runs. */
     const bool run = st != BarState::Stop;
     T.en[B_MODE]  = true;
     T.en[B_METRO] = true;
@@ -945,8 +970,8 @@ void transportbar_refresh()
     T.en[B_POS]   = (caps & crosspad::kTransportCanLocate) != 0 && st == BarState::Stop;
     T.en[B_PLAY]  = run ? (caps & crosspad::kTransportCanStop) != 0
                         : (caps & crosspad::kTransportCanPlay) != 0;
-    T.en[B_REC]   = (dub || st == BarState::Play) ? (caps & crosspad::kTransportCanOverdub) != 0
-                                                  : (caps & crosspad::kTransportCanRecord) != 0;
+    T.en[B_REC]   = (caps & crosspad::kTransportCanRecord) != 0;
+    T.en[B_DUB]   = (caps & crosspad::kTransportCanOverdub) != 0;
 
     /* The position is turned only while stopped: PLAY from a finger or
      * another screen ends the turn. */
