@@ -1,5 +1,3 @@
-[![API Docs](https://img.shields.io/badge/API_Docs-GitHub_Pages-blue?logo=github)](https://crosspad.github.io/crosspad-gui/)
-
 # crosspad-gui
 
 Shared LVGL GUI library for CrossPad: theme, styles, the launcher and main
@@ -16,6 +14,12 @@ Used by:
 The Arduino firmware ([ESP32-S3](https://github.com/CrossPad/ESP32-S3)) is a
 deferred port and does not track the current API; [Porting to a new
 platform](#porting-to-a-new-platform) lists what it has to provide.
+
+## Documentation
+
+- [Architecture](https://crosspad.app/docs/concepts/architecture/#crosspad-gui-shared-ui), [Where code belongs](https://crosspad.app/docs/concepts/where-code-belongs/) and [Platform parity](https://crosspad.app/docs/concepts/platform-parity/) on https://crosspad.app/docs/.
+- The library reference is this README; full API docs: run `doxygen` here and open `docs/doxygen/html/index.html`.
+- Contributor notes (build systems, tests, versioning, releases): [CLAUDE.md](CLAUDE.md).
 
 ## Architecture
 
