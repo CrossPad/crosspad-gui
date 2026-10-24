@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Settings: rows that did nothing are not offered, and Factory Reset asks first.
+// Settings: rows that did nothing are not offered, Factory Reset asks first, and
+// Info carries the licence and the no-warranty notice.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -220,4 +221,39 @@ TEST_CASE("Settings: Home screen offers the grid, the list and the pad map", "[s
     CHECK(find_label(content, "Launcher") == nullptr);
     settings_ui_destroy();
     lv_indev_set_group(f.gui.encoder, f.group);
+}
+
+TEST_CASE("Settings: Info shows the licence and the no-warranty notice", "[settings]")
+{
+    guitest::GuiFixture f;
+    lv_obj_t* content = open_settings(f, "Info");
+    CHECK(find_label(content, "Legal") != nullptr);
+    CHECK(find_label(content, "GPL-3.0-or-later") != nullptr);
+    CHECK(find_label(content, "\xC2\xA9 CrossPad contributors") != nullptr);
+
+    lv_obj_t* read = find_label(content, "Read");
+    REQUIRE(read != nullptr);
+    lv_obj_send_event(lv_obj_get_parent(read), LV_EVENT_CLICKED, nullptr);
+    CHECK(find_label(lv_layer_top(), "No warranty") != nullptr);
+    CHECK(ui_back_has_overlay());
+
+    // OK closes it and gives the encoder back to the page.
+    click_focused(f.gui.encoder);
+    CHECK_FALSE(ui_back_has_overlay());
+    CHECK(lv_indev_get_group(f.gui.encoder) == f.group);
+
+    settings_ui_destroy();
+}
+
+TEST_CASE("Settings: leaving Settings with the notice open closes it", "[settings]")
+{
+    guitest::GuiFixture f;
+    lv_obj_t* content = open_settings(f, "Info");
+    lv_obj_t* read = find_label(content, "Read");
+    REQUIRE(read != nullptr);
+    lv_obj_send_event(lv_obj_get_parent(read), LV_EVENT_CLICKED, nullptr);
+    settings_ui_destroy();
+
+    CHECK_FALSE(ui_back_has_overlay());
+    CHECK(lv_obj_get_child_count(lv_layer_top()) == 0);
 }

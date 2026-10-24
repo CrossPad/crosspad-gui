@@ -290,3 +290,12 @@ ctest --test-dir tests/build --output-on-failure
 ## License
 
 GPL-3.0-or-later — see [LICENSE](LICENSE).
+
+### No warranty, intended use
+
+CrossPad is a musical instrument. This software is provided "as is", without
+warranty of any kind (GPL-3.0 sections 15 and 16). It is not designed, tested
+or certified for safety-critical use — medical, military, aviation,
+automotive, nuclear or life-support systems — and should not be relied on
+where a failure could cause injury, death or damage to property. Details:
+[Legal](https://crosspad.app/docs/reference/legal/).

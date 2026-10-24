@@ -1,6 +1,6 @@
 {
     "name": "crosspad-gui",
-    "version": "2.7.8",
+    "version": "2.8.0",
     "license": "GPL-3.0-or-later",
     "description": "CrossPad shared LVGL GUI components",
     "keywords": ["crosspad", "lvgl", "gui", "embedded"],

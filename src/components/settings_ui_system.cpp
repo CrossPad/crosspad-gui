@@ -199,8 +199,32 @@ void settings_detail::cat_build_programming(lv_obj_t * parent, lv_group_t * grou
 
 // ---- Info ----
 
+/* The notices GPL-3.0 section 5(d) asks an interactive program to show: the
+ * copyright and the licence as rows, the missing warranty and where the
+ * licence text is in a dialog of one button. */
+static lv_obj_t * s_legal_dialog = nullptr;
+
+static void legal_notice_answer_cb(int index, void * user_data) {
+    (void)index;
+    (void)user_data;
+    s_legal_dialog = nullptr;
+}
+
+static void legal_notice_cb(lv_event_t * e) {
+    (void)e;
+    if (s_legal_dialog) return;
+    static const ui_modal_button_t buttons[] = {
+        {"OK", UI_MODAL_BUTTON_PRIMARY},
+    };
+    s_legal_dialog = ui_modal_choice(
+        "No warranty",
+        "Provided as is, with absolutely no warranty. CrossPad is a musical "
+        "instrument, not designed or certified for medical, military, vehicle "
+        "or other safety-critical use. License: gnu.org/licenses/gpl-3.0",
+        buttons, 1, 0, legal_notice_answer_cb, nullptr, s_group);
+}
+
 void settings_detail::cat_build_info(lv_obj_t * parent, lv_group_t * group) {
-    (void)group;
     auto* ui = getSettingsUI();
 
     settings_section_header(parent, "Device");
@@ -222,6 +246,11 @@ void settings_detail::cat_build_info(lv_obj_t * parent, lv_group_t * group) {
             }
         }
     }
+
+    settings_section_header(parent, "Legal");
+    settings_row_info(parent, "Copyright", "\xC2\xA9 CrossPad contributors");
+    settings_row_info(parent, "License", "GPL-3.0-or-later");
+    settings_row_action(parent, group, "No warranty", "Read", legal_notice_cb, nullptr);
 }
 
 // ---- System ----
@@ -302,6 +331,7 @@ static void factory_reset_cb(lv_event_t * e) {
 void settings_detail::system_dialogs_dismiss() {
     // Leaving Settings answers an open question with Cancel.
     if (s_reset_dialog) ui_modal_confirm_dismiss(s_reset_dialog, false);
+    if (s_legal_dialog) ui_modal_confirm_dismiss(s_legal_dialog, false);
 }
 
 static void stm32_dfu_cb(lv_event_t * e) {
