@@ -6,6 +6,22 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.9.0 — 2026-10-24
+
+Paired with crosspad-core 2.17.0.
+
+### Added
+
+- The transport bar has a DUB key of its own, between REC and PLAY: REC is
+  always `transportRecord()`, DUB `transportOverdub()` (an overdub used to be
+  REC pressed while playing): an open ring and a dot over "DUB". The bar
+  follows "CrossPad UX2000 Touch.html" v2: the transport keys stay 38 px,
+  BPM is 40 (14 px digits), POS 38 (16 px), METRO 28 and the voices and
+  battery 44, the count over an 18 x 8 battery.
+- `metronome_popup`: held, METRO opens the metronome's options -- volume (5 %
+  a step), density 1/4 / 1/8 / 1/16, count-in off / 1 bar / 2 bars --
+  heard at once, closed by Done, a tap beside the card or the power button.
+
 ## 2.8.0 — 2026-10-24
 
 ### Added

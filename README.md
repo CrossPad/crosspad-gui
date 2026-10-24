@@ -89,6 +89,15 @@ crosspad_gui::statusbar_add_icon("midi", LV_SYMBOL_SHUFFLE, lv_color_hex(0x00FF0
 crosspad_gui::statusbar_set_loading(50);
 ```
 
+### Transport Bar
+
+The top row's keys, left to right: BPM, POS, MODE, REC, DUB, PLAY, METRO, then
+the voices and the battery. REC and DUB go to the transport's holder as they
+are (`crosspad::transportRecord()` / `transportOverdub()`): the holder decides
+what each means where it stands. Holding METRO opens **metronome_popup** --
+click volume, density (1/4, 1/8, 1/16) and count-in (off, 1 or 2 bars), each
+heard at once through `crosspad::transportSetClick*()` / `transportSetCountInBars()`.
+
 ### Kit Loader
 
 A kit loading, in the context row (x 4, y 34, 312×22) under the transport bar,
