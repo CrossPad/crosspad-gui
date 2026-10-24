@@ -6,6 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.8.0 — 2026-10-24
+
+### Added
+
+- Settings → Info ends with a **Legal** section: the copyright and the
+  licence (GPL-3.0-or-later) as rows, and *No warranty* → **Read**, a dialog
+  saying the software comes with no warranty, that CrossPad is not designed
+  or certified for safety-critical use, and where the licence text is — the
+  notices GPL-3.0 section 5(d) asks an interactive program to show. Leaving
+  Settings closes the dialog.
+
 ## 2.7.8 — 2026-10-23
 
 ### Fixed
