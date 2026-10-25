@@ -6,6 +6,16 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.10.0 — 2026-10-25
+
+Paired with crosspad-core 2.24.0.
+
+### Added
+
+- Settings → MIDI: "USB -> MIDI" and "ESP -> MIDI" (the STM routes them to the
+  TRS OUT jack from STM 1.14) and "MIDI Out Type" (Type A / Type B,
+  `Stm32Settings::midiOutType`, written to `REG_CTL_MIDI_OUT_TYPE`).
+
 ## 2.9.0 — 2026-10-24
 
 Paired with crosspad-core 2.17.0.
