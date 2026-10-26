@@ -62,6 +62,18 @@ void ui_toast_show(const char * message, uint32_t duration_ms, uint8_t severity)
     lv_label_set_text(lbl, message);
     lv_obj_set_style_text_color(lbl, text_color, 0);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    /* As wide as its text, but never wider than the screen: sized to the
+     * content alone, a long message was centred past both edges and read
+     * from neither. A longer one wraps onto more lines, centred. */
+    const int32_t screen_w = lv_display_get_horizontal_resolution(lv_obj_get_display(active_toast));
+    const int32_t max_w = screen_w - 16 - 2 * 12 - 2;   // 8 px each side, the padding, the border
+    lv_point_t text_size;
+    lv_text_get_size(&text_size, message, &lv_font_montserrat_14, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    if (text_size.x > max_w) {
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(lbl, max_w);
+        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+    }
 
     toast_timer = lv_timer_create(toast_timer_cb, duration_ms, NULL);
     lv_timer_set_repeat_count(toast_timer, 1);

@@ -6,6 +6,15 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.10.1 — 2026-10-27
+
+Paired with crosspad-core 2.24.0.
+
+### Fixed
+
+- A toast (`ui_toast_show()`) is never wider than the screen: a message longer
+  than a line wraps, centred, where it was centred past both edges.
+
 ## 2.10.0 — 2026-10-25
 
 Paired with crosspad-core 2.24.0.
