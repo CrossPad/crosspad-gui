@@ -13,8 +13,9 @@
 /// Toast severity: something failed.
 #define UI_TOAST_ERROR   3
 
-/// Show a temporary message at the bottom of the screen for @p duration_ms,
-/// coloured by @p severity (UI_TOAST_*). It replaces a toast already shown.
+/// Show a temporary message at the bottom of the screen, coloured by
+/// @p severity (UI_TOAST_*), for @p duration_ms or as long as the message
+/// takes to read, whichever is longer. It replaces a toast already shown.
 void ui_toast_show(const char * message, uint32_t duration_ms = 2000, uint8_t severity = UI_TOAST_INFO);
 
 /// Dismiss any active toast immediately.
