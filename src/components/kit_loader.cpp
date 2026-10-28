@@ -213,7 +213,9 @@ void kit_loader_done(uint8_t loaded, uint8_t total)
 {
     if (!s_root || s_state != State::Loading) return;
     char p[12];
-    snprintf(p, sizeof(p), "%u/%u", static_cast<unsigned>(loaded), static_cast<unsigned>(total));
+    /* A kit with no sample on any pad (one just made) is loaded, not 0/0. */
+    if (total == 0) snprintf(p, sizeof(p), "EMPTY");
+    else snprintf(p, sizeof(p), "%u/%u", static_cast<unsigned>(loaded), static_cast<unsigned>(total));
     lv_obj_set_style_bg_color(s_fill, kMint, 0);
     set_fill(100);
     set_text("KIT LOADED", p);

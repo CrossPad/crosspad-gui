@@ -6,6 +6,11 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.10.2 — 2026-10-28
+
+- The kit loader bar says `KIT LOADED  EMPTY` for a kit with no sample on any
+  pad (`kit_loader_done(0, 0)`), not `0/0`.
+
 ## 2.10.1 — 2026-10-27
 
 Paired with crosspad-core 2.24.0.

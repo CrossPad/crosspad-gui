@@ -27,7 +27,8 @@ void kit_loader_start(const char* kitName);
 /// 0..100. Ignored while the bar is not up.
 void kit_loader_set(uint8_t pct);
 
-/// Full mint, "KIT LOADED  <loaded>/<total>", then fades out.
+/// Full mint, "KIT LOADED  <loaded>/<total>" ("EMPTY" for a total of 0),
+/// then fades out.
 void kit_loader_done(uint8_t loaded, uint8_t total);
 
 /// Red, with @p msg; stays until tapped or the next start.
