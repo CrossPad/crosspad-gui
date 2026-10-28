@@ -534,7 +534,7 @@ void paint_readouts()
      * the next hit steals a voice and the player should know before it is
      * heard. "--" with no kit in an engine. */
     const VoiceMeter vm = getGuiPlatform().getVoiceMeter();
-    const bool full = vm.limit != 0 && vm.active >= vm.limit;
+    const bool full = vm.limit != 0 && (vm.full || vm.active >= vm.limit);
     if (vm.limit == 0) snprintf(buf, sizeof(buf), "--");
     else               snprintf(buf, sizeof(buf), "%u/%u", (unsigned)vm.active, (unsigned)vm.limit);
     if (strcmp(lv_label_get_text(T.vox), buf) != 0) lv_label_set_text(T.vox, buf);

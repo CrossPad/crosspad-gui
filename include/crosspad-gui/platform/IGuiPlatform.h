@@ -66,6 +66,9 @@ struct VoiceMeter {
     uint8_t active    = 0;   ///< voices sounding
     uint8_t streaming = 0;   ///< of those, how many are reading the card
     uint8_t limit     = 0;   ///< the ceiling; 0 when no engine holds a kit (nothing to show)
+    /// One engine at its own ceiling: with several engines up (a song's kit
+    /// tracks and its Pitch track) the sums above can be under the total.
+    bool    full      = false;
 };
 
 /// What the USB Audio host records, and where each codec sends its output.
