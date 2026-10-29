@@ -370,7 +370,7 @@ static void voice_meter_timer_cb(lv_timer_t * timer) {
     lv_label_set_text_fmt(s_voice_meter, "%u/%u", (unsigned)m.active, (unsigned)m.limit);
     /* At the ceiling the next hit costs an older voice, which is worth
      * saying in a colour rather than in a number nobody is reading. */
-    const bool full = m.active >= m.limit;
+    const bool full = m.full || m.active >= m.limit;
     lv_obj_set_style_text_color(s_voice_meter,
         full ? lv_palette_main(LV_PALETTE_AMBER)
              : lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);

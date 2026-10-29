@@ -15,8 +15,8 @@
 #include "crosspad/CrosspadCoreVersion.hpp"
 
 #define CROSSPAD_GUI_VERSION_MAJOR 2
-#define CROSSPAD_GUI_VERSION_MINOR 10
-#define CROSSPAD_GUI_VERSION_PATCH 2
+#define CROSSPAD_GUI_VERSION_MINOR 11
+#define CROSSPAD_GUI_VERSION_PATCH 1
 
 /* Built from the triple, never written out: the literal had drifted two bumps
  * behind it (Settings > Info read "1.4.0" off a 1.5.0 library) because a bump

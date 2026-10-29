@@ -75,7 +75,15 @@ void ui_toast_show(const char * message, uint32_t duration_ms, uint8_t severity)
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    toast_timer = lv_timer_create(toast_timer_cb, duration_ms, NULL);
+    /* Up as long as it takes to read: two words go quickly, two sentences
+     * stay. A second at a glance and 50 ms a character (~20 characters a
+     * second, read on a device in hand while playing), never under what the
+     * caller asked and never over ten seconds. */
+    uint32_t chars = 0;
+    for (const char * c = message; *c; ++c) chars += ((uint8_t)*c & 0xC0) != 0x80;   // UTF-8: count letters, not bytes
+    uint32_t read_ms = 1000 + 50 * chars;
+    if (read_ms > 10000) read_ms = 10000;
+    toast_timer = lv_timer_create(toast_timer_cb, read_ms > duration_ms ? read_ms : duration_ms, NULL);
     lv_timer_set_repeat_count(toast_timer, 1);
 }
 
