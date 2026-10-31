@@ -78,7 +78,9 @@ static void usb_mode_cb(lv_event_t * e) {
     ui_toast_show(audio ? "USB Audio on — device re-enumerating"
                         : "USB Serial+MIDI on — device re-enumerating",
                   2500, UI_TOAST_INFO);
-    show_detail(s_current_category);
+    /* The page is rebuilt once the dropdown has finished with this event,
+     * not from inside it. */
+    lv_async_call([](void*) { if (s_current_category >= 0) show_detail(s_current_category); }, nullptr);
 }
 
 /* The output volumes back into the hardware from the settings fields: one

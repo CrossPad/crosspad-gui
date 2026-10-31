@@ -6,6 +6,14 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.3 — 2026-10-31
+
+- Settings: the encoder works on a page a dropdown's choice rebuilt (USB
+  Mode, the theme colour, Dim/Sleep). The dropdown was deleted inside its own
+  `VALUE_CHANGED`, before it took the encoder out of editing, so every turn
+  went to the new page as a key and only a power click left; clearing a page
+  now ends editing, and USB Mode rebuilds after the event.
+
 ## 2.11.2 — 2026-10-31
 
 - Settings → USB: what a host records is the Mixer's USB bus, set on its
