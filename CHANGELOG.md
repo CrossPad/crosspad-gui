@@ -6,6 +6,15 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.2 — 2026-10-31
+
+- Settings → USB: what a host records is the Mixer's USB bus, set on its
+  ROUTE page; "Recording Source" moved under "Routing (advanced, until
+  restart)", its "Sampler" is "Mixer ROUTE", and the choice is no longer
+  saved (`CrosspadSettings::usbAudioPreset` is not written).
+- The outputs are named as the board's jacks are: Capture Codec "0 - Phones",
+  "1 - Line out"; the fallback sliders "Phones" and "Line out".
+
 ## 2.11.1 — 2026-10-29
 
 Paired with crosspad-core 2.24.0.

@@ -165,10 +165,9 @@ static void audio_buffer_options(crosspad::IAudioBuffer & ab, char * out, size_t
 // ---- USB Audio routing ----
 //
 // Mirrors of the live codec routing, refreshed from the platform on every
-// panel build. They are UI shadows, not settings: only the chosen preset is
-// persisted (CrosspadSettings::usbAudioPreset) and re-applied at boot, because
-// the individual codec registers are write-mostly and a half-restored routing
-// is worse than none.
+// panel build. They are UI shadows, not settings: what a USB host records is
+// the Mixer's USB bus, set on ROUTE, and every boot starts there; the other
+// sources are for the bench and last until the next boot.
 static uint8_t s_routePresetIdx  = 0;
 static uint8_t s_routeCaptureIdx = 0;
 static uint8_t s_routeAdcIdx[2]  = {0, 0};
@@ -186,7 +185,7 @@ static lv_obj_t * s_routeAdcDd[2]  = {nullptr, nullptr};
 // Order must match the platform's preset table; the trailing entry is the
 // read-only "no preset describes this" state.
 static const char * kRoutePresetOptions =
-    "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nMix (mics + line)\nSampler\nCustom";
+    "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nMix (mics + line)\nMixer ROUTE\nCustom";
 static constexpr uint8_t kRoutePresetCustomIdx = 6;
 
 // The dropdown widget inside a row built by settings_row_dropdown(): label
@@ -199,9 +198,7 @@ static void dd_select(lv_obj_t * dd, uint8_t idx) {
     if (dd) lv_dropdown_set_selected(dd, idx);
 }
 
-// Pull the live routing back into the widgets after any row changed it, and
-// persist the preset the device ended up in (including "custom", so boot does
-// not overwrite a hand-tuned routing with a preset the user moved away from).
+// Pull the live routing back into the widgets after any row changed it.
 static void route_sync_from_device() {
     AudioRouteState st{};
     if (!getGuiPlatform().getAudioRoute(st)) return;
@@ -216,15 +213,6 @@ static void route_sync_from_device() {
     dd_select(s_routeCaptureDd, s_routeCaptureIdx);
     dd_select(s_routeAdcDd[0], s_routeAdcIdx[0]);
     dd_select(s_routeAdcDd[1], s_routeAdcIdx[1]);
-
-    if (auto* s = get_settings()) {
-        s->usbAudioPreset = (s_routePresetIdx >= kRoutePresetCustomIdx)
-                              ? kAudioRoutePresetCustom : s_routePresetIdx;
-        // The row helpers save before invoking extra_cb, so the write above
-        // would otherwise miss its own store and the choice would not survive
-        // a reboot.
-        save_settings();
-    }
 }
 
 // Applies immediately; the row helper has already written and saved the value.
@@ -309,20 +297,20 @@ static void build_audio_route_rows(lv_obj_t * parent, lv_group_t * group) {
         s_routeMute[c]   = st.mute[c] != 0;
     }
 
-    s_routePresetDd = row_dropdown(
-        settings_row_dropdown(parent, group, "Recording Source",
-                              kRoutePresetOptions, &s_routePresetIdx, route_preset_cb));
-
     if (auto* cfg = get_settings()) {
         settings_row_slider(parent, group, "DAW Output dB", 0, 36,
                             &cfg->usbAudioGainDb, daw_gain_cb);
     }
 
-    settings_section_header(parent, "Routing (advanced)");
+    settings_section_header(parent, "Routing (advanced, until restart)");
+
+    s_routePresetDd = row_dropdown(
+        settings_row_dropdown(parent, group, "Recording Source",
+                              kRoutePresetOptions, &s_routePresetIdx, route_preset_cb));
 
     s_routeCaptureDd = row_dropdown(
         settings_row_dropdown(parent, group, "Capture Codec",
-                              "0 - Speakers\n1 - Headphones",
+                              "0 - Phones\n1 - Line out",
                               &s_routeCaptureIdx, route_capture_cb));
     s_routeAdcDd[0] = row_dropdown(
         settings_row_dropdown(parent, group, "Codec 0 Input",
@@ -401,10 +389,10 @@ void settings_detail::cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
         return;
     }
 
-    settings_row_slider(parent, group, "Speakers", 0, 100,
+    settings_row_slider(parent, group, "Phones", 0, 100,
                         &s->masterFX.outVolumeCodec[0][0], speaker_volume_cb);
 
-    settings_row_slider(parent, group, "Headphones", 0, 100,
+    settings_row_slider(parent, group, "Line out", 0, 100,
                         &s->masterFX.outVolumeCodec[1][0], headphone_volume_cb);
 }
 
