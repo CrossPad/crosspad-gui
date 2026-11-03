@@ -6,6 +6,24 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.4 — 2026-11-03
+
+- File explorer (the pad editor's sample browser): the encoder walks every
+  row to the end of the list, then Close and Load, then the transport bar.
+  Rows go up eight at a time, and the bar's keys -- which join a screen's
+  group once it has a member -- sat after the first chunk, so turning reached
+  the top bar a dozen rows in. `FooterLast()` now puts the footer and every
+  other member behind the rows, after each chunk, keeping the focus.
+- File explorer: going back lands on the folder you came from. Up a level
+  (Go back..., the power button) the left pane focuses the folder just left
+  and the right pane shows its contents at once -- it stood empty, and the
+  focus went to the first folder. Back from the right pane focuses the
+  folder whose contents it was showing, not "Go back...".
+- File explorer: "Go back..." stays the first row at the top of the left
+  pane. Turning up a page near the top scrolled the list past its start
+  (`lv_obj_scroll_by` is unbounded) and left an empty band above it; the
+  page flips are `lv_obj_scroll_by_bounded` now, at both ends.
+
 ## 2.11.3 — 2026-10-31
 
 - Settings: the encoder works on a page a dropdown's choice rebuilt (USB
