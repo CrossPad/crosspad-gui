@@ -176,7 +176,7 @@ lv_obj_t* create(lv_obj_t* parent, App* a) { return crosspad_gui::fw_app_create(
 | **markdown_view** | Renders headings, bullets, tables and text into a flex column |
 | **scope_view** | Oscilloscope of a live audio stream (crosspad::ScopeTap), with an RMS history mode |
 | **vu_meter** | Stereo levels with logarithmic scaling and peak hold |
-| **volume_overlay** | Output volume with Out 1 / Out 2 cycling |
+| **volume_overlay** | Output volume, Phones / Line out cycling |
 | **dfu_panel** | Firmware update info screen |
 | **midi_ble_panel** | The Settings "BLE MIDI" page (role, transposes, state, scan, devices, connect, monitor) over `MidiBleCallbacks`; rows without a callback are not shown |
 | **stm_pad_editor** | Per-pad analog tuning (logic + screen) |

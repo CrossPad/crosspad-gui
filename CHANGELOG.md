@@ -6,6 +6,19 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.5 — 2026-11-04
+
+- Quick-settings drawer: the volume sliders carry the outputs' names, one
+  per output, where the platform names them (`IOutputLevels`) -- on the
+  CrossPad "Speakers", "Phones" and "Line out", as Settings and the Mixer.
+  They read "Out 1" and "Out 2" and set Line out (the jack marked Out 3/4)
+  and the speakers alone; the phones (Out 1/2) had no slider. Without
+  `IOutputLevels` the two codec levels are "Phones" and "Line out", as in
+  Settings, and the volume overlay says the same.
+- Quick-settings drawer: the rows share the height under the bar, at most
+  34 px each, so the footer (memory, the close arrow) is no longer cut off
+  at the bottom of the screen; the name column is 70 px ("Speakers").
+
 ## 2.11.4 — 2026-11-03
 
 - File explorer (the pad editor's sample browser): the encoder walks every

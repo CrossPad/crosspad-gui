@@ -9,6 +9,8 @@
 #include "crosspad-gui/theme/crosspad_theme.h"
 
 #include "crosspad/net/WifiTypes.hpp"
+#include "crosspad/audio/IOutputLevels.hpp"
+#include "crosspad/platform/PlatformServices.hpp"
 #include "crosspad/settings/CrosspadSettings.hpp"
 #include "crosspad/settings/ISettingsUI.hpp"
 #include "crosspad/status/CrosspadStatus.hpp"
@@ -1206,6 +1208,10 @@ static lv_style_t style_knob_edited;    // being turned: the knob takes the acce
 
 static const lv_color_t kDrawerDim = lv_color_hex(0x9AA0A8);
 
+/* A drawer row's height: 34 px, less when a board's outputs add rows and the
+ * drawer would run past the screen (lv_CreateStatusBarQuickSettings). */
+static int32_t s_drawer_row_h = 34;
+
 /* A row as the Settings rows: the icon in the accent, the name, then the
  * slider, and what it is set to. */
 static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, const char * txt,
@@ -1213,7 +1219,7 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, cons
 {
     lv_obj_t * row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_size(row, LV_PCT(100), s_drawer_row_h);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 8, 0);
@@ -1227,7 +1233,7 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, cons
     lv_label_set_text(glyph, icon);
 
     lv_obj_t * label = lv_label_create(row);
-    lv_obj_set_width(label, 60);
+    lv_obj_set_width(label, 70);   // "Speakers", "Line out" on one line
     lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_label_set_text(label, txt);
@@ -1277,9 +1283,8 @@ static lv_obj_t * lv_create_my_slider(lv_obj_t * parent, const char * icon, cons
 
 /* The speaker amp's gate, as a drawer row.
  *
- * The speakers have no volume of their own -- they ride output 1 -- so what
- * belongs here is the STM's amp enable, the same field Settings -> Audio
- * writes. ON only *permits* Stm32Manager's SpeakerAmpGate to raise
+ * The speakers' level is a slider above where the platform names its outputs;
+ * this is the STM's amp enable, the same field Settings -> Audio writes. ON only *permits* Stm32Manager's SpeakerAmpGate to raise
  * REG_CTL_AUDIO_EN while the bus carries signal; OFF drops the amp at once,
  * because waiting for the 100 ms maintenance poll is audible. */
 struct DrawerSwitchCtx { bool * setting; };
@@ -1310,7 +1315,7 @@ static lv_obj_t * lv_create_my_switch(lv_obj_t * parent, const char * icon, cons
 {
     lv_obj_t * row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_size(row, LV_PCT(100), s_drawer_row_h);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 8, 0);
@@ -1324,7 +1329,7 @@ static lv_obj_t * lv_create_my_switch(lv_obj_t * parent, const char * icon, cons
     lv_label_set_text(glyph, icon);
 
     lv_obj_t * label = lv_label_create(row);
-    lv_obj_set_width(label, 60);
+    lv_obj_set_width(label, 70);   // "Speakers", "Line out" on one line
     lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_label_set_text(label, txt);
@@ -1382,6 +1387,10 @@ static void initSliderStyle() {
     lv_style_set_bg_color(&style_knob_edited, CROSSPAD_THEME_PRIMARY);
 }
 
+/* The drawer's output levels, by IOutputLevels index. */
+static constexpr int kDrawerMaxOutputs = 4;
+static uint8_t s_drawer_levels[kDrawerMaxOutputs];
+
 static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(cont, 0, 0);
@@ -1399,25 +1408,26 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
         lv_indev_set_group(nav, s_drawer_group);
     }
 
-    /* Two outputs, because the board has two codecs -- and the jacks are
-     * numbered the other way round from the codecs:
-     *   Out 1, the line out, is codec 1  -> outVolumeCodec[1][0]
-     *   Out 2, the phones,   is codec 0  -> outVolumeCodec[0][0]
-     * The first index is the codec, the convention audio_control.cpp and
-     * audio_route_control.cpp already use; only the labels are the jacks'.
+    /* The outputs, by the names the board gives them (IOutputLevels) --
+     * "Speakers", "Phones", "Line out", the names Settings and the Mixer show
+     * -- one slider each. The labels used to be "Out 1" and "Out 2" over
+     * outVolumeCodec[1][0] and [0][0]: on PCB 2.0 those are Line out (the
+     * jack marked Out 3/4) and the speakers alone, and the phones (Out 1/2)
+     * had no slider at all.
      *
-     * The speakers are not a third volume. They hang off codec 0 beside the
-     * phones jack -- which is why moving one moved the other -- so their
-     * level is Out 2's, and what is theirs alone is the amp gate on the STM
-     * (REG_CTL_AUDIO_EN). Hence a switch below them, not a slider. */
-    auto line_apply = [](lv_event_t * e) {
-        (void)e;
-        crosspad_gui::getGuiPlatform().setHeadphoneVolume(platformSettings().masterFX.outVolumeCodec[1][0]);
-    };
-    auto phones_apply = [](lv_event_t * e) {
-        (void)e;
-        crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
-    };
+     * The speakers' switch below stays: it is their amp gate on the STM
+     * (REG_CTL_AUDIO_EN), not a level. */
+    crosspad::IOutputLevels * ol = crosspad::getPlatformServices().outputLevels;
+    const int outputs = ol ? (ol->outputs() < kDrawerMaxOutputs ? ol->outputs() : kDrawerMaxOutputs) : 2;
+
+    /* Rows, outputs + the speakers' switch + Pads + Screen, and what is left
+     * of the screen under the bar for them beside the footer and the panel's
+     * padding and border. */
+    const int32_t rows = outputs + 3;
+    const int32_t room = LV_DRAWER_MAX_HEIGHT - 30 - 2 * 6 - 2;
+    s_drawer_row_h = room / rows < 34 ? room / rows : 34;
+    if (s_drawer_row_h < 24) s_drawer_row_h = 24;
+
     auto rgb_apply = [](lv_event_t * e) {
         (void)e;
         crosspad::getPadLedController().setBrightness(platformSettings().RGBbrightness);
@@ -1428,10 +1438,38 @@ static void lv_CreateStatusBarQuickSettings(lv_obj_t * cont) {
     };
 
     // Codec volume range is 0..100 — a 0..127 slider wasted its top third on a clamp.
-    lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Out 1", 0, 100,
-                        &(platformSettings().masterFX.outVolumeCodec[1][0]), line_apply);
-    lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Out 2", 0, 100,
-                        &(platformSettings().masterFX.outVolumeCodec[0][0]), phones_apply);
+    if (ol) {
+        /* The row helper writes a uint8_t, so each output has a shadow here
+         * and the apply hands on the one that moved -- as Settings does. */
+        auto level_apply = [](lv_event_t * e) {
+            (void)e;
+            crosspad::IOutputLevels * ol = crosspad::getPlatformServices().outputLevels;
+            if (!ol) return;
+            for (int i = 0; i < ol->outputs() && i < kDrawerMaxOutputs; ++i) {
+                if (s_drawer_levels[i] != ol->level(i)) ol->setLevel(i, s_drawer_levels[i]);
+            }
+        };
+        for (int i = 0; i < outputs; ++i) {
+            s_drawer_levels[i] = (uint8_t)ol->level(i);
+            lv_create_my_slider(cont, LV_SYMBOL_AUDIO, ol->name(i), 0, 100,
+                                &s_drawer_levels[i], level_apply);
+        }
+    } else {
+        /* No names from the platform: the two codecs' levels, under the
+         * names Settings gives them on such a platform. */
+        auto phones_apply = [](lv_event_t * e) {
+            (void)e;
+            crosspad_gui::getGuiPlatform().setSpeakerVolume(platformSettings().masterFX.outVolumeCodec[0][0]);
+        };
+        auto line_apply = [](lv_event_t * e) {
+            (void)e;
+            crosspad_gui::getGuiPlatform().setHeadphoneVolume(platformSettings().masterFX.outVolumeCodec[1][0]);
+        };
+        lv_create_my_slider(cont, LV_SYMBOL_AUDIO, "Phones", 0, 100,
+                            &(platformSettings().masterFX.outVolumeCodec[0][0]), phones_apply);
+        lv_create_my_slider(cont, LV_SYMBOL_UPLOAD, "Line out", 0, 100,
+                            &(platformSettings().masterFX.outVolumeCodec[1][0]), line_apply);
+    }
     lv_create_my_switch(cont, LV_SYMBOL_VOLUME_MID, "Speaker",
                         &(platformSettings().masterFX.speakersEnabled));
     lv_create_my_slider(cont, LV_SYMBOL_KEYBOARD, "Pads", 0, 255, &(platformSettings().RGBbrightness), rgb_apply);
