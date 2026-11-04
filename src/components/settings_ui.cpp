@@ -87,6 +87,11 @@ static void clear_content() {
     lv_obj_clean(s_content);
     if (s_group) {
         lv_group_remove_all_objs(s_group);
+        /* A dropdown whose choice rebuilds the page is deleted inside its own
+         * VALUE_CHANGED, before it takes the encoder out of editing: the new
+         * page then got every turn as a key and the focus never moved, and
+         * only a power click left (Settings -> USB, 2026-10-31). */
+        lv_group_set_editing(s_group, false);
     }
 }
 

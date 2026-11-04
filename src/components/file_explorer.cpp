@@ -130,10 +130,14 @@ static std::vector<uint16_t> s_buildOrder[2];
 static size_t       s_buildNext[2]  = {0, 0};
 static bool         s_buildRun[2]   = {false, false};
 static lv_timer_t * s_buildTimer = nullptr;
+/* Back up a level: the left row of the folder it came out of, focused once
+ * that row has gone up (0 = none). */
+static uint32_t     s_landRow = 0;
 
 static void SubScanTimer_cb(lv_timer_t * t) {
     lv_timer_pause(t);
     if (!s_subWanted[0]) return;
+    if (subFolderPath == s_subWanted) return;   // already on the right
     subFolderPath = s_subWanted;
     subEntries.clear();
     ListDirectory(subFolderPath, subEntries);
@@ -162,7 +166,7 @@ crosspad_gui::FileItem GetCurrentFolder() { return currentFolder; }
 
 // Forward declarations
 static bool IndexDirectory(const std::string & path);
-static void UpdateEntriesList();
+static void UpdateEntriesList(const std::string & landOn = std::string());
 static void UpdateFileList();
 static void FocusPane(int pane);
 static void ItemSelected_cb(lv_event_t * e);
@@ -206,6 +210,7 @@ static void SetFolderTitle(const std::string & path) {
 // closes it there rather than climbing (see explorerBack_cb); "/" is its own
 // parent, so there is no climbing past it either.
 static void GoUpOneLevel() {
+    const std::string cameFrom = currentFolder.path;
     size_t pos = currentFolder.path.find_last_of('/');
     std::string newPath = (pos != std::string::npos) ? currentFolder.path.substr(0, pos) : "";
     currentFolder.path = newPath.empty() ? "/" : newPath;
@@ -214,7 +219,7 @@ static void GoUpOneLevel() {
     currentFilePinned = false;   // new listing, old pick is gone
     if (IndexDirectory(currentFolder.path)) {
         SetFolderTitle(currentFolder.path);
-        UpdateEntriesList();
+        UpdateEntriesList(cameFrom);
     }
 }
 
@@ -473,6 +478,29 @@ static void AttachRow(lv_obj_t * btn, int pane, size_t idx) {
     lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 }
 
+/// Where the folder at @p path goes in the left pane -- its row, counting
+/// "Go back..." as row 0 -- built yet or not; 0 when it is not listed there.
+static uint32_t LeftRowOf(const std::string & path) {
+    if (path.empty()) return 0;
+    const std::vector<uint16_t> & order = s_buildOrder[0];
+    for (size_t k = 0; k < order.size(); ++k) {
+        if (order[k] < entries.size() && entries[order[k]].path == path) return (uint32_t)(k + 1);
+    }
+    return 0;
+}
+
+/// Back up a level: focus the folder it came out of once its row is up --
+/// unless the encoder has moved on from "Go back..." meanwhile.
+static void LandIfBuilt() {
+    if (!s_landRow || !itemList || !file_explorer_group) return;
+    if (lv_obj_get_child_count(itemList) <= s_landRow) return;
+    lv_obj_t * row = lv_obj_get_child(itemList, s_landRow);
+    s_landRow = 0;
+    lv_obj_t * focused = lv_group_get_focused(file_explorer_group);
+    if (focused && focused != lv_obj_get_child(itemList, 0)) return;
+    lv_group_focus_obj(row);
+}
+
 /// Hand the encoder the rows of one pane, plus the two footer buttons.
 ///
 /// Only the active pane's rows are in the group: with seventy kits on the left,
@@ -492,8 +520,11 @@ static void FocusPane(int pane) {
     if (loadButton)  lv_group_add_obj(file_explorer_group, loadButton);
 
     /* Past the row that only goes back: arriving on the contents pane should
-     * put the encoder on the first thing in it. */
-    const uint32_t landing = (pane == 1 && rows > 1) ? 1 : 0;
+     * put the encoder on the first thing in it, and coming back from it on
+     * the folder whose contents those were -- not on "Go back...". */
+    uint32_t landing = 0;
+    if (pane == 1) landing = rows > 1 ? 1 : 0;
+    else if (const uint32_t r = LeftRowOf(subFolderPath); r < rows) landing = r;
     if (rows > 0) lv_group_focus_obj(lv_obj_get_child(list, landing));
     else if (closeButton) lv_group_focus_obj(closeButton);
 }
@@ -507,11 +538,38 @@ static const char * FilterSymbol() {
     }
 }
 
-/// Put the footer buttons back after the rows; the group walks in add order.
+/// Put the footer buttons back after the rows, and whatever else is in the
+/// group after them too: the transport bar's keys join every screen's group at
+/// its end as soon as it has a member -- here after the first chunk of rows --
+/// so the rows that went up later sat behind them, and the encoder reached the
+/// top bar a dozen rows into the list. The group walks in add order. Run after
+/// every chunk; it moves nothing once the order is right.
 static void FooterLast() {
     if (!file_explorer_group) return;
+    auto isRow = [](lv_obj_t * o) {
+        lv_obj_t * p = o ? lv_obj_get_parent(o) : nullptr;
+        return p && (p == itemList || p == fileList);
+    };
+    const uint32_t n = lv_group_get_obj_count(file_explorer_group);
+    uint32_t lastRow = 0;
+    bool anyRow = false;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (isRow(lv_group_get_obj_by_index(file_explorer_group, i))) { lastRow = i; anyRow = true; }
+    }
+    std::vector<lv_obj_t *> tail;               // the bar's keys, in their order
+    bool misplaced = false;
+    for (uint32_t i = 0; i < n; ++i) {
+        lv_obj_t * o = lv_group_get_obj_by_index(file_explorer_group, i);
+        if (!o || isRow(o)) continue;
+        if (anyRow && i < lastRow) misplaced = true;
+        if (o != closeButton && o != loadButton) tail.push_back(o);
+    }
+    if (!misplaced) return;
+    lv_obj_t * focused = lv_group_get_focused(file_explorer_group);
     if (closeButton) { lv_group_remove_obj(closeButton); lv_group_add_obj(file_explorer_group, closeButton); }
     if (loadButton)  { lv_group_remove_obj(loadButton);  lv_group_add_obj(file_explorer_group, loadButton); }
+    for (lv_obj_t * o : tail) { lv_group_remove_obj(o); lv_group_add_obj(file_explorer_group, o); }
+    if (focused && lv_group_get_focused(file_explorer_group) != focused) lv_group_focus_obj(focused);
 }
 
 /// Fill one pane's rows a chunk at a time.
@@ -546,10 +604,9 @@ static void BuildChunk(int pane) {
         ++built;
     }
 
-    if (s_buildNext[pane] >= s_buildOrder[pane].size()) {
-        s_buildRun[pane] = false;
-        if (pane == s_activePane) FooterLast();
-    }
+    if (s_buildNext[pane] >= s_buildOrder[pane].size()) s_buildRun[pane] = false;
+    if (pane == s_activePane && (built || !s_buildRun[pane])) FooterLast();
+    if (pane == 0 && built) LandIfBuilt();
 }
 
 static void BuildTimer_cb(lv_timer_t *) {
@@ -590,6 +647,7 @@ static void StartBuild(int pane, std::vector<uint16_t> order) {
 static void UpdateFileList() {
     if (!fileList) return;
     lv_list_cleanup(fileList);
+    lv_obj_scroll_to_y(fileList, 0, LV_ANIM_OFF);   // the old listing's offset would hide the first rows
 
     if (subEntries.empty()) {
         if (!subFolderPath.empty()) {
@@ -609,9 +667,11 @@ static void UpdateFileList() {
 
 /// The left pane: the folders here, or the files when there are no folders --
 /// a kit's own directory is a leaf and has nothing but samples in it.
-static void UpdateEntriesList() {
+static void UpdateEntriesList(const std::string & landOn) {
     if (!itemList) return;
+    s_landRow = 0;
     lv_list_cleanup(itemList);
+    lv_obj_scroll_to_y(itemList, 0, LV_ANIM_OFF);   // "Go back..." at the top, whatever was scrolled before
     subEntries.clear();
     subFolderPath.clear();
     if (fileList) lv_list_cleanup(fileList);
@@ -626,6 +686,16 @@ static void UpdateEntriesList() {
 
     FocusPane(0);
     StartBuild(0, PaneOrder(entries, anyFolder));
+    /* Back up a level: on the folder it came out of, its contents on the right
+     * at once -- the pane stood empty, and the focus went to the first folder. */
+    if (const uint32_t row = LeftRowOf(landOn)) {
+        subFolderPath = landOn;
+        ListDirectory(subFolderPath, subEntries);
+        UpdateFileList();
+        s_landRow = row;
+        LandIfBuilt();
+        return;
+    }
     /* On the first entry rather than on "Go back...", so the right pane has
      * something in it the moment the browser opens. */
     if (lv_obj_get_child_count(itemList) > 1) {
@@ -662,14 +732,16 @@ static void ItemSelected_cb(lv_event_t * e) {
          * and a row-at-a-time scroll pays that on every click of the encoder.
          * Landing the row that left the view at the far edge leaves a
          * screenful of margin in the direction of travel, so the next few
-         * clicks only restyle two rows. */
+         * clicks only restyle two rows. Bounded: a page up near the top
+         * scrolled past it, and the pane opened with an empty band where
+         * "Go back..." belongs (a page down past the end, the same below). */
         lv_obj_t * list = (pane == 0) ? itemList : fileList;
         if (list) {
             lv_area_t row, box;
             lv_obj_get_coords(entry, &row);
             lv_obj_get_coords(list, &box);
-            if (row.y1 < box.y1)      lv_obj_scroll_by(list, 0, box.y2 - row.y2, LV_ANIM_OFF);
-            else if (row.y2 > box.y2) lv_obj_scroll_by(list, 0, box.y1 - row.y1, LV_ANIM_OFF);
+            if (row.y1 < box.y1)      lv_obj_scroll_by_bounded(list, 0, box.y2 - row.y2, LV_ANIM_OFF);
+            else if (row.y2 > box.y2) lv_obj_scroll_by_bounded(list, 0, box.y1 - row.y1, LV_ANIM_OFF);
         }
     }
 

@@ -6,6 +6,53 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.4 — 2026-11-03
+
+- File explorer (the pad editor's sample browser): the encoder walks every
+  row to the end of the list, then Close and Load, then the transport bar.
+  Rows go up eight at a time, and the bar's keys -- which join a screen's
+  group once it has a member -- sat after the first chunk, so turning reached
+  the top bar a dozen rows in. `FooterLast()` now puts the footer and every
+  other member behind the rows, after each chunk, keeping the focus.
+- File explorer: going back lands on the folder you came from. Up a level
+  (Go back..., the power button) the left pane focuses the folder just left
+  and the right pane shows its contents at once -- it stood empty, and the
+  focus went to the first folder. Back from the right pane focuses the
+  folder whose contents it was showing, not "Go back...".
+- File explorer: "Go back..." stays the first row at the top of the left
+  pane. Turning up a page near the top scrolled the list past its start
+  (`lv_obj_scroll_by` is unbounded) and left an empty band above it; the
+  page flips are `lv_obj_scroll_by_bounded` now, at both ends.
+
+## 2.11.3 — 2026-10-31
+
+- Settings: the encoder works on a page a dropdown's choice rebuilt (USB
+  Mode, the theme colour, Dim/Sleep). The dropdown was deleted inside its own
+  `VALUE_CHANGED`, before it took the encoder out of editing, so every turn
+  went to the new page as a key and only a power click left; clearing a page
+  now ends editing, and USB Mode rebuilds after the event.
+
+## 2.11.2 — 2026-10-31
+
+- Settings → USB: what a host records is the Mixer's USB bus, set on its
+  ROUTE page; "Recording Source" moved under "Routing (advanced, until
+  restart)", its "Sampler" is "Mixer ROUTE", and the choice is no longer
+  saved (`CrosspadSettings::usbAudioPreset` is not written).
+- The outputs are named as the board's jacks are: Capture Codec "0 - Phones",
+  "1 - Line out"; the fallback sliders "Phones" and "Line out".
+
+## 2.11.1 — 2026-10-29
+
+Paired with crosspad-core 2.24.0.
+
+- 2.10.2 (below) together with main's 2.11.0 (`VoiceMeter.full`, an engine
+  at its own ceiling).
+
+## 2.10.2 — 2026-10-28
+
+- The kit loader bar says `KIT LOADED  EMPTY` for a kit with no sample on any
+  pad (`kit_loader_done(0, 0)`), not `0/0`.
+
 ## 2.10.1 — 2026-10-27
 
 Paired with crosspad-core 2.24.0.
