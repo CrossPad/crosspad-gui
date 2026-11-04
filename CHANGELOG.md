@@ -6,6 +6,12 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.6 — 2026-11-04
+
+- The status bar shows the charging bolt and the host companion's USB glyph
+  side by side. They shared one slot and the USB glyph won, so a board
+  charging from a computer running the hub never showed that it charged.
+
 ## 2.11.5 — 2026-11-04
 
 - Quick-settings drawer: the volume sliders carry the outputs' names, one

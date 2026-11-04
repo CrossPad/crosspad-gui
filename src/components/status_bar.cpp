@@ -83,6 +83,7 @@ static lv_obj_t * status_logo;
 static lv_obj_t * status_title;   // a screen's status line in the logo's place
 static lv_obj_t * status_battery;
 static lv_obj_t * status_charging;
+static lv_obj_t * status_host;
 static lv_obj_t * status_wifi;
 static lv_obj_t * status_bluetooth;
 static lv_obj_t * status_sd;
@@ -566,8 +567,9 @@ void statusbar_set_drawer_anchor(lv_obj_t * row) {
 static bool s_lastSd = false;
 static bool s_lastBt = false;
 static bool s_lastBtActive = false;
-enum class ChargeSlot : uint8_t { Unknown, Hidden, Charging, Host, HostUpdate };
-static ChargeSlot s_lastChargeSlot = ChargeSlot::Unknown;
+enum class HostSlot : uint8_t { Unknown, Hidden, Host, HostUpdate };
+static HostSlot s_lastHostSlot = HostSlot::Unknown;
+static int8_t s_lastCharging = -1;   // -1 = not drawn yet
 // Out of range on purpose: the first tick always picks an icon, even when the
 // real level is 0..2 % (inside the hysteresis of a 0 start value).
 static constexpr int16_t kBatteryUnknown = -100;
@@ -603,20 +605,25 @@ static void check_status_timer_cb(lv_timer_t * timer) {
     crosspad_gui::ui_wifi_bars_update(status_wifi, wifiCfg && wifiCfg->wireless.enableWiFi,
                                       (crosspad::WifiLinkState)status.wifiState, status.wifiRssi,
                                       lv_tick_get());
-    // Charging slot: the USB glyph while a host companion reports in (orange
-    // when it said newer firmware exists), the bolt when only charging.
+    // The bolt while the cell takes current, and beside it the USB glyph while
+    // a host companion reports in (orange when it said newer firmware exists).
+    // A host is usually what charges the board, so one slot for both hid the
+    // charging exactly when it happened most.
+    const int8_t charging = status.stm32.chargingStatus ? 1 : 0;
+    if (charging != s_lastCharging) {
+        s_lastCharging = charging;
+        lv_obj_set_hidden(status_charging, !charging);
+    }
     const bool host = status.hostAlive(getClock().getTimeUs());
-    ChargeSlot slot = host ? (status.fwUpdateAvailable ? ChargeSlot::HostUpdate : ChargeSlot::Host)
-                    : status.stm32.chargingStatus ? ChargeSlot::Charging
-                    : ChargeSlot::Hidden;
-    if (slot != s_lastChargeSlot) {
-        s_lastChargeSlot = slot;
-        lv_obj_set_hidden(status_charging, slot == ChargeSlot::Hidden);
-        lv_image_set_src(status_charging, host ? LV_SYMBOL_USB : LV_SYMBOL_CHARGE);
-        if (slot == ChargeSlot::HostUpdate) {
-            lv_obj_set_style_text_color(status_charging, lv_palette_main(LV_PALETTE_ORANGE), 0);
+    HostSlot slot = host ? (status.fwUpdateAvailable ? HostSlot::HostUpdate : HostSlot::Host)
+                         : HostSlot::Hidden;
+    if (slot != s_lastHostSlot) {
+        s_lastHostSlot = slot;
+        lv_obj_set_hidden(status_host, slot == HostSlot::Hidden);
+        if (slot == HostSlot::HostUpdate) {
+            lv_obj_set_style_text_color(status_host, lv_palette_main(LV_PALETTE_ORANGE), 0);
         } else {
-            lv_obj_remove_local_style_prop(status_charging, LV_STYLE_TEXT_COLOR, 0);
+            lv_obj_remove_local_style_prop(status_host, LV_STYLE_TEXT_COLOR, 0);
         }
     }
     // Battery level — negative pct means the STM reports no battery fitted.
@@ -1001,6 +1008,13 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_set_flex_grow(status_charging, 0);
     lv_obj_set_height(status_charging, LV_SIZE_CONTENT);
 
+    // Host companion (USB glyph)
+    status_host = lv_img_create(cont);
+    lv_image_set_src(status_host, LV_SYMBOL_USB);
+    lv_obj_add_flag(status_host, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_flex_grow(status_host, 0);
+    lv_obj_set_height(status_host, LV_SIZE_CONTENT);
+
     // WiFi: four bars (hidden while WiFi is not allowed).
     status_wifi = crosspad_gui::ui_wifi_bars_create(cont);
     lv_obj_set_flex_grow(status_wifi, 0);
@@ -1149,7 +1163,8 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
     s_lastBtActive = !(status.bluetoothActive || status.bluetoothConnected);
-    s_lastChargeSlot = ChargeSlot::Unknown;
+    s_lastHostSlot = HostSlot::Unknown;
+    s_lastCharging = -1;
     s_lastBatteryPct = kBatteryUnknown;
     s_lastBatteryLow = false;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);
