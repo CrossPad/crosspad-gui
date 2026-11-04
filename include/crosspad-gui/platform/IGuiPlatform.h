@@ -146,25 +146,20 @@ public:
     virtual void setLcdBrightness(uint8_t /*pct*/) {}
 
     /* The two output volumes (0..100 codec range; callers may pass 0..127 --
-     * implementation should clamp). An output is a whole codec, not an output
-     * pair of one, and the names below are older than the wiring they ended
-     * up describing -- on CrossPad hardware:
-     *
-     *   setSpeakerVolume()   -> codec 0 -> the jack marked **Out 2**, the
-     *                           phones, and the internal speakers beside
-     *                           them: one level for both, which is why the
-     *                           speakers' own control is a gate, not a fader.
-     *   setHeadphoneVolume() -> codec 1 -> the jack marked **Out 1**, the
-     *                           line out.
-     *
-     * Read the names as "output A" and "output B" and the mapping from the
-     * platform (IdfGuiPlatform). Renaming them is a MAJOR bump and a change
-     * in crosspad-pc too, so it waits for a release that can carry one. */
-    /// Volume of codec 0 -- on CrossPad the jack marked Out 2, the phones
-    /// and the internal speakers -- 0..100 (larger values are clamped).
+     * implementation should clamp), older than the board's wiring. Where the
+     * platform names its outputs (crosspad::IOutputLevels, the CrossPad
+     * firmware) the GUI drives those instead -- Settings, the Mixer and the
+     * drawer show one level per output by its name -- and these two are what
+     * the platform maps them to (IdfGuiPlatform on PCB 2.0: the speakers
+     * alone, and Line out, the jack marked Out 3/4). Elsewhere the GUI calls
+     * them "Phones" and "Line out". Renaming them is a MAJOR bump and a
+     * change in crosspad-pc too, so it waits for a release that can carry
+     * one. */
+    /// Volume of codec 0 ("Phones" where the platform names no outputs),
+    /// 0..100 (larger values are clamped).
     virtual void setSpeakerVolume(uint8_t /*volume*/) {}
-    /// Volume of codec 1 -- on CrossPad the jack marked Out 1, the line out
-    /// -- 0..100 (larger values are clamped).
+    /// Volume of codec 1 ("Line out" where the platform names no outputs),
+    /// 0..100 (larger values are clamped).
     virtual void setHeadphoneVolume(uint8_t /*volume*/) {}
 
     /// Whether the board can switch between its data USB profile (CDC +
