@@ -6,6 +6,12 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.7 — 2026-11-06
+
+- Settings → System → Power Long-Press offers 1, 1.5, 2, 2.4 and 3 s, 2.4 s
+  by default (was up to 4 s, 4 s by default): the STM 1.16 hold ladder is
+  40 % shorter, and it clamps the hold under its 4.2 s ship threshold.
+
 ## 2.11.6 — 2026-11-04
 
 - The status bar shows the charging bolt and the host companion's USB glyph

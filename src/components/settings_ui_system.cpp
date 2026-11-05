@@ -39,12 +39,13 @@ static const uint8_t kUsbSuspSecs[] = { 0, 15, 30, 60, 120 };   // 0 = never
 static const char* kUsbSuspOpts = "Never\n15s\n30s\n1m\n2m";
 static uint8_t s_usbSuspIdx = 2;   // default 30 s
 
-// The STM clamps REG_CTL_LONG_PRESS to 1000..6500 (reg_get_long_press_ms), so
-// a 0.5 s option was shown but never applied — the hold was always 1 s.
-static constexpr uint16_t kLongPressMs[] = { 1000, 1500, 2000, 3000, 4000 };
-static const char* kLongPressOpts = "1s\n1.5s\n2s\n3s\n4s";
+// The STM clamps REG_CTL_LONG_PRESS to 1000..3700 (reg_get_long_press_ms, under
+// its 4.2 s ship hold), so a 0.5 s option was shown but never applied — the hold
+// was always 1 s.
+static constexpr uint16_t kLongPressMs[] = { 1000, 1500, 2000, 2400, 3000 };
+static const char* kLongPressOpts = "1s\n1.5s\n2s\n2.4s\n3s";
 static constexpr uint8_t kLongPressN = sizeof(kLongPressMs) / sizeof(kLongPressMs[0]);
-static constexpr uint16_t kLongPressDefaultMs = 4000;
+static constexpr uint16_t kLongPressDefaultMs = 2400;
 static constexpr uint8_t kLongPressDefaultIdx =
     idx_for_u16(kLongPressMs, kLongPressN, kLongPressDefaultMs, 0);
 static uint8_t s_longPressIdx = kLongPressDefaultIdx;
