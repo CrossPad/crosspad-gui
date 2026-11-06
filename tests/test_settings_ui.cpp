@@ -13,6 +13,7 @@
 
 #include "crosspad/platform/PlatformServices.hpp"
 #include "crosspad/settings/CrosspadSettings.hpp"
+#include "crosspad/stm32/reg_map.h"
 
 #include <cstring>
 
@@ -209,6 +210,48 @@ TEST_CASE("Settings: rows that did nothing are not offered", "[settings]")
     }
     settings_ui_destroy();
 
+    setGuiPlatform(&f.gui);
+}
+
+TEST_CASE("Settings: a power-off hold that is not a preset is shown as the nearest one and written back", "[settings]")
+{
+    // A v1.1.1 backup carries the old 4000 ms default; the STM runs it as 3.7 s.
+    // The dropdown fell back to "2.4s" and nothing wrote that back.
+    struct RecordingStm : StmGuiPlatform {
+        uint16_t longPressReg = 0;
+        void writeStmConfig16(uint16_t hiReg, uint16_t val) override {
+            if (hiReg == REG_CTL_LONG_PRESS_HI) longPressReg = val;
+        }
+    };
+    guitest::GuiFixture f;
+    RecordingStm stm;
+    stm.encoder = f.gui.encoder;
+    setGuiPlatform(&stm);
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    const uint16_t before = s->stm.longPressMs;
+
+    s->stm.longPressMs = 4000;
+    lv_obj_t* content = open_settings(f, "System");
+    lv_obj_t* label = find_label(content, "Power Long-Press");
+    REQUIRE(label != nullptr);
+    char shown[16] = {};
+    lv_dropdown_get_selected_str(lv_obj_get_child(lv_obj_get_parent(label), 1), shown, sizeof(shown));
+    CHECK(std::strcmp(shown, "3s") == 0);
+    CHECK(s->stm.longPressMs == 3000);
+    CHECK(stm.longPressReg == 3000);
+    settings_ui_destroy();
+    lv_obj_delete(content);
+
+    // A preset is left as it is and not pushed again.
+    stm.longPressReg = 0;
+    s->stm.longPressMs = 1500;
+    content = open_settings(f, "System");
+    CHECK(s->stm.longPressMs == 1500);
+    CHECK(stm.longPressReg == 0);
+    settings_ui_destroy();
+    lv_obj_delete(content);
+
+    s->stm.longPressMs = before;
     setGuiPlatform(&f.gui);
 }
 
