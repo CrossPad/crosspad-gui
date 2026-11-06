@@ -370,9 +370,16 @@ void settings_detail::cat_build_system(lv_obj_t * parent, lv_group_t * group) {
         }
         settings_row_dropdown(parent, group, "Dim After", kTimeoutOpts, &s_dimIdx, stm_dim_to_cb);
         settings_row_dropdown(parent, group, "Sleep After", kTimeoutOpts, &s_sleepIdx, stm_sleep_to_cb);
-        // A saved 0.5 s behaved as 1 s on the STM; show it as what it was.
-        const uint16_t lpMs = s->stm.longPressMs < 1000 ? 1000 : s->stm.longPressMs;
-        s_longPressIdx = idx_for_u16(kLongPressMs, kLongPressN, lpMs, kLongPressDefaultIdx);
+        // A hold that is not a preset (a saved 0.5 s ran as 1 s; a v1.1.1
+        // backup's 4 s, imported before core 2.44.3, runs as 3.7 s) fell back to
+        // "2.4s" while the STM held for something else. Snap and write back, as
+        // for the timeouts above.
+        s_longPressIdx = nearest_idx_u16(kLongPressMs, kLongPressN, s->stm.longPressMs);
+        if (kLongPressMs[s_longPressIdx] != s->stm.longPressMs) {
+            s->stm.longPressMs = kLongPressMs[s_longPressIdx];
+            save_settings();
+            getGuiPlatform().writeStmConfig16(REG_CTL_LONG_PRESS_HI, s->stm.longPressMs);
+        }
         settings_row_dropdown(parent, group, "Power Long-Press", kLongPressOpts, &s_longPressIdx, stm_long_press_cb);
         // Host-suspend grace before the STM drops to soft-off. Was reachable only
         // over I2C — a device on a sleeping host powered itself down after 30 s

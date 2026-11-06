@@ -6,6 +6,12 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.8 — 2026-11-06
+
+- Settings → System → Power Long-Press snaps a hold that is not one of its
+  presets to the nearest one and writes it back, as Dim/Sleep After do. A
+  v1.1.1 backup's 4 s hold showed "2.4s" while the STM held for 3.7 s.
+
 ## 2.11.7 — 2026-11-06
 
 - Settings → System → Power Long-Press offers 1, 1.5, 2, 2.4 and 3 s, 2.4 s
