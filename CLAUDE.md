@@ -37,7 +37,7 @@ python3 -m pytest scripts -q          # check_manifest.py's own tests
 - The version is the triple in `include/crosspad-gui/CrosspadGuiVersion.hpp` (bump rules in its header comment). The same header names the core it was written for, `CROSSPAD_GUI_REQUIRES_CORE_*`, checked at compile time by `crosspad/RequireVersion.hpp` from `src/CrosspadGuiVersion.cpp`.
 - `library.json` must follow the header: `version` equals the triple and `dependencies.crosspad-core` is `^<REQUIRES_CORE>` (platform-idf's dependency resolver reads that range). `python3 scripts/check_manifest.py` checks both; run it before pushing a bump.
 - `.github/workflows/lib-release.yml`: a push to `master` that touches `library.json` or `CrosspadGuiVersion.hpp` runs `check_manifest.py`, then tags `vX.Y.Z` through CrossPad/.github's reusable `app-release.yml` in library mode (a bare tag, no GitHub Release). platform-idf's hourly bump reads the tags.
-- `.github/workflows/notify-downstream.yml`: a `v*` tag or a merged PR sends a `submodule-update` dispatch to crosspad-pc, ESP32-S3 and matixan/2playerCrosspad.
+- `.github/workflows/notify-downstream.yml`: a `v*` tag or a merged PR sends a `submodule-update` dispatch to crosspad-pc, ESP32-S3 and platform-idf.
 - `.github/workflows/docs.yml` builds the Doxygen HTML as a workflow artifact; nothing publishes it to GitHub Pages.
 
 ## CrossPad Manifesto
