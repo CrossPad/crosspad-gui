@@ -103,6 +103,10 @@ public:
     /// main screen) starts it again.
     void clearHistory() { history_.clear(); }
 
+    /// The newest app of the way back: the one the screen came from while a
+    /// launch is being decided (OrchestratorConfig::pre_launch); nullptr from home.
+    ILvglApp* historyTop() const { return history_.empty() ? nullptr : history_.back(); }
+
     /// One step back from @p current, which owns the screen: it leaves the
     /// history and the app under it is returned, or nullptr when the next step
     /// back is home (or @p current is not the history's top -- a hand-built
