@@ -6,6 +6,13 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.11.9 — 2026-11-07
+
+- Home screen grid: the tiles start under the top bar, and with more apps
+  than fit the grid scrolls, so the encoder's focus and a drag reach every
+  row. Centred rows that overflowed put the first row under the top bar,
+  out of reach. Tiles that all fit stay centred and do not scroll.
+
 ## 2.11.8 — 2026-11-06
 
 - Settings → System → Power Long-Press snaps a hold that is not one of its
