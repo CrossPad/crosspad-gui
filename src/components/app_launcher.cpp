@@ -170,12 +170,14 @@ lv_obj_t* launcher_create_button_grid(
     lv_obj_set_style_bg_opa(btn_wrap, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(btn_wrap, 0, 0);
     lv_obj_set_style_pad_all(btn_wrap, 0, 0);
-    // All tiles fit on one screen (small button_size from the platform) —
-    // scrolling off keeps encoder focus from dragging the grid around.
+    lv_obj_set_style_pad_ver(btn_wrap, s_config.button_spacing, 0);
+    // Rows from the top, scrolled vertically when there are more than fit:
+    // the encoder's focus and a drag reach every row. Centred rows that do
+    // not fit start above the wrap, where no scroll goes.
     lv_obj_set_scrollbar_mode(btn_wrap, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(btn_wrap, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(btn_wrap, LV_DIR_VER);
     lv_obj_set_flex_flow(btn_wrap, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(btn_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(btn_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(btn_wrap, s_config.button_spacing, 0);
     lv_obj_set_style_pad_column(btn_wrap, s_config.button_spacing, 0);
 
@@ -215,6 +217,13 @@ lv_obj_t* launcher_create_button_grid(
             lv_label_set_text(label, info.name);
             lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, 5);
         }
+    }
+
+    // Tiles that all fit stay centred and the grid does not scroll.
+    lv_obj_update_layout(btn_wrap);
+    if (lv_obj_get_scroll_bottom(btn_wrap) <= 0) {
+        lv_obj_remove_flag(btn_wrap, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_flex_align(btn_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     }
 
     return btn_wrap;
