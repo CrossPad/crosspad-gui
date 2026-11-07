@@ -169,7 +169,7 @@ static void audio_buffer_options(crosspad::IAudioBuffer & ab, char * out, size_t
 // Mirrors of the live codec routing, refreshed from the platform on every
 // panel build. They are UI shadows, not settings: what a USB host records is
 // the Mixer's USB bus, set on ROUTE, and every boot starts there; the other
-// sources are for the bench and last until the next boot.
+// sources are for testing and last until the next boot.
 static uint8_t s_routePresetIdx  = 0;
 static uint8_t s_routeCaptureIdx = 0;
 static uint8_t s_routeAdcIdx[2]  = {0, 0};

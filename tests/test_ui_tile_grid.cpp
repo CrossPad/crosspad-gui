@@ -270,7 +270,7 @@ TEST_CASE("a grid whose state cannot be allocated is a bare container", "[tile_g
 }
 
 TEST_CASE("the walk onto the grid from outside starts at item 0 and covers every item", "[tile_grid]") {
-    // The bench sequence: tiles, then a tab bar, wrap on; a deep walk leaves
+    // The on-device sequence: tiles, then a tab bar, wrap on; a deep walk leaves
     // the window at the bottom, so the first pooled tile in the group shows item 27.
     Fixture f(34);
     lv_group_set_wrap(f.group, true);
