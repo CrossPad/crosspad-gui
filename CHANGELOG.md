@@ -6,6 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.13.0 — 2026-11-08
+
+- `kDragsHorizontal` (`touch_gesture.h`, `LV_OBJ_FLAG_USER_4`): an object
+  that pans sideways under a finger (a zoomed waveform) sets it, and a
+  horizontal swipe started on it is that drag, not back or forward.
+
+## 2.12.0 — 2026-11-07
+
+- `AppOrchestrator::historyTop()`: the app the screen came from while a
+  launch is decided in the pre-launch hook.
+
 ## 2.11.9 — 2026-11-07
 
 - Home screen grid: the tiles start under the top bar, and with more apps

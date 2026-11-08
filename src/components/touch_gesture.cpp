@@ -57,7 +57,8 @@ bool consumesHorizontal(lv_obj_t* obj)
     for (lv_obj_t* o = obj; o; o = lv_obj_get_parent(o)) {
         if (lv_obj_check_type(o, &lv_slider_class) ||
             lv_obj_check_type(o, &lv_bar_class) ||
-            lv_obj_check_type(o, &lv_arc_class)) {
+            lv_obj_check_type(o, &lv_arc_class) ||
+            lv_obj_has_flag(o, kDragsHorizontal)) {
             return true;
         }
 #if LV_USE_ROLLER
