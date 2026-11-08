@@ -52,6 +52,11 @@ struct SwipeConfig {
     lv_area_t area = { 0, 0, LV_COORD_MAX, LV_COORD_MAX };
 };
 
+/// On an object that pans or drags sideways itself (a waveform scrolled by
+/// a finger): a horizontal swipe started on it, or on a child of it, is
+/// that drag, not back or forward.
+constexpr lv_obj_flag_t kDragsHorizontal = LV_OBJ_FLAG_USER_4;
+
 /// Wrap the pointer indev. Safe with nullptr (a board whose panel never came
 /// up); calling twice is a no-op.
 void touch_gesture_attach(lv_indev_t* indev, const SwipeConfig& cfg = SwipeConfig{});
