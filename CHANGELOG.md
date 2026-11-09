@@ -6,6 +6,13 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.13.1 — 2026-11-09
+
+- Settings → USB, "Recording Source": the read-only "Custom" entry's index is
+  the number of options before it, not a hard-coded 6, so a preset added to
+  `kRoutePresetOptions` (before "Custom") is selectable instead of reading as
+  Custom and being refused.
+
 ## 2.13.0 — 2026-11-08
 
 - `kDragsHorizontal` (`touch_gesture.h`, `LV_OBJ_FLAG_USER_4`): an object

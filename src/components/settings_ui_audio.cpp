@@ -186,9 +186,20 @@ static lv_obj_t * s_routeAdcDd[2]  = {nullptr, nullptr};
 
 // Order must match the platform's preset table; the trailing entry is the
 // read-only "no preset describes this" state.
-static const char * kRoutePresetOptions =
+static constexpr char kRoutePresetOptions[] =
     "Microphones\nLine in\nSpeaker bus\nHeadphone bus\nMix (mics + line)\nMixer ROUTE\nCustom";
-static constexpr uint8_t kRoutePresetCustomIdx = 6;
+
+static constexpr uint8_t count_newlines(const char * s) {
+    uint8_t n = 0;
+    for (; *s; ++s) {
+        if (*s == '\n') ++n;
+    }
+    return n;
+}
+
+// "Custom" is the last option, so its index is the number of separators: a
+// preset added before it moves it along instead of landing on it.
+static constexpr uint8_t kRoutePresetCustomIdx = count_newlines(kRoutePresetOptions);
 
 // The dropdown widget inside a row built by settings_row_dropdown(): label
 // first, dropdown second.
