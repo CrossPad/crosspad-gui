@@ -37,12 +37,15 @@ const lv_color_t kDim   = lv_color_hex(0x7B828B);
 /* 0 = the theme colour, so the core row follows Settings > Display > Theme. */
 constexpr uint32_t kTheme = 0;
 
+/* Arrange's hint below is text; it must follow the song's track count. */
+static_assert(crosspad::AudioSong::kTracks == 8, "update Arrange's \"8 tracks\" hint");
+
 const ModeEntry kDefaultMap[] = {
     // pad, label,      hint,        colour,   kind,            app
     {  1, "Sampler",  "play",  kTheme,   ModeKind::Core,  "Sampler",      nullptr, nullptr },
     {  2, "Seq",      "record",  kTheme,   ModeKind::Core,  "Sequencer",    nullptr, nullptr },
     {  3, "Song",     "blocks",     kTheme,   ModeKind::Core,  "Song",         nullptr, nullptr },
-    {  4, "Arrange",  "4 tracks",   kTheme,   ModeKind::Core,  "Arrange",      nullptr, nullptr },
+    {  4, "Arrange",  "8 tracks",   kTheme,   ModeKind::Core,  "Arrange",      nullptr, nullptr },
     {  5, "Record",   "mic/line",  0xFF5C5C, ModeKind::App,   "Recorder",     nullptr, nullptr },
     {  6, "Slicer",   "chop",       0xF5C46A, ModeKind::App,   "Slicer",       nullptr, nullptr },
     {  8, "More",     "apps",       0x7B828B, ModeKind::More,  nullptr,        nullptr, nullptr },
