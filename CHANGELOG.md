@@ -6,12 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
-## 2.13.1 — 2026-11-09
+## 2.13.2 — 2026-11-10
 
 - Settings → USB, "Recording Source": the read-only "Custom" entry's index is
   the number of options before it, not a hard-coded 6, so a preset added to
   `kRoutePresetOptions` (before "Custom") is selectable instead of reading as
   Custom and being refused.
+
+## 2.13.1 — 2026-11-10
+
+- MODE map: the Arrange cell's hint says 8 tracks (`AudioSong::kTracks`,
+  held by a `static_assert`), not 4.
 
 ## 2.13.0 — 2026-11-08
 
