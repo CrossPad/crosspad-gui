@@ -339,7 +339,9 @@ static void stm32_dfu_cb(lv_event_t * e) {
     (void)e;
     auto* ui = getSettingsUI();
     if (ui) ui->enterStm32Dfu();
-    lv_CreateDfuScreen(lv_scr_act());
+    // Above Settings, not instead of it: the panel outlives the app, and
+    // leaving DFU drops back onto the page it was entered from.
+    lv_CreateDfuScreen(crosspad_gui::getOverlayParent());
 }
 
 void settings_detail::cat_build_system(lv_obj_t * parent, lv_group_t * group) {
