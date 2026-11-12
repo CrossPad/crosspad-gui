@@ -6,6 +6,17 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.14.0 — 2026-11-12
+
+- Settings → Programming → DFU Mode: the DFU screen has a way out. It said
+  "Press encoder to exit DFU mode", but in the ROM bootloader the STM reads
+  neither the encoder nor the power button, and nothing listened. The screen
+  is now a panel on the overlay layer (above Settings, which it no longer
+  wipes); a tap asks "Leave DFU mode?" (a tap during a USB update would cut
+  it off) and Leave calls `ISettingsUI::leaveStm32Dfu()` and closes the
+  panel. The text no longer sends the player to an ST-LINK: a failed update
+  is run again over USB DFU. Requires core 2.47.0.
+
 ## 2.13.2 — 2026-11-10
 
 - Settings → USB, "Recording Source": the read-only "Custom" entry's index is
