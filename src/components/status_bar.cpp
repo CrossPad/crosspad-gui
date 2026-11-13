@@ -370,7 +370,7 @@ static void voice_meter_timer_cb(lv_timer_t * timer) {
         return;
     }
     lv_obj_remove_flag(s_voice_meter, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text_fmt(s_voice_meter, "%u/%u", (unsigned)m.active, (unsigned)m.limit);
+    lv_label_update_text_fmt(s_voice_meter, "%u/%u", (unsigned)m.active, (unsigned)m.limit);
     /* At the ceiling the next hit costs an older voice, which is worth
      * saying in a colour rather than in a number nobody is reading. */
     const bool full = m.full || m.active >= m.limit;
@@ -414,11 +414,11 @@ static void perf_stats_timer_cb(lv_timer_t * timer) {
     char a[12], b[12];
 
     if (s_perf_fps_col && (s_perf_flags & PERF_FLAG_FPS)) {
-        lv_label_set_text_fmt(s_perf_fps_col, "FPS\n%" LV_PRIu32, ps.fps);
+        lv_label_update_text_fmt(s_perf_fps_col, "FPS\n%" LV_PRIu32, ps.fps);
     }
     if (s_perf_flags & PERF_FLAG_CPU) {
         if (s_perf_cpu_col) {
-            lv_label_set_text_fmt(s_perf_cpu_col, "C0 %" LV_PRIu32 "%%\nC1 %" LV_PRIu32 "%%",
+            lv_label_update_text_fmt(s_perf_cpu_col, "C0 %" LV_PRIu32 "%%\nC1 %" LV_PRIu32 "%%",
                                   ps.cpu0_pct, ps.cpu1_pct);
             perf_paint(s_perf_cpu_col, ps.cpu0_pct >= kPerfCpuWarnPct || ps.cpu1_pct >= kPerfCpuWarnPct);
         }
@@ -428,14 +428,14 @@ static void perf_stats_timer_cb(lv_timer_t * timer) {
             }
             s_perf_overruns = ps.dsp_overruns;
             const bool fresh = s_perf_overrun_at && lv_tick_elaps(s_perf_overrun_at) < kPerfOverrunLitMs;
-            lv_label_set_text_fmt(s_perf_dsp_col, "DSP %" LV_PRIu32 "%%\nXR %" LV_PRIu32,
+            lv_label_update_text_fmt(s_perf_dsp_col, "DSP %" LV_PRIu32 "%%\nXR %" LV_PRIu32,
                                   ps.dsp_pct, ps.dsp_overruns);
             perf_paint(s_perf_dsp_col, ps.dsp_pct >= kPerfDspWarnPct || fresh);
         }
     }
     if (s_perf_flags & PERF_FLAG_MEM) {
         if (s_perf_ram_col) {
-            lv_label_set_text_fmt(s_perf_ram_col, "RAM %s\nMIN %s",
+            lv_label_update_text_fmt(s_perf_ram_col, "RAM %s\nMIN %s",
                                   perf_kb(a, sizeof(a), ps.sram_free_kb), perf_kb(b, sizeof(b), ps.sram_min_kb));
             perf_paint(s_perf_ram_col, ps.sram_free_kb && ps.sram_free_kb < kPerfSramWarnKb);
         }
@@ -443,7 +443,7 @@ static void perf_stats_timer_cb(lv_timer_t * timer) {
     /* PSRAM always, whatever the flags: it is what the UI and every app run
      * out of first, and the sample engine now takes it as it needs it. */
     if (s_perf_ps_col) {
-        lv_label_set_text_fmt(s_perf_ps_col, "PS %s\nBLK %s",
+        lv_label_update_text_fmt(s_perf_ps_col, "PS %s\nBLK %s",
                               perf_kb(a, sizeof(a), ps.psram_free_kb), perf_kb(b, sizeof(b), ps.psram_block_kb));
         perf_paint(s_perf_ps_col, ps.psram_block_kb && ps.psram_block_kb < kPerfPsramWarnKb);
     }

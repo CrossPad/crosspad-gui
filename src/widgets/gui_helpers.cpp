@@ -5,6 +5,10 @@
 
 #include "src/core/lv_obj_class_private.h"   // lv_obj_class_t fields: a class of our own
 
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+
 lv_color_t lv_color_bw_from_color(lv_color_t color) {
     return ((color.red + color.green + color.blue) / 3) > 0x7F ? lv_color_black() : lv_color_white();
 }
@@ -13,6 +17,35 @@ void lv_obj_set_hidden(lv_obj_t * obj, bool hidden) {
     if (obj == NULL) return;
     if (hidden) lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+}
+
+/// Text up to this length is formatted on the stack; the values a timer
+/// repaints (a meter, a counter, two short lines) are well under it.
+static constexpr size_t kStackTextMax = 64;
+
+void lv_label_update_text(lv_obj_t * label, const char * text) {
+    if (strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
+}
+
+void lv_label_update_text_fmt(lv_obj_t * label, const char * fmt, ...) {
+    char text[kStackTextMax];
+    va_list args;
+    va_start(args, fmt);
+    va_list again;
+    va_copy(again, args);
+    const int len = vsnprintf(text, sizeof(text), fmt, args);
+    va_end(args);
+    if (len >= 0 && (size_t)len < sizeof(text)) {
+        lv_label_update_text(label, text);
+    } else if (len > 0) {
+        char * longText = static_cast<char *>(lv_malloc((size_t)len + 1));
+        if (longText) {
+            vsnprintf(longText, (size_t)len + 1, fmt, again);
+            lv_label_update_text(label, longText);
+            lv_free(longText);
+        }
+    }
+    va_end(again);
 }
 
 void lv_list_cleanup(lv_obj_t * list) {
