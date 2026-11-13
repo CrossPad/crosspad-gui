@@ -968,13 +968,11 @@ lv_obj_t * lv_CreateStatusBar(lv_obj_t * parent) {
 }
 
 // ── Status bar top (icons) ──────────────────────────────────────────────────
+// Built in the order the row shows them: the flex layout places children in
+// creation order, so the builders below are called in that order.
 
-static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
-    lv_obj_set_layout(cont, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    // Logo (centered, outside flex)
+/** Logo and app title: both centred on the bar and outside the flex row. */
+static void create_logo_and_title(lv_obj_t * cont) {
     status_logo = lv_image_create(cont);
     lv_image_set_src(status_logo, asset_logo);
     lv_obj_add_style(status_logo, &styleStatusBar, 0);
@@ -993,74 +991,61 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_label_set_text(status_title, "");
     lv_obj_center(status_title);
     lv_obj_add_flag(status_title, (lv_obj_flag_t)(LV_OBJ_FLAG_IGNORE_LAYOUT | LV_OBJ_FLAG_HIDDEN));
+}
 
-    // Battery
+/** A system glyph that stays hidden until the status timer has a reason to show it. */
+static lv_obj_t * create_hidden_glyph(lv_obj_t * cont, const char * symbol) {
+    lv_obj_t * glyph = lv_img_create(cont);
+    lv_image_set_src(glyph, symbol);
+    lv_obj_add_flag(glyph, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_flex_grow(glyph, 0);
+    lv_obj_set_height(glyph, LV_SIZE_CONTENT);
+    return glyph;
+}
+
+/** Battery, charging, host, WiFi, Bluetooth, SD card: the left end of the row. */
+static void create_system_icons(lv_obj_t * cont) {
     status_battery = lv_img_create(cont);
     lv_image_set_src(status_battery, LV_SYMBOL_BATTERY_FULL);
     lv_obj_set_style_pad_ver(status_battery, 2, 0);
     lv_obj_set_flex_grow(status_battery, 0);
     lv_obj_set_height(status_battery, LV_SIZE_CONTENT);
 
-    // Charging
-    status_charging = lv_img_create(cont);
-    lv_image_set_src(status_charging, LV_SYMBOL_CHARGE);
-    lv_obj_add_flag(status_charging, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_flex_grow(status_charging, 0);
-    lv_obj_set_height(status_charging, LV_SIZE_CONTENT);
+    status_charging = create_hidden_glyph(cont, LV_SYMBOL_CHARGE);
+    status_host = create_hidden_glyph(cont, LV_SYMBOL_USB);
 
-    // Host companion (USB glyph)
-    status_host = lv_img_create(cont);
-    lv_image_set_src(status_host, LV_SYMBOL_USB);
-    lv_obj_add_flag(status_host, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_flex_grow(status_host, 0);
-    lv_obj_set_height(status_host, LV_SIZE_CONTENT);
-
-    // WiFi: four bars (hidden while WiFi is not allowed).
+    // Four bars, hidden while WiFi is not allowed.
     status_wifi = crosspad_gui::ui_wifi_bars_create(cont);
     lv_obj_set_flex_grow(status_wifi, 0);
 
-    // Bluetooth
-    status_bluetooth = lv_img_create(cont);
-    lv_image_set_src(status_bluetooth, LV_SYMBOL_BLUETOOTH);
-    lv_obj_set_flex_grow(status_bluetooth, 0);
-    lv_obj_add_flag(status_bluetooth, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_height(status_bluetooth, LV_SIZE_CONTENT);
+    status_bluetooth = create_hidden_glyph(cont, LV_SYMBOL_BLUETOOTH);
+    status_sd = create_hidden_glyph(cont, LV_SYMBOL_SD_CARD);
+}
 
-    // SD card
-    status_sd = lv_img_create(cont);
-    lv_image_set_src(status_sd, LV_SYMBOL_SD_CARD);
-    lv_obj_add_flag(status_sd, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_flex_grow(status_sd, 0);
-    lv_obj_set_height(status_sd, LV_SIZE_CONTENT);
+/** A transparent row an app's own icons go into. */
+static lv_obj_t * create_app_icon_zone(lv_obj_t * cont, lv_flex_align_t main_align, uint8_t grow) {
+    lv_obj_t * zone = lv_obj_create(cont);
+    lv_obj_set_height(zone, LV_PCT(100));
+    lv_obj_set_width(zone, LV_SIZE_CONTENT);
+    lv_obj_set_layout(zone, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(zone, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(zone, main_align, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_grow(zone, grow);
+    lv_obj_set_style_pad_all(zone, 0, 0);
+    lv_obj_set_style_pad_column(zone, 3, 0);
+    lv_obj_set_style_bg_opa(zone, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(zone, 0, 0);
+    lv_obj_remove_flag(zone, LV_OBJ_FLAG_SCROLLABLE);
+    return zone;
+}
 
-    // App icon zone — left (after system icons, grows with content)
-    s_app_icon_zone_left = lv_obj_create(cont);
-    lv_obj_set_height(s_app_icon_zone_left, LV_PCT(100));
-    lv_obj_set_width(s_app_icon_zone_left, LV_SIZE_CONTENT);
-    lv_obj_set_layout(s_app_icon_zone_left, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(s_app_icon_zone_left, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(s_app_icon_zone_left, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_flex_grow(s_app_icon_zone_left, 0);
-    lv_obj_set_style_pad_all(s_app_icon_zone_left, 0, 0);
-    lv_obj_set_style_pad_column(s_app_icon_zone_left, 3, 0);
-    lv_obj_set_style_bg_opa(s_app_icon_zone_left, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(s_app_icon_zone_left, 0, 0);
-    lv_obj_remove_flag(s_app_icon_zone_left, LV_OBJ_FLAG_SCROLLABLE);
-
-    // App icon zone — right (fills remaining space, icons align to end)
-    s_app_icon_zone_right = lv_obj_create(cont);
-    lv_obj_set_height(s_app_icon_zone_right, LV_PCT(100));
-    lv_obj_set_width(s_app_icon_zone_right, LV_SIZE_CONTENT);
-    lv_obj_set_layout(s_app_icon_zone_right, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(s_app_icon_zone_right, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(s_app_icon_zone_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_flex_grow(s_app_icon_zone_right, 1);
-    lv_obj_set_style_pad_all(s_app_icon_zone_right, 0, 0);
+/** The left zone grows with its content; the right one takes the rest of the
+ *  row and aligns its icons to the end. */
+static void create_app_icon_zones(lv_obj_t * cont) {
+    s_app_icon_zone_left = create_app_icon_zone(cont, LV_FLEX_ALIGN_START, 0);
+    s_app_icon_zone_right = create_app_icon_zone(cont, LV_FLEX_ALIGN_END, 1);
     // Default padding assumes no drawer arrow; create_open_button() bumps it.
     lv_obj_set_style_pad_right(s_app_icon_zone_right, 4, 0);
-    lv_obj_set_style_pad_column(s_app_icon_zone_right, 3, 0);
-    lv_obj_set_style_bg_opa(s_app_icon_zone_right, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(s_app_icon_zone_right, 0, 0);
 
     // Icons registered against the destroyed tree lost their labels, but their
     // slots still say what to show. Re-create them, so a long-lived icon needs
@@ -1077,12 +1062,13 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
         if (slot->hidden) lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
         slot->obj = lbl;
     }
-    lv_obj_remove_flag(s_app_icon_zone_right, LV_OBJ_FLAG_SCROLLABLE);
 
     // Clear all app icon slots
     memset(s_app_icons, 0, sizeof(s_app_icons));
+}
 
-    // Loading arc
+/** The progress ring beside the logo, shown while s_loading is not -1. */
+static void create_loading_arc(lv_obj_t * cont) {
     status_loading_arc = lv_arc_create(cont);
     lv_subject_init_int(&s_loading, -1);
     lv_obj_bind_flag_if_eq(status_loading_arc, &s_loading, LV_OBJ_FLAG_HIDDEN, -1);
@@ -1096,28 +1082,32 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     lv_obj_align_to(status_loading_arc, status_logo, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
     extern lv_style_t styleLoadingArc;
     lv_obj_add_style(status_loading_arc, &styleLoadingArc, LV_PART_INDICATOR);
+}
 
-    // Performance stats: two-line columns in the right icon zone, each as
-    // wide as its widest text, so a digit more or less does not shift the row.
-    auto make_perf_col = [](lv_obj_t * parent, const char * widest) -> lv_obj_t * {
-        lv_obj_t * lbl = lv_label_create(parent);
-        const lv_font_t * font = &lv_font_montserrat_10;
-        lv_obj_set_style_text_font(lbl, font, 0);
-        // Match status bar text color (styleStatusBar uses lv_color_bw_from_color)
-        lv_obj_set_style_text_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
-        lv_obj_set_style_bg_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
-        lv_obj_set_style_radius(lbl, 2, 0);
-        lv_obj_set_style_pad_hor(lbl, 1, 0);
-        lv_obj_set_style_text_line_space(lbl, -2, 0);
-        lv_point_t sz;
-        lv_text_get_size(&sz, widest, font, 0, -2, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        lv_obj_set_width(lbl, sz.x + 2);
-        /* A value wider than the template (100 %, five digits of overruns)
-         * loses its last pixels rather than growing a third line. */
-        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
-        lv_label_set_text(lbl, "");
-        return lbl;
-    };
+/** A two-line performance column as wide as its widest text, so a digit more
+ *  or less does not shift the row. */
+static lv_obj_t * create_perf_column(lv_obj_t * parent, const char * widest) {
+    lv_obj_t * lbl = lv_label_create(parent);
+    const lv_font_t * font = &lv_font_montserrat_10;
+    lv_obj_set_style_text_font(lbl, font, 0);
+    // Match status bar text color (styleStatusBar uses lv_color_bw_from_color)
+    lv_obj_set_style_text_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+    lv_obj_set_style_bg_color(lbl, lv_color_bw_from_color(CROSSPAD_THEME_PRIMARY), 0);
+    lv_obj_set_style_radius(lbl, 2, 0);
+    lv_obj_set_style_pad_hor(lbl, 1, 0);
+    lv_obj_set_style_text_line_space(lbl, -2, 0);
+    lv_point_t sz;
+    lv_text_get_size(&sz, widest, font, 0, -2, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    lv_obj_set_width(lbl, sz.x + 2);
+    /* A value wider than the template (100 %, five digits of overruns)
+     * loses its last pixels rather than growing a third line. */
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(lbl, "");
+    return lbl;
+}
+
+/** The voice meter and the five performance columns, in the right icon zone. */
+static void create_meters() {
     /* Before the perf columns, so it keeps its place when they are toggled. */
     s_voice_meter = lv_label_create(s_app_icon_zone_right);
     lv_obj_set_style_text_font(s_voice_meter, &lv_font_montserrat_10, 0);
@@ -1134,11 +1124,11 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     /* Between the system icons and the arrow there are ~230 px: the five
      * columns at these widths fill ~205 of them. */
     lv_obj_set_style_pad_column(s_app_icon_zone_right, 1, 0);   // each column pads itself by 1
-    s_perf_cpu_col = make_perf_col(s_app_icon_zone_right, "C0 99%\nC1 99%");
-    s_perf_dsp_col = make_perf_col(s_app_icon_zone_right, "DSP 99%\nXR 999");
-    s_perf_ram_col = make_perf_col(s_app_icon_zone_right, "RAM 999k\nMIN 999k");
-    s_perf_ps_col  = make_perf_col(s_app_icon_zone_right, "PS 999k\nBLK 999k");
-    s_perf_fps_col = make_perf_col(s_app_icon_zone_right, "FPS\n99");
+    s_perf_cpu_col = create_perf_column(s_app_icon_zone_right, "C0 99%\nC1 99%");
+    s_perf_dsp_col = create_perf_column(s_app_icon_zone_right, "DSP 99%\nXR 999");
+    s_perf_ram_col = create_perf_column(s_app_icon_zone_right, "RAM 999k\nMIN 999k");
+    s_perf_ps_col  = create_perf_column(s_app_icon_zone_right, "PS 999k\nBLK 999k");
+    s_perf_fps_col = create_perf_column(s_app_icon_zone_right, "FPS\n99");
     s_perf_overruns = UINT32_MAX;
     s_perf_overrun_at = 0;
 
@@ -1152,13 +1142,16 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     // Apply initial flags from settings
     uint8_t perf_flags = platformSettings().perfStatsFlags;
     crosspad_gui::statusbar_set_perf_level(perf_flags);
+}
 
-    // Status check timer — delete previous if status bar is being re-created
+/** Starts the timer that keeps the system icons current, with every cached
+ *  value set so the first tick refreshes all of them. */
+static void start_status_timer() {
+    // Delete previous if status bar is being re-created
     if (t_check_status) {
         lv_timer_delete(t_check_status);
         t_check_status = NULL;
     }
-    // Reset cached values so icons are refreshed on first tick
     const CrosspadStatus & status = platformStatus();
     s_lastSd = !status.stm32.sdDetected;
     s_lastBt = !status.bluetoothConnected;
@@ -1168,6 +1161,19 @@ static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
     s_lastBatteryPct = kBatteryUnknown;
     s_lastBatteryLow = false;
     t_check_status = lv_timer_create(check_status_timer_cb, LV_DEF_REFR_PERIOD, NULL);
+}
+
+static lv_obj_t * lv_CreateStatusBarTop(lv_obj_t * cont) {
+    lv_obj_set_layout(cont, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    create_logo_and_title(cont);
+    create_system_icons(cont);
+    create_app_icon_zones(cont);
+    create_loading_arc(cont);
+    create_meters();
+    start_status_timer();
     return cont;
 }
 
