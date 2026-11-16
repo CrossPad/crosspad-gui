@@ -258,8 +258,8 @@ static void poll_cb(lv_timer_t*) {
             if (curve == crosspad::STM32_VEL_INHERIT) curve = s->stm.velCurveDef;
             if (floor == crosspad::STM32_VEL_INHERIT) floor = s->stm.velFloorDef;
             uint8_t hitVel = crosspad::stm32VelCurveApply(lv.velRaw, curve, floor);
-            if (s_rawLabel) lv_label_set_text_fmt(s_rawLabel, "HIT: %u", (unsigned)lv.velRaw);
-            if (s_velLabel) lv_label_set_text_fmt(s_velLabel, "VEL: %u", (unsigned)hitVel);
+            if (s_rawLabel) lv_label_update_text_fmt(s_rawLabel, "HIT: %u", (unsigned)lv.velRaw);
+            if (s_velLabel) lv_label_update_text_fmt(s_velLabel, "VEL: %u", (unsigned)hitVel);
             update_marker(lv.velRaw, hitVel); // static red dot at last hit
         }
 
@@ -267,7 +267,7 @@ static void poll_cb(lv_timer_t*) {
         if (s_chart && s_liveCursor && s_curveSer)
             lv_chart_set_cursor_point(s_chart, s_liveCursor, s_curveSer, lv.sum);
 
-        if (s_rawAbLabel) lv_label_set_text_fmt(s_rawAbLabel, "A:%4u  B:%4u",
+        if (s_rawAbLabel) lv_label_update_text_fmt(s_rawAbLabel, "A:%4u  B:%4u",
                                                 (unsigned)lv.rawA, (unsigned)lv.rawB);
         if (s_lrSliderRO) lv_slider_set_value(s_lrSliderRO, lv.pan, LV_ANIM_OFF);
     }

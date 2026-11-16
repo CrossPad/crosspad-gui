@@ -140,11 +140,11 @@ void style_keyboard(lv_obj_t* kb) {
     lv_obj_set_style_radius(kb, kKeyRadius, LV_PART_ITEMS);
     lv_obj_set_style_text_color(kb, lv_color_white(), LV_PART_ITEMS);
     lv_obj_set_style_text_font(kb, &lv_font_montserrat_14, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(kb, kKeyMode, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(kb, kKeyPressed, LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(kb, kKeyMode, (lv_style_selector_t)LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(kb, kKeyPressed, (lv_style_selector_t)LV_PART_ITEMS | LV_STATE_PRESSED);
     // The key under the encoder: a ring, as on the modal's buttons.
-    lv_obj_set_style_outline_color(kb, CROSSPAD_THEME_PRIMARY, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_outline_width(kb, kFocusRingW, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_color(kb, CROSSPAD_THEME_PRIMARY, (lv_style_selector_t)LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(kb, kFocusRingW, (lv_style_selector_t)LV_PART_ITEMS | LV_STATE_FOCUSED);
 }
 
 } // namespace

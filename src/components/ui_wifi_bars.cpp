@@ -57,7 +57,7 @@ void ui_wifi_bars_update(lv_obj_t* box, bool allowed, crosspad::WifiLinkState st
         lv_obj_t* bar = lv_obj_get_child(box, (int32_t)i);
         const bool red = look.firstRed && i == 0;
         lv_obj_set_style_bg_color(bar, red ? lv_palette_main(LV_PALETTE_RED) : lv_color_white(), 0);
-        lv_obj_set_style_bg_opa(bar, (red || i < look.lit) ? LV_OPA_COVER : kDimOpa, 0);
+        lv_obj_set_style_bg_opa(bar, (red || i < look.lit) ? (lv_opa_t)LV_OPA_COVER : kDimOpa, 0);
     }
 }
 
