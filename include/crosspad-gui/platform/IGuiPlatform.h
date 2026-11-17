@@ -247,6 +247,10 @@ public:
     /// /crosspad/kits), is on crosspad::getFileSystem(); the path itself by
     /// default. The explorer's rows keep the path it was handed.
     virtual std::string storagePath(const std::string & path) { return path; }
+
+    /// Highest audio engine rate this platform can run, in Hz; Settings lists
+    /// no rate above it. 0 = every rate in AudioEngineSettings::kSampleRates.
+    virtual uint32_t maxAudioSampleRate() { return 0; }
 };
 
 /// Install the platform implementation (call once at start-up).
