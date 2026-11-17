@@ -16,6 +16,7 @@
 #include "crosspad/stm32/reg_map.h"
 
 #include <cstring>
+#include <string>
 
 using namespace crosspad_gui;
 
@@ -210,6 +211,56 @@ TEST_CASE("Settings: rows that did nothing are not offered", "[settings]")
     }
     settings_ui_destroy();
 
+    setGuiPlatform(&f.gui);
+}
+
+TEST_CASE("Settings: Sample Rate lists only the rates the platform can run", "[settings]")
+{
+    // The board's I2S and USB audio stop at 48 kHz; with 96000 offered and
+    // picked, kits played an octave down after the restart.
+    struct CappedPlatform : guitest::TestGuiPlatform {
+        uint32_t cap = 0;
+        uint32_t maxAudioSampleRate() override { return cap; }
+    };
+    auto rate_options = [](lv_obj_t* content) -> std::string {
+        lv_obj_t* label = find_label(content, "Sample Rate");
+        REQUIRE(label != nullptr);
+        lv_obj_t* row = lv_obj_get_parent(label);
+        for (uint32_t i = 0; i < lv_obj_get_child_count(row); ++i) {
+            lv_obj_t* child = lv_obj_get_child(row, (int32_t)i);
+            if (lv_obj_check_type(child, &lv_dropdown_class)) {
+                char sel[16] = "";
+                lv_dropdown_get_selected_str(child, sel, sizeof(sel));
+                return std::string(lv_dropdown_get_options(child)) + " [" + sel + "]";
+            }
+        }
+        return "no dropdown";
+    };
+    guitest::GuiFixture f;
+    CappedPlatform plat;
+    plat.encoder = f.gui.encoder;
+    setGuiPlatform(&plat);
+    auto* s = crosspad::CrosspadSettings::getInstance();
+    const uint32_t saved = s->audioEngine.sampleRate;
+
+    struct Case { uint32_t cap; uint32_t stored; const char* shown; };
+    const Case cases[] = {
+        {0,     96000, "44100\n48000\n96000 [96000]"},   // no cap: every core rate
+        {48000, 44100, "44100\n48000 [44100]"},
+        {48000, 96000, "44100\n48000 [48000]"},          // a rate off the list reads as 48000
+        {44100, 48000, "44100 [44100]"},
+    };
+    for (const Case& c : cases) {
+        INFO(c.cap << " / " << c.stored);
+        plat.cap = c.cap;
+        s->audioEngine.sampleRate = c.stored;
+        lv_obj_t* content = open_settings(f, "Audio");
+        CHECK(rate_options(content) == c.shown);
+        settings_ui_destroy();
+        lv_obj_delete(content);
+    }
+
+    s->audioEngine.sampleRate = saved;
     setGuiPlatform(&f.gui);
 }
 

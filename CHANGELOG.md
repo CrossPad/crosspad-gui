@@ -6,6 +6,13 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.14.0 — 2026-11-17
+
+- `IGuiPlatform::maxAudioSampleRate()` (default 0 = no limit): Settings →
+  Audio, "Sample Rate" lists only the `AudioEngineSettings::kSampleRates` the
+  platform can run, instead of a fixed "44100 / 48000 / 96000". The board
+  stops at 48 kHz; with 96000 picked its kits played an octave down.
+
 ## 2.13.2 — 2026-11-10
 
 - Settings → USB, "Recording Source": the read-only "Custom" entry's index is
