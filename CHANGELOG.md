@@ -6,6 +6,13 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
+## 2.13.3 — 2026-11-18
+
+- Settings: the green header button ("Exit Settings", "< Display", ...) no
+  longer cuts the tails of g, y and p. The theme's 8 px vertical padding left
+  the label row 16 px for a 17 px line; the button now has no vertical
+  padding and the text centres in its 32 px.
+
 ## 2.13.2 — 2026-11-10
 
 - Settings → USB, "Recording Source": the read-only "Custom" entry's index is
