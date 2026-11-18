@@ -342,8 +342,15 @@ TEST_CASE("Settings: the header button's text keeps its g/y/p tails", "[settings
     check_label_not_clipped(find_label(content, "Exit Settings"));
     settings_ui_destroy();
 
-    content = open_settings(f, "Display");
-    check_label_not_clipped(find_label_ending(content, "Display"));
-    settings_ui_destroy();
+    lv_obj_delete(content);
+
+    for (const char* page : {"Display", "Audio", "Pads & LEDs", "Vibration", "MIDI",
+                             "Backup (SD)", "Programming", "Info", "System"}) {
+        INFO(page);
+        content = open_settings(f, page);
+        check_label_not_clipped(find_label_ending(content, page));
+        settings_ui_destroy();
+        lv_obj_delete(content);
+    }
     lv_indev_set_group(f.gui.encoder, f.group);
 }
