@@ -163,6 +163,11 @@ static lv_obj_t* make_nav_button(lv_obj_t* parent, const char* icon_text,
                                   lv_event_cb_t cb, void* user_data) {
     lv_obj_t * btn = lv_button_create(parent);
     lv_obj_set_size(btn, LV_PCT(100), 32);
+    /* The default theme pads a button 8 px top and bottom on a <=320 px
+     * display (PAD_SMALL), which left the inner row 16 px for a 17 px
+     * Montserrat 14 line: the row clipped g/y/p tails ("Exit Settinas",
+     * "Displav"). The text centres in the full 32 px instead. */
+    lv_obj_set_style_pad_ver(btn, 0, 0);
     lv_obj_set_style_bg_color(btn, bg_color, 0);
     lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_set_style_outline_width(btn, 2, LV_STATE_FOCUSED);

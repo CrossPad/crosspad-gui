@@ -300,3 +300,57 @@ TEST_CASE("Settings: leaving Settings with the notice open closes it", "[setting
     CHECK_FALSE(ui_back_has_overlay());
     CHECK(lv_obj_get_child_count(lv_layer_top()) == 0);
 }
+
+namespace {
+
+/// @p label lies wholly inside its parent: nothing of the line is clipped.
+void check_label_not_clipped(lv_obj_t* label)
+{
+    REQUIRE(label != nullptr);
+    lv_obj_update_layout(label);
+    lv_area_t l, p;
+    lv_obj_get_coords(label, &l);
+    lv_obj_get_coords(lv_obj_get_parent(label), &p);
+    CHECK(l.y1 >= p.y1);
+    CHECK(l.y2 <= p.y2);
+}
+
+/// The first label under @p root whose text ends with @p tail, or nullptr.
+lv_obj_t* find_label_ending(lv_obj_t* root, const char* tail)
+{
+    if (!root) return nullptr;
+    if (lv_obj_check_type(root, &lv_label_class)) {
+        const char* t = lv_label_get_text(root);
+        const size_t n = std::strlen(t), m = std::strlen(tail);
+        if (n >= m && std::strcmp(t + n - m, tail) == 0) return root;
+    }
+    const uint32_t n = lv_obj_get_child_count(root);
+    for (uint32_t i = 0; i < n; ++i) {
+        if (lv_obj_t* hit = find_label_ending(lv_obj_get_child(root, (int32_t)i), tail)) return hit;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+// The theme's 8 px vertical button padding left the header row 16 px for a
+// 17 px line: "Exit Settinas", "Displav".
+TEST_CASE("Settings: the header button's text keeps its g/y/p tails", "[settings]")
+{
+    guitest::GuiFixture f;
+    lv_obj_t* content = open_settings(f, "");
+    check_label_not_clipped(find_label(content, "Exit Settings"));
+    settings_ui_destroy();
+
+    lv_obj_delete(content);
+
+    for (const char* page : {"Display", "Audio", "Pads & LEDs", "Vibration", "MIDI",
+                             "Backup (SD)", "Programming", "Info", "System"}) {
+        INFO(page);
+        content = open_settings(f, page);
+        check_label_not_clipped(find_label_ending(content, page));
+        settings_ui_destroy();
+        lv_obj_delete(content);
+    }
+    lv_indev_set_group(f.gui.encoder, f.group);
+}
