@@ -6,7 +6,7 @@ Notable changes to crosspad-gui. The version is the triple in
 by `scripts/check_manifest.py`). This file starts at 2.0.0; earlier releases
 are described in their commits.
 
-## 2.14.0 — 2026-11-12
+## 2.14.0 — 2026-11-25
 
 - Settings → Programming → DFU Mode: the DFU screen has a way out. It said
   "Press encoder to exit DFU mode", but in the ROM bootloader the STM reads
@@ -16,6 +16,10 @@ are described in their commits.
   it off) and Leave calls `ISettingsUI::leaveStm32Dfu()` and closes the
   panel. The text no longer sends the player to an ST-LINK: a failed update
   is run again over USB DFU. Requires core 2.47.0.
+- `IGuiPlatform::maxAudioSampleRate()` (default 0 = no limit): Settings →
+  Audio, "Sample Rate" lists only the `AudioEngineSettings::kSampleRates` the
+  platform can run, instead of a fixed "44100 / 48000 / 96000". The board
+  stops at 48 kHz; with 96000 picked its kits played an octave down.
 
 ## 2.13.2 — 2026-11-10
 
