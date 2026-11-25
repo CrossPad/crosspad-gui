@@ -363,14 +363,28 @@ void settings_detail::cat_build_audio(lv_obj_t * parent, lv_group_t * group) {
         settings_section_header(parent, "Engine (restart required)");
     }
 
-    s_audioEngineSrIdx = 1;
+    // Only the rates the platform can run, in kSampleRates order (ascending),
+    // so a row's index is still its index in kSampleRates.
+    const uint32_t maxRate = getGuiPlatform().maxAudioSampleRate();
+    char rates[32];
+    size_t ratesLen = 0;
+    uint8_t rateCount = 0;
+    rates[0] = '\0';
     for (uint8_t i = 0; i < AudioEngineSettings::kSampleRatesCount; ++i) {
+        const uint32_t r = AudioEngineSettings::kSampleRates[i];
+        if (maxRate && r > maxRate) break;
+        const int n = snprintf(rates + ratesLen, sizeof(rates) - ratesLen, "%s%u", i ? "\n" : "", (unsigned)r);
+        if (n < 0 || (size_t)n >= sizeof(rates) - ratesLen) { rates[ratesLen] = '\0'; break; }
+        ratesLen += (size_t)n;
+        ++rateCount;
+    }
+    s_audioEngineSrIdx = rateCount > 1 ? 1 : 0;
+    for (uint8_t i = 0; i < rateCount; ++i) {
         if (AudioEngineSettings::kSampleRates[i] == s->audioEngine.sampleRate) {
             s_audioEngineSrIdx = i; break;
         }
     }
-    settings_row_dropdown(parent, group, "Sample Rate",
-                          "44100\n48000\n96000",
+    settings_row_dropdown(parent, group, "Sample Rate", rates,
                           &s_audioEngineSrIdx, audio_engine_sr_cb);
 
     if (!ab) {
