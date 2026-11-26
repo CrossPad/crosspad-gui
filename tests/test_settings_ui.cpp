@@ -184,8 +184,8 @@ TEST_CASE("Settings: rows that did nothing are not offered", "[settings]")
         {"Pads & LEDs", "Pad MIDI Output", {"Note Off on Release", "Upper Row Functions"}},
         {"Vibration", "On Touch", {"On Error"}},
         {"MIDI", "MIDI -> BLE",
-         {"Send to STM", "BLE -> MIDI", "Routing Enabled", "MIDI -> ESP", "USB -> MIDI",
-          "USB -> Thru", "USB -> ESP", "ESP -> MIDI", "ESP -> USB", "ESP -> Thru",
+         {"Send to STM", "BLE -> MIDI", "Routing Enabled", "MIDI -> ESP",
+          "USB -> Thru", "USB -> ESP", "ESP -> USB", "ESP -> Thru",
           "Buttons -> MIDI", "Config Btns as MIDI"}},
         {"System", "Auto Sleep", {"Wake Brightness"}},
     };
@@ -205,6 +205,7 @@ TEST_CASE("Settings: rows that did nothing are not offered", "[settings]")
     // The MIDI rows that do something are all still there.
     lv_obj_t* content = open_settings(f, "MIDI");
     for (const char* kept : {"Send to BLE", "Send to USB", "MIDI -> Thru", "MIDI -> USB",
+                             "USB -> MIDI", "ESP -> MIDI",   // into the TRS MIDI OUT jack
                              "STM MIDI Channel", "Note Offset"}) {
         INFO(kept);
         CHECK(find_label(content, kept) != nullptr);

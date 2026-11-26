@@ -10,6 +10,15 @@ lv_color_t lv_color_bw_from_color(lv_color_t color);
 /// Show or hide @p obj (sets or clears LV_OBJ_FLAG_HIDDEN). Safe with NULL.
 void lv_obj_set_hidden(lv_obj_t * obj, bool hidden);
 
+/// Set a label's text unless it already shows it. lv_label_set_text() frees
+/// the old text, allocates the new one and lays the label out again even when
+/// the two are equal, so a timer that repaints a value on every tick uses
+/// this. LVGL thread only.
+void lv_label_update_text(lv_obj_t * label, const char * text);
+
+/// lv_label_update_text() for printf-style text.
+void lv_label_update_text_fmt(lv_obj_t * label, const char * fmt, ...) LV_FORMAT_ATTRIBUTE(2, 3);
+
 /// Delete all children of an LVGL list or container. Safe with NULL.
 void lv_list_cleanup(lv_obj_t * list);
 
